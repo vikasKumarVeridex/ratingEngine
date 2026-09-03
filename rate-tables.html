@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rate Tables — Rating | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+<style>
+.rtlist{max-height:calc(100vh - 250px);overflow-y:auto}
+.rtitem{border:1px solid var(--border);border-radius:9px;padding:8px 11px;margin-bottom:6px;cursor:pointer;transition:.12s;background:var(--surface)}
+.rtitem:hover{border-color:var(--primary);background:var(--primary-soft)}
+.rtitem.on{border-color:var(--primary);background:var(--primary-soft)}
+.rtitem b{font-size:12.4px;display:block;line-height:1.3}
+.rtitem small{font-size:10.4px;color:var(--text-mute);display:block;margin-top:2px}
+.rtgrp{font-size:9.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--text-mute);margin:14px 0 6px}
+.rtgrp:first-child{margin-top:0}
+.rtgrp-sel{color:var(--primary)}
+tr.neutral{background:var(--surface-2)}
+.rtmeta{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.rtmeta div{background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:9px 12px}
+.rtmeta .k{font-size:9.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--text-mute);display:block;margin-bottom:3px}
+.rtmeta .v{font-size:12.5px;font-weight:600;line-height:1.35}
+</style>
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/rate-data-full.js"></script>
+<script src="assets/js/rate-tables-registry.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/grid.js"></script>
+<script>
+vxShell("Rate Tables", "The rate tables the engine reads when it calculates. || Every row, exactly as rated.",
+  [{ l: "Products & Rating" }, { l: "Rate Tables" }]);
+
+/* The rate-table registry now lives in assets/js/rate-tables-registry.js
+   so Rating Factors can share it. RATE_TABLES / FULL / kv are globals from there. */
+
+let currentTable = RATE_TABLES[7]; // Radius Factors — the clearest example of a driven lookup
+
+const WBT = VX.workbookTables || [];
+const cov = { full: WBT.filter(t => t.status === "full").length, partial: WBT.filter(t => t.status === "partial").length,
+  none: WBT.filter(t => t.status === "none").length };
+
+/* This tenant's OWN rate tables — imported via Product Studio JSON
+   (vxImportProductStudioExport in data.js), tenant-
+   scoped (COSMOS_TENANT_SCOPED), genuinely isolated from every other
+   tenant's copy and from the shared platform tables above. Distinct from
+   Live Rate Tables: those are read straight off the object the ENGINE
+   dereferences while rating a known line; these are real, on-file data a
+   tenant uploaded for its own product, not (yet) what the engine computes
+   from for that line — same "declared, not wired" honesty as the factor
+   rows they came in with. */
+const tenantTables = (typeof COSMOS !== "undefined") ? COSMOS.query("tenantRateTables", {}) : [];
+let currentTenantTable = tenantTables[0] || null;
+
+document.getElementById("vxBody").innerHTML = `
+  <ul class="nav nav-tabs vx-tabs mb-3">
+    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabLive">Live Rate Tables <span class="vx-b blue ms-1">${RATE_TABLES.length}</span></button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabCov">Rating Coverage <span class="vx-b amber ms-1">${cov.full + cov.partial}/${WBT.length}</span></button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabInputs">Quote Form Coverage <span class="vx-b red ms-1">${(VX.inputGaps || []).filter(g => g.status !== "have").length}</span></button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabTenant">This Tenant's Imported Tables <span class="vx-b purple ms-1">${tenantTables.length}</span></button></li>
+  </ul>
+  <div class="tab-content">
+
+    <div class="tab-pane fade show active" id="tabLive">
+      <div class="vx-exp2 vx-anim" id="expRt">
+        <div class="hd"><i class="fa-solid fa-database" style="color:var(--primary);font-size:11.5px"></i><b>Live engine data</b><span>The exact numbers used when a premium is calculated.</span><button type="button" class="tog" onclick="vxExpToggle('expRt')">Why?</button></div>
+        <div class="bd"><p>Every row below is read straight off the rating engine's own tables at page load. This is different from <a href="factors.html">Rating Factors</a> (the registry of what exists) and <a href="lookup-tables.html">Lookup Tables</a> (an inventory of table sizes).</p></div>
+      </div>
+      <div class="row g-3">
+        <div class="col-lg-4">
+          <div class="vx-card vx-anim">
+            <h2>Rate Tables <span class="vx-b blue">${RATE_TABLES.length}</span></h2>
+            <div class="sub">Grouped by line of business</div>
+            <input class="form-control form-control-sm mb-2" id="rtq" placeholder="Search tables or factors...">
+            <select class="form-select form-select-sm mb-2" id="rtLob"><option value="">All Lines of Business</option></select>
+            <div class="rtlist" id="rtList"></div>
+          </div>
+        </div>
+        <div class="col-lg-8"><div id="rtDetail"></div></div>
+      </div>
+    </div>
+
+    <div class="tab-pane fade" id="tabCov">
+      <div class="mb-3" style="border:1px solid var(--border);border-left:3px solid var(--warn);background:rgba(198,137,15,.08);border-radius:0 10px 10px 0;padding:12px 16px;font-size:12.5px;line-height:1.65">
+        <i class="fa-solid fa-triangle-exclamation me-1" style="color:var(--warn)"></i>
+        <b>The engine fully or partially rates ${cov.full + cov.partial} of ${WBT.length} tracked rating tables for Commercial Trucking.</b>
+        Garagekeepers, Medical Payments, PIP and full ZIP-level territory resolution are the largest remaining gaps —
+        so a premium calculated here is not yet a complete trucking quote in every respect.</div>
+      <div class="row g-2 mb-3">
+        <div class="col-4"><div class="vx-stat stack"><div class="lbl">Fully implemented</div>
+          <div class="val" style="color:var(--good)">${cov.full}</div></div></div>
+        <div class="col-4"><div class="vx-stat stack"><div class="lbl">Partial / sampled</div>
+          <div class="val" style="color:var(--warn)">${cov.partial}</div></div></div>
+        <div class="col-4"><div class="vx-stat stack"><div class="lbl">Not implemented</div>
+          <div class="val" style="color:var(--bad)">${cov.none}</div></div></div>
+      </div>
+      <div class="vx-card vx-anim">
+        <input class="form-control form-control-sm mb-2" id="cvq" placeholder="Search rating tables...">
+        <div class="vx-tw" style="max-height:600px;overflow-y:auto"><table class="vx-t">
+          <thead><tr><th>Rating Table</th><th style="text-align:right">Rows</th><th>Status</th><th>Drives / why not</th></tr></thead>
+          <tbody id="cvBody"></tbody></table></div>
+      </div>
+    </div>
+
+    <div class="tab-pane fade" id="tabInputs">
+      <div class="mb-3" style="border:1px solid var(--border);border-left:3px solid var(--bad);background:rgba(210,69,69,.09);border-radius:0 10px 10px 0;padding:12px 16px;font-size:12.5px;line-height:1.65">
+        <i class="fa-solid fa-triangle-exclamation me-1" style="color:var(--bad)"></i>
+        <b>The sandbox quote form captures ${(VX.inputGaps || []).filter(g => g.status === "have").length} of ${(VX.inputGaps || []).length} input fields the trucking program asks for.</b>
+        Garagekeepers is now built. Medical Payments and PIP were confirmed <b>not ratable in this program at all</b> —
+        they price off an external reference rate this platform doesn't have access to. A second alternate loss-rating
+        path exists but is orphaned — nothing feeds it and it can't produce a usable number even on its own, so it
+        isn't implemented either.</div>
+      <div class="row g-2 mb-3">
+        <div class="col-3"><div class="vx-stat stack"><div class="lbl">Captured</div>
+          <div class="val" style="color:var(--good)">${(VX.inputGaps || []).filter(g => g.status === "have").length}</div></div></div>
+        <div class="col-3"><div class="vx-stat stack"><div class="lbl">Account-level only</div>
+          <div class="val" style="color:var(--warn)">${(VX.inputGaps || []).filter(g => g.status === "account").length}</div>
+          <div class="dt flat">not yet settable per vehicle</div></div></div>
+        <div class="col-3"><div class="vx-stat stack"><div class="lbl">Field missing</div>
+          <div class="val" style="color:var(--bad)">${(VX.inputGaps || []).filter(g => g.status === "missing").length}</div></div></div>
+        <div class="col-3"><div class="vx-stat stack"><div class="lbl">Feature absent</div>
+          <div class="val" style="color:var(--bad)">${(VX.inputGaps || []).filter(g => g.status === "absent").length}</div></div></div>
+      </div>
+      <div class="vx-card vx-anim">
+        <input class="form-control form-control-sm mb-2" id="gpq" placeholder="Search input fields...">
+        <div class="vx-tw" style="max-height:600px;overflow-y:auto"><table class="vx-t">
+          <thead><tr><th>Category</th><th>Input Field</th><th>Status</th><th>Consequence</th></tr></thead>
+          <tbody id="gpBody"></tbody></table></div>
+      </div>
+    </div>
+
+    <div class="tab-pane fade" id="tabTenant">
+      <div class="mb-3" style="border:1px solid var(--border);border-left:3px solid var(--primary);background:var(--primary-soft);border-radius:0 10px 10px 0;padding:12px 16px;font-size:12.5px;line-height:1.65">
+        <i class="fa-solid fa-building-lock me-1" style="color:var(--primary)"></i>
+        <b>Every tenant has its own, isolated copy of any rating table it has uploaded.</b>
+        These rows came in through a Product Studio JSON import and belong only to the active tenant —
+        not merged into, and not read from, another tenant's copy or VeriDex's own shared tables above.
+        For a known engine-rated line, the engine still calculates off the shared table on the <b>Live Rate Tables</b> tab —
+        an uploaded table here is real, on-file data, declared but not (yet) wired into that calculation.</div>
+      <div class="row g-3">
+        <div class="col-lg-4">
+          <div class="vx-card vx-anim">
+            <h2>Imported Tables <span class="vx-b purple">${tenantTables.length}</span></h2>
+            <div class="sub">Uploaded for this tenant only</div>
+            <div class="rtlist" id="ttList"></div>
+          </div>
+        </div>
+        <div class="col-lg-8"><div id="ttDetail"></div></div>
+      </div>
+    </div>
+  </div>`;
+
+const GAPCHIP = {
+  have:    '<span class="vx-b green">Captured</span>',
+  account: '<span class="vx-b amber">Account-level only</span>',
+  missing: '<span class="vx-b red">Field missing</span>',
+  absent:  '<span class="vx-b red">Feature absent</span>',
+};
+function renderGaps(q) {
+  q = (q || "").toLowerCase().trim();
+  const rows = (VX.inputGaps || []).filter(g => !q || [g.tab, g.field, g.note, g.status].join(" ").toLowerCase().includes(q));
+  const order = { absent: 0, missing: 1, account: 2, have: 3 };
+  rows.sort((a, b) => order[a.status] - order[b.status] || a.tab.localeCompare(b.tab));
+  document.getElementById("gpBody").innerHTML = rows.length ? rows.map(g => `<tr>
+      <td><code style="font-size:11px">${g.tab}</code></td>
+      <td style="font-size:12.2px">${g.field}</td>
+      <td>${GAPCHIP[g.status]}</td>
+      <td style="font-size:11.5px;color:var(--text-dim);line-height:1.5">${g.note || "—"}</td>
+    </tr>`).join("") : `<tr><td colspan="4" style="text-align:center;color:var(--text-mute);padding:20px">No fields match "${q}".</td></tr>`;
+}
+
+const COVCHIP = {
+  full: '<span class="vx-b green">Implemented</span>',
+  partial: '<span class="vx-b amber">Partial / sampled</span>',
+  none: '<span class="vx-b red">Not implemented</span>',
+};
+function renderCoverage(q) {
+  q = (q || "").toLowerCase().trim();
+  const rows = WBT.filter(t => !q || [t.name, t.drives, t.note, t.status].join(" ").toLowerCase().includes(q));
+  const order = { none: 0, partial: 1, full: 2 };
+  rows.sort((a, b) => order[a.status] - order[b.status] || b.rows - a.rows);
+  document.getElementById("cvBody").innerHTML = rows.length ? rows.map(t => `<tr>
+      <td><code style="font-size:11.5px">${t.name}</code></td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums">${t.rows.toLocaleString("en-US")}</td>
+      <td>${COVCHIP[t.status]}</td>
+      <td style="font-size:11.8px">${t.drives}${t.note ? `<div style="font-size:10.8px;color:var(--text-mute);margin-top:2px">${t.note}</div>` : ""}</td>
+    </tr>`).join("") : `<tr><td colspan="4" style="text-align:center;color:var(--text-mute);padding:20px">No tables match "${q}".</td></tr>`;
+}
+
+function fmtCell(v, c) {
+  if (v == null || v === "") return '<span style="color:var(--text-mute)">—</span>';
+  if (c.money) return typeof v === "number" ? "$" + v.toLocaleString("en-US") : v;
+  if (c.pct) return (v > 0 ? "+" : "") + (v * 100).toFixed(1) + "%";
+  if (c.f) return typeof v === "number" ? v.toFixed(3).replace(/0+$/, "").replace(/\.$/, "") + "×" : v;
+  return typeof v === "number" ? v.toLocaleString("en-US") : v;
+}
+
+function renderList(filter) {
+  const q = (filter || "").toLowerCase().trim();
+  const lobSel = document.getElementById("rtLob");
+  const lobFilter = lobSel ? lobSel.value : "";
+  const hits = RATE_TABLES.filter(t => (!q || [t.name, t.lob, t.cov, t.drives].join(" ").toLowerCase().includes(q))
+    && (!lobFilter || t.lob === lobFilter));
+  const item = t => {
+    let n = 0; try { n = t.rows().length; } catch (e) { n = 0; }
+    return `<div class="rtitem ${t.id === currentTable.id ? "on" : ""}" data-rt="${t.id}">
+      <b>${t.name}</b>
+      <small>${t.cov} · ${n} row${n === 1 ? "" : "s"} · drives <code style="font-size:9.6px">${t.drives}</code></small>
+    </div>`;
+  };
+  /* The selected table is pinned to the top of the list. Arriving here from a
+     factor's "view rows" link used to just mark a row deep inside a long
+     LOB-grouped list — off-screen, so the page looked like it had ignored the
+     link. It stays in its LOB group too, so the grouping still reads
+     correctly; the pin is a shortcut, not a move. */
+  const sel = hits.find(t => t.id === currentTable.id);
+  const byLob = {};
+  hits.forEach(t => { (byLob[t.lob] = byLob[t.lob] || []).push(t); });
+
+  document.getElementById("rtList").innerHTML = Object.keys(byLob).length
+    ? (sel ? `<div class="rtgrp rtgrp-sel"><i class="fa-solid fa-circle-check me-1"></i>Selected</div>${item(sel)}` : "")
+      + Object.entries(byLob).map(([lob, ts]) => `
+        <div class="rtgrp">${lob}</div>
+        ${ts.map(item).join("")}`).join("")
+    : `<div class="vx-empty" style="padding:22px"><i class="fa-solid fa-magnifying-glass"></i>No tables match "${filter}".</div>`;
+
+  document.querySelectorAll("[data-rt]").forEach(el => el.onclick = () => {
+    currentTable = RATE_TABLES.find(t => t.id === el.dataset.rt);
+    renderList(document.getElementById("rtq").value); renderDetail();
+  });
+}
+
+function renderDetail() {
+  const t = currentTable;
+  let rows = []; try { rows = t.rows() || []; } catch (e) { rows = []; }
+  const neutralRow = t.neutral ? rows.find(r => { try { return t.neutral(r); } catch (e) { return false; } }) : null;
+  document.getElementById("rtDetail").innerHTML = `
+    <div class="vx-card vx-anim">
+      <div class="vx-card-head">
+        <div><h2>${t.name}</h2><div class="sub">${t.lob} · ${t.cov}</div></div>
+        <button class="btn btn-outline-secondary btn-sm" onclick="exportTable()"><i class="fa-solid fa-file-export me-1"></i>Export CSV</button>
+      </div>
+      <div class="rtmeta">
+        <div><span class="k">Drives</span><span class="v"><code style="font-size:11.5px">${t.drives}</code></span></div>
+        <div><span class="k">Rows</span><span class="v">${rows.length}</span></div>
+        <div><span class="k">Default row</span><span class="v">${neutralRow ? "highlighted below" : (t.neutral === null ? "varies by state" : "no neutral row")}</span></div>
+      </div>
+      ${t.verified
+        ? `<div class="vx-ai mb-3" style="padding:9px 13px;font-size:12px"><i class="fa-solid fa-circle-check me-1" style="color:var(--good)"></i>
+             Verified against the filed rating manual.${t.note ? " " + t.note : ""}</div>`
+        : `<div class="mb-3" style="border:1px solid var(--border);border-left:3px solid var(--warn);background:rgba(198,137,15,.08);border-radius:0 10px 10px 0;padding:9px 13px;font-size:12px">
+             <i class="fa-solid fa-triangle-exclamation me-1" style="color:var(--warn)"></i>
+             Working approximation — not verified line-by-line against a filed rating manual.${t.note ? " " + t.note : ""}</div>`}
+      <div class="vx-tw" style="max-height:520px;overflow-y:auto">
+        <table class="vx-t">
+          <thead><tr>${t.cols.map(c => `<th>${c.l}</th>`).join("")}</tr></thead>
+          <tbody>${rows.length ? rows.map(r => {
+            let isN = false; try { isN = t.neutral ? !!t.neutral(r) : false; } catch (e) { isN = false; }
+            return `<tr class="${isN ? "neutral" : ""}">${t.cols.map((c, ci) => `<td>${fmtCell(r[c.k], c)}${isN && ci === 0 ? ' <span class="vx-b gray" style="font-size:9px">default</span>' : ""}</td>`).join("")}</tr>`;
+          }).join("") : `<tr><td colspan="${t.cols.length}" style="text-align:center;color:var(--text-mute);padding:20px">This table is empty.</td></tr>`}</tbody>
+        </table>
+      </div>
+      <div style="font-size:11px;color:var(--text-mute);margin-top:8px">
+        <i class="fa-solid fa-circle-info me-1"></i>Read live from <code>VX.${t.id}</code> — the same object the rating engine dereferences while calculating.
+      </div>
+    </div>`;
+}
+
+function exportTable() {
+  const t = currentTable;
+  let rows = []; try { rows = t.rows() || []; } catch (e) { rows = []; }
+  vxCSV(t.name.replace(/\s+/g, "-").toLowerCase(), t.cols.map(c => ({ k: c.k, l: c.l })), rows);
+}
+
+/* This tenant's own imported tables — same list/detail shape as Live Rate
+   Tables, but the source is COSMOS-scoped tenantRateTables rows instead of
+   the shared RATE_TABLES registry, and the data itself is a plain
+   array-or-object blob from the uploaded JSON (no fixed cols[]/rows()
+   contract), so columns are inferred from whatever keys the data actually
+   has rather than a hand-declared schema. */
+function tenantTableRows(t) {
+  if (Array.isArray(t.data)) return t.data.map(v => (v && typeof v === "object" ? v : { value: v }));
+  if (t.data && typeof t.data === "object") return Object.entries(t.data).map(([k, v]) => ({ key: k, value: v }));
+  return [];
+}
+function renderTenantList() {
+  document.getElementById("ttList").innerHTML = tenantTables.length ? tenantTables.map(t => {
+    const n = t.rowCount != null ? t.rowCount : tenantTableRows(t).length;
+    return `<div class="rtitem ${currentTenantTable && t.id === currentTenantTable.id ? "on" : ""}" data-tt="${t.id}">
+      <b>${t.factorName}</b>
+      <small>${t.lob} · ${n} row${n === 1 ? "" : "s"} · ${t.sourceSheet || "Uploaded Configuration"}</small>
+    </div>`;
+  }).join("") : `<div class="vx-empty" style="padding:22px"><i class="fa-solid fa-file-import"></i>No tables imported for this tenant yet — Rating Setup → Upload Configuration.</div>`;
+  document.querySelectorAll("[data-tt]").forEach(el => el.onclick = () => {
+    currentTenantTable = tenantTables.find(t => t.id == el.dataset.tt);
+    renderTenantList(); renderTenantDetail();
+  });
+}
+function renderTenantDetail() {
+  const el = document.getElementById("ttDetail");
+  if (!currentTenantTable) { el.innerHTML = `<div class="vx-empty" style="padding:60px 22px"><i class="fa-solid fa-table"></i>Select a table to view its rows.</div>`; return; }
+  const t = currentTenantTable;
+  const rows = tenantTableRows(t);
+  const cols = rows.length ? Object.keys(rows[0]) : [];
+  el.innerHTML = `
+    <div class="vx-card vx-anim">
+      <div class="vx-card-head">
+        <div><h2>${t.factorName}</h2><div class="sub">${t.lob} · imported ${(t.importedAt || "").slice(0, 10)}</div></div>
+      </div>
+      <div class="rtmeta">
+        <div><span class="k">Rows</span><span class="v">${rows.length}</span></div>
+        <div><span class="k">Source</span><span class="v">${t.sourceSheet || "Uploaded Configuration"}</span></div>
+        <div><span class="k">Tenant</span><span class="v">Isolated — this tenant only</span></div>
+      </div>
+      <div class="vx-tw" style="max-height:480px;overflow-y:auto">
+        <table class="vx-t">
+          <thead><tr>${cols.map(c => `<th>${c}</th>`).join("")}</tr></thead>
+          <tbody>${rows.length ? rows.map(r => `<tr>${cols.map(c => `<td>${r[c] == null || r[c] === "" ? "—" : r[c]}</td>`).join("")}</tr>`).join("")
+            : `<tr><td colspan="${cols.length || 1}" style="text-align:center;color:var(--text-mute);padding:20px">This table is empty.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+document.getElementById("rtq").oninput = e => renderList(e.target.value);
+document.getElementById("cvq").oninput = e => renderCoverage(e.target.value);
+document.getElementById("gpq").oninput = e => renderGaps(e.target.value);
+
+/* LOB filter — the list otherwise groups every line's tables together with
+   no way to isolate one, which gets unwieldy once several LOBs are on file. */
+const rtLobs = [...new Set(RATE_TABLES.map(t => t.lob))].sort();
+document.getElementById("rtLob").innerHTML = `<option value="">All Lines of Business</option>`
+  + rtLobs.map(l => `<option value="${l}">${l}</option>`).join("");
+document.getElementById("rtLob").onchange = () => renderList(document.getElementById("rtq").value);
+
+/* Deep-link support: factors.html links here as ?table=truckRadius */
+const qTable = new URLSearchParams(location.search).get("table");
+let deepLinked = false;
+if (qTable) {
+  const hit = RATE_TABLES.find(t => t.id === qTable);
+  if (hit) { currentTable = hit; deepLinked = true; }
+}
+
+renderList(""); renderDetail(); renderCoverage(""); renderGaps(""); renderTenantList(); renderTenantDetail();
+
+/* Arriving from a deep link, bring the table the user asked for into view and
+   say which one it is — otherwise the page just looks like it opened at the
+   top with no acknowledgement of the link. */
+if (deepLinked) {
+  const el = document.querySelector('.rtitem.on');
+  if (el) el.scrollIntoView({ block: "nearest" });
+  const d = document.getElementById("rtDetail");
+  if (d) d.scrollIntoView({ behavior: "smooth", block: "start" });
+  vxToast("Table selected", currentTable.name + " — opened from the factor you clicked", "ok");
+}
+</script>
+</body>
+</html>

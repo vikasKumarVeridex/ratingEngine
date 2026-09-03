@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tenant Setup — Administration | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+<style>
+.stp{display:flex;gap:14px;padding:15px 17px;border:1px solid var(--border);border-radius:var(--radius);
+  background:var(--surface);margin-bottom:10px;align-items:flex-start}
+.stp.on{border-color:rgba(52,195,143,.5);background:rgba(52,195,143,.04)}
+.stp .n{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;flex:none;
+  font-size:12.5px;font-weight:600;background:var(--surface-3);color:var(--text-dim)}
+.stp.on .n{background:rgba(52,195,143,.16);color:var(--good)}
+.stp .bd{flex:1;min-width:0}
+.stp .ttl{font-size:13.5px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.stp .why{font-size:11.8px;color:var(--text-dim);margin-top:3px;line-height:1.5}
+.stp .det{font-size:12px;margin-top:6px;color:var(--text)}
+.prog{height:7px;border-radius:20px;background:var(--surface-3);overflow:hidden}
+.prog span{display:block;height:100%;background:var(--primary);transition:width .3s}
+</style>
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/grid.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script>
+vxShell("Tenant Setup", "What this tenant still has to configure before it can quote. || Each step is measured off real configuration — nothing here is a stored progress flag.",
+  [{ l: "Administration" }, { l: "Tenant Setup" }]);
+
+function draw() {
+  const s = tenantSetupSteps();
+  const t = s.tenant;
+
+  document.getElementById("vxBody").innerHTML = `
+    <div class="vx-card vx-anim" style="border-left:3px solid ${t.accent || 'var(--primary)'}">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+        <div>
+          <h2 style="font-size:17px">${t.name || "—"}</h2>
+          <div class="sub" style="margin-bottom:6px">${t.carrier || ""} · ${t.plan || "—"} plan · ${t.seats || 0} seats
+            ${t.nonAdmitted ? '<span class="vx-b amber ms-1">Non-Admitted · Surplus Lines</span>' : ''}</div>
+        </div>
+        <div style="text-align:right;min-width:190px">
+          <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.04em;font-weight:500">Setup progress</div>
+          <div style="font-size:26px;font-weight:600;margin:2px 0 6px">${s.pct}%</div>
+          <div class="prog"><span style="width:${s.pct}%"></span></div>
+          <div style="font-size:11.3px;color:var(--text-dim);margin-top:5px">${s.doneRequired.length} of ${s.required.length} required steps</div>
+        </div>
+      </div>
+      ${s.ready
+        ? `<div class="mt-3" style="border:1px solid rgba(52,195,143,.4);background:rgba(52,195,143,.07);border-radius:var(--radius);padding:11px 15px;font-size:12.6px">
+             <i class="fa-solid fa-circle-check me-1" style="color:var(--good)"></i>
+             <b>Ready to quote.</b> Every required step is configured — <a href="quote-portal.html">start a quote</a> in this tenant.</div>`
+        : `<div class="mt-3" style="border:1px solid rgba(241,180,76,.45);background:rgba(241,180,76,.07);border-radius:var(--radius);padding:11px 15px;font-size:12.6px">
+             <i class="fa-solid fa-triangle-exclamation me-1" style="color:var(--warn)"></i>
+             <b>Not ready to quote yet.</b> ${s.required.length - s.doneRequired.length} required step(s) outstanding — each one below links to the screen that fixes it.</div>`}
+    </div>
+
+    <div class="vx-card vx-anim">
+      <h2>Configuration steps</h2>
+      <div class="sub">Required steps gate quoting. The rest refine pricing and can be done after go-live.</div>
+      ${s.steps.map((st, i) => `
+        <div class="stp ${st.done ? "on" : ""}">
+          <div class="n">${st.done ? '<i class="fa-solid fa-check"></i>' : i + 1}</div>
+          <div class="bd">
+            <div class="ttl">${st.label}
+              ${st.required ? '<span class="vx-b gray">required</span>' : '<span class="vx-b blue">optional</span>'}
+              ${st.done ? '<span class="vx-b green">done</span>' : '<span class="vx-b amber">outstanding</span>'}</div>
+            <div class="why">${st.why}</div>
+            <div class="det">${st.detail}</div>
+          </div>
+          <a href="${st.fix}" class="btn ${st.done ? "btn-outline-secondary" : "btn-primary"} btn-sm" style="flex:none">${st.fixLabel}</a>
+        </div>`).join("")}
+    </div>`;
+}
+draw();
+</script>
+</body>
+</html>

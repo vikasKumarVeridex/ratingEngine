@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>State Taxes — Pricing | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-grid.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-theme-quartz.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/dist/ag-grid-community.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/grid.js"></script>
+<script src="assets/js/ag-grid-adapter.js"></script>
+<script>
+vxShell("State Taxes", "State premium tax and surplus lines tax. || Applied to premium after fees, per state of risk.",
+  [{ l: "Pricing & Taxes" }, { l: "State Taxes" }]);
+
+document.getElementById("vxPageActions").innerHTML =
+  `<a href="counties.html" class="btn btn-outline-secondary btn-sm"><i class="fa-solid fa-map-pin me-1"></i>County Tax</a>`;
+
+document.getElementById("vxBody").innerHTML = `
+  <div class="vx-exp2 vx-anim" id="expTax" style="border-left-color:var(--primary)">
+    <div class="hd"><i class="fa-solid fa-percent" style="color:var(--primary);font-size:11.5px"></i><b>Tax formula</b><span>Total tax = State Premium Tax + County Municipal Tax.</span><button type="button" class="tog" onclick="vxExpToggle('expTax')">Why?</button></div>
+    <div class="bd"><p>Surplus Lines Tax and Stamping Fee are tracked below but not currently applied to a quote — see the column notes.</p>
+    <p>One state can have many counties, each charging its own local rate on
+    <a href="counties.html">County Management</a> — currently
+    <b>${vxNum(VX.counties.filter(c=>c.taxRate>0).length)} taxing counties</b> across
+    <b>${new Set(VX.counties.filter(c=>c.taxRate>0).map(c=>c.state)).size} states</b>. Click a county count to see them.</p></div>
+  </div>
+  <div class="vx-card vx-anim"><div id="grid"></div></div>`;
+
+vxAgGrid({ el:"#grid", key:"taxes", name:"State Tax", size:12,
+  cols:[
+    {k:"stateName",l:"State"},{k:"state",l:"Code"},
+    /* One tax rate, not two. This platform is non-admitted (surplus lines
+       only), so the admitted "premium tax" never applies — and it held the
+       identical value to the surplus lines tax in all 50 rows, which made the
+       two columns look like different rates that happened to agree. The
+       engine now rates off this one. */
+    {k:"surplusTax",l:"Surplus Lines Tax",editable:true,r:r=>'<b>'+r.surplusTax.toFixed(2)+'%</b>'},
+    {k:"stampingFee",l:"Stamping Fee",r:r=>r.stampingFee.toFixed(2)+"% "+vxWiredChip(false,"Not applied")},
+    {k:"countyCount",l:"Counties Charging Tax",r:r=>r.countyCount
+      ? '<a href="counties.html?state='+r.state+'"><span class="vx-b blue">'+r.countyCount+' counties</span></a>'
+      : '<span class="vx-b gray">None</span>'},
+    {k:"basis",l:"Tax Basis"}],
+  /* One state picker showing full names, instead of two free-text boxes that
+     let the name and the code disagree. The code is derived from the choice. */
+  form:[{k:"stateName",l:"State",t:"select",opts:VX.states.map(s=>({value:s.name,label:`${s.name} (${s.abv})`}))},
+    {k:"surplusTax",l:"Surplus Lines Tax %",t:"number",step:"0.01"},
+    {k:"stampingFee",l:"Stamping Fee %",t:"number",step:"0.01"},
+    {k:"basis",l:"Tax Basis",t:"select",opts:["Net Written Premium","Gross Written Premium","Premium + Fees"]}],
+  onAfterSave:rec=>{
+    // Keep the two-letter code in step with the state that was chosen.
+    const st=VX.states.find(s=>s.name===rec.stateName);
+    if(st){ rec.state=st.abv; const row=VX.taxes.find(t=>t.id===rec.id); if(row) row.state=st.abv; }
+  }
+});
+</script>
+</body>
+</html>

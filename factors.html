@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rating Factors — Rating | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-grid.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-theme-quartz.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/dist/ag-grid-community.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/rate-data-full.js"></script>
+<script src="assets/js/rate-tables-registry.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/grid.js"></script>
+<script src="assets/js/ag-grid-adapter.js"></script>
+<script src="assets/js/rating-context.js"></script>
+<script>
+vxShell("Rating Factors", "Every factor the rating engine actually applies. || What drives it, which sheet it came from, and the range it can take.",
+  [{ l: "Products & Rating" }, { l: "Rating Factors" }]);
+
+const KIND = {
+  Lookup:   { c: "blue",   i: "fa-table-list", d: "Selected from a rate table by an insured answer" },
+  Computed: { c: "purple", i: "fa-calculator", d: "Derived at rating time from several answers" },
+  Judgment: { c: "amber",  i: "fa-user-pen",   d: "Set by an underwriter, not a table" },
+  Constant: { c: "gray",   i: "fa-lock",       d: "Same on every quote" },
+};
+
+/* The grid below already reads through vxAgGrid's key:"ratingFactors" ->
+   API.list -> COSMOS.query, so its rows were always correctly tenant-scoped.
+   These summary cards read the raw VX.ratingFactors array directly and
+   were not — a newly onboarded tenant with zero factors of its own saw
+   VeriDex's full counts here regardless of which tenant was active.
+   Scoped the same way the grid itself already is. */
+const tenantFactorRows = (typeof COSMOS !== "undefined") ? COSMOS.query("ratingFactors", {}) : VX.ratingFactors;
+const verified = tenantFactorRows.filter(f => f.verified).length;
+const approx = tenantFactorRows.filter(f => !f.verified && !f.custom).length;
+const custom = tenantFactorRows.filter(f => f.custom).length;
+
+document.getElementById("vxBody").innerHTML = `
+  <div class="row g-2 mb-3">
+    <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">Factors in the engine</div>
+      <div class="val">${tenantFactorRows.length}</div><div class="dt flat">across ${new Set(tenantFactorRows.map(f => f.lob)).size} lines of business</div></div></div>
+    <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">Verified</div>
+      <div class="val" style="color:var(--good)">${verified}</div><div class="dt flat">matched to a filed workbook</div></div></div>
+    <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">Approximated</div>
+      <div class="val" style="color:var(--warn)">${approx}</div><div class="dt flat">working values, not filed</div></div></div>
+    <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">Custom (added here)</div>
+      <div class="val">${custom}</div><div class="dt flat">${custom ? "not yet wired to the engine" : "none added yet"}</div></div></div>
+  </div>
+
+  <div class="vx-exp2 vx-anim" id="expFac" style="border-left-color:var(--primary)">
+    <div class="hd"><i class="fa-solid fa-database" style="color:var(--primary);font-size:11.5px"></i><b>Derived from the engine</b><span>Ranges and row counts are computed live. Open a factor to see its rows.</span><button type="button" class="tog" onclick="vxExpToggle(&#39;expFac&#39;)">Why?</button></div>
+    <div class="bd"><p>Every row is read from the rating engine's own tables — nothing here is stored separately. Open any factor to see its rows in <a href="rate-tables.html">Rate Tables</a>.</p><p>Adding a factor here registers it, but the engine does not execute configured factors yet, so new factors are marked <span class="vx-b amber">Not wired</span> until that loop is closed.</p></div>
+  </div>
+
+  <div id="ctxBar"></div>
+  <div class="vx-card vx-anim"><div id="grid"></div></div>`;
+
+function fmtRange(r) {
+  if (!r.rowCount) return r.defaultValue != null ? `<span style="color:var(--text-mute)">${r.defaultValue} (fixed)</span>` : '<span style="color:var(--text-mute)">—</span>';
+  if (r.minValue === r.maxValue) return `${r.minValue}`;
+  const n = v => Math.abs(v) >= 1000 ? Number(v).toLocaleString("en-US") : v;
+  return `<span style="font-variant-numeric:tabular-nums">${n(r.minValue)} – ${n(r.maxValue)}</span>`;
+}
+
+/* Where a factor's value comes from, in business terms rather than
+   internal flags — the brief's "never show a value without its source". */
+function sourceLabel(r) {
+  if (r.custom || r.verified === undefined) return { label: "Added here", cls: "gray", detail: "Manually configured on this screen" };
+  if (r.tableId) return { label: "Rate Table", cls: "cyan", detail: `Looked up from ${r.sourceSheet || "a rate table"}` };
+  if (r.kind === "Computed") return { label: "Derived", cls: "purple", detail: "Derived from rating configuration at quote time" };
+  if (r.kind === "Judgment") return { label: "Underwriter", cls: "amber", detail: "Set by an underwriter on the quote, not a table" };
+  return { label: "Workbook", cls: "cyan", detail: `Fixed constant from ${r.sourceSheet || "the rating workbook"}` };
+}
+/* "Values / Rules" — how many distinct outcomes this factor can produce.
+   A lookup factor's row count IS its rule count; a fixed factor has one. */
+function valuesLabel(r) {
+  if (r.rowCount) return `<b>${vxNum(r.rowCount)}</b> <span style="color:var(--text-mute)">values</span>`;
+  if (r.defaultValue != null) return `<b>1</b> <span style="color:var(--text-mute)">fixed value</span>`;
+  return '<span style="color:var(--text-mute)">—</span>';
+}
+
+const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor", size: 15,
+  cols: [
+    { k: "name", l: "Rating Factor" },
+    { k: "lob", l: "Line of Business" },
+    { k: "defaultValue", l: "Default", r: r => r.defaultValue != null
+        ? `<b>${r.defaultValue}</b>`
+        : (r.rowCount ? '<span style="color:var(--text-mute)" title="No single default — the value is always looked up">from table</span>'
+                      : '<span class="vx-b red">none</span>') },
+    { k: "rowCount", l: "Values / Rules", r: valuesLabel },
+    { k: "minValue", l: "Range", sort: false, r: fmtRange },
+    { k: "_source", l: "Source", sort: false, r: r => { const s = sourceLabel(r);
+        return `<span class="vx-b ${s.cls}" title="${s.detail}">${s.label}</span>`; } },
+    { k: "kind", l: "Type", r: r => { const k = KIND[r.kind] || KIND.Constant;
+        return `<span class="vx-b ${k.c}" title="${k.d}"><i class="fa-solid ${k.i} me-1"></i>${r.kind}</span>`; } },
+    { k: "driver", l: "Driven by", r: r => r.driver === "—"
+        ? '<span style="color:var(--text-mute)">nothing — fixed</span>' : r.driver },
+    { k: "coverage", l: "Coverage" },
+    { k: "scope", l: "Scope", r: r => `<span class="vx-b gray">${r.scope || "—"}</span>` },
+    { k: "_product", l: "Product", sort: false, r: r => (r.attachments || []).length
+        ? (r.attachments || []).map(a => a.product).join(", ") : '<span style="color:var(--text-mute)">—</span>' },
+    { k: "tableId", l: "Lookup Table", sort: false,
+      r: r => r.tableId ? `<a href="#" onclick="editFactorValues(vxFactorById(${r.id}));return false" title="Edit this table's values">${tableName(r.tableId)}</a>`
+                        : '<span style="color:var(--text-mute)">\u2014</span>' },
+    { k: "code", l: "Code", r: r => `<code style="font-size:11px">${r.code}</code>` },
+    /* A factor added through this screen has no `verified` flag at all —
+       that absence is what identifies it, rather than intercepting the
+       grid's save. Anything user-added is Not wired, because the engine
+       does not execute configured factors. */
+    { k: "verified", l: "Status", r: r => (r.custom || r.verified === undefined)
+        ? vxWiredChip(false)
+        : (r.verified ? '<span class="vx-b green">Verified</span>'
+                      : '<span class="vx-b amber">Approximated</span>') },
+  ],
+  form: [
+    { k: "name", l: "Factor Name" }, { k: "code", l: "Factor Code" },
+    { k: "lob", l: "Line of Business", t: "select", opts: vxLobNames() },
+    { k: "coverage", l: "Coverage (Assigned To)" },
+    { k: "scope", l: "Scope", t: "select", opts: ["Account", "Insured", "Risk", "Vehicle", "Coverage", "Policy", "Location", "State", "Class of Business"] },
+    /* Computed and Judgment are no longer offered for NEW factors here — this
+       screen has no way to actually wire either kind to a real calculation or
+       an underwriter workflow, so picking one just produced an unwired,
+       silently-inert row. An existing factor already carrying one of those
+       kinds keeps it as an option on its own edit form (grandfathered, not
+       erased) rather than being forced to something it isn't. */
+    { k: "kind", l: "Type", t: "select", opts: r => {
+        const base = ["Lookup", "Constant"];
+        return (r && r.kind && !base.includes(r.kind)) ? [r.kind, ...base] : base;
+      } },
+    /* Which table a Lookup factor actually reads. Re-renders on LOB change so
+       the list leads with that line of business's own tables. */
+    { k: "tableId", l: "Lookup Table", t: "select", opts: r => tableOptsFor(r), dependsOn: "lob",
+      hint: "Which rate table this factor reads. Leave as none for Constant factors." },
+    { k: "driver", l: "Driven by (which insured answer)" },
+    { k: "defaultValue", l: "Default Value", t: "number", step: "0.001", def: 1,
+      hint: "Applied on every quote (Constant), or as a fallback when a Lookup factor's table has no matching row." },
+    { k: "sourceSheet", l: "Reference" },
+  ],
+  filters: [
+    { k: "lob", l: "LOB", opts: [...new Set(VX.ratingFactors.map(f => f.lob))] },
+    { k: "kind", l: "Type", opts: ["Lookup", "Computed", "Judgment", "Constant"] },
+    { k: "coverage", l: "Coverage", opts: [...new Set(VX.ratingFactors.map(f => f.coverage))] },
+    { k: "scope", l: "Scope", opts: ["Account", "Insured", "Risk", "Vehicle", "Coverage", "Policy", "Location", "State", "Class of Business"] },
+  ],
+  rowActions: [
+    { i: "fa-pen-to-square", t: "Open factor detail", fn: openFactorPanel },
+    { i: "fa-table-cells", t: "View rows in Rate Tables", fn: viewRows },
+  ],
+});
+
+/* ---------- Factor side panel ----------
+   Replaces a full page/modal round-trip for the most common inspection:
+   what this factor defaults to, where that default comes from, and the
+   actual values it can take. Uses Bootstrap's Offcanvas (already loaded
+   platform-wide) rather than a new hand-rolled component. */
+/* The ~40 rate tables come in three real shapes: arrays of arrays, arrays
+   of objects, and keyed objects (some nested one level, e.g. truckILF is
+   state → limit → factor). Flatten all three generically rather than
+   special-casing each table. */
+function factorValueRows(rec) {
+  if (!rec.tableId) return null;
+  const t = VX[rec.tableId];
+  if (!t) return null;
+  if (Array.isArray(t)) {
+    if (!t.length) return null;
+    return t.slice(0, 40).map(row => Array.isArray(row) ? row : Object.values(row));
+  }
+  if (typeof t !== "object") return null;
+  const out = [];
+  for (const [k, v] of Object.entries(t)) {
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      for (const [k2, v2] of Object.entries(v)) {
+        out.push([k, k2, v2]);
+        if (out.length >= 40) return out;
+      }
+    } else {
+      out.push([k, Array.isArray(v) ? v.join(" · ") : v]);
+      if (out.length >= 40) return out;
+    }
+  }
+  return out.length ? out : null;
+}
+
+function openFactorPanel(rec) {
+  const s = sourceLabel(rec);
+  const rows = factorValueRows(rec);
+  const rangeTxt = rec.rowCount ? fmtRange(rec) : null;
+
+  let el = document.getElementById("vxFactorPanel");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "vxFactorPanel";
+    el.className = "offcanvas offcanvas-end";
+    el.tabIndex = -1;
+    el.style.width = "min(560px, 94vw)";
+    document.body.appendChild(el);
+  }
+  el.innerHTML = `
+    <div class="offcanvas-header" style="border-bottom:1px solid var(--border)">
+      <div>
+        <h5 class="offcanvas-title" style="font-size:16px;margin:0">${rec.name}</h5>
+        <div style="font-size:11.5px;color:var(--text-mute);margin-top:2px">
+          <code>${rec.code}</code> · ${rec.lob} · ${rec.coverage}</div>
+      </div>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+    </div>
+    <div class="offcanvas-body">
+      <div class="vx-card" style="margin-bottom:14px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-mute)">Factor Assignment</div>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;font-size:12px">
+          <span class="vx-b purple">${rec.name}</span>
+          <i class="fa-solid fa-arrow-right" style="font-size:9px;color:var(--text-mute)"></i>
+          <a href="coverages.html" class="vx-b blue" style="text-decoration:none">${rec.assignedTo || rec.coverage || "—"}</a>
+          <i class="fa-solid fa-arrow-right" style="font-size:9px;color:var(--text-mute)"></i>
+          <span class="vx-b gray">${rec.scope || "—"} scope</span>
+          <i class="fa-solid fa-arrow-right" style="font-size:9px;color:var(--text-mute)"></i>
+          ${(rec.attachments || []).length
+            ? rec.attachments.map(a => `<a href="products.html" class="vx-b cyan" style="text-decoration:none">${a.product}</a>
+                <span style="color:var(--text-mute);font-size:10.5px">(<a href="versions.html" style="color:inherit">${a.ratingVersion}</a>)</span>`).join(" · ")
+            : `<span style="color:var(--text-mute)">${rec.lob} — no product attached</span>`}
+        </div>
+      </div>
+      <div class="vx-card" style="margin-bottom:14px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-mute)">Default Value</div>
+        <div style="font-size:24px;font-weight:800;margin:4px 0 6px">
+          ${rec.defaultValue != null ? rec.defaultValue : (rec.rowCount ? '<span style="font-size:15px;color:var(--text-mute)">No single default — always looked up</span>' : '<span class="vx-b red">Not configured</span>')}</div>
+        <div style="font-size:12.3px;color:var(--text-dim);line-height:1.6">
+          ${rec.rowCount
+            ? "Used when the lookup below has no matching row for the insured's answer."
+            : "Applied identically on every quote — this factor has no lookup table."}
+        </div>
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:12.3px">
+          <b>Source:</b> <span class="vx-b ${s.cls}">${s.label}</span>
+          <div style="color:var(--text-dim);margin-top:4px">${s.detail}</div>
+        </div>
+      </div>
+
+      <div class="vx-card">
+        <div class="d-flex align-items-center justify-content-between">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-mute)">Factor Values</div>
+          <button class="btn btn-outline-secondary btn-sm" onclick="editFactorValues(vxFactorById(${rec.id}))">
+            <i class="fa-solid fa-pen me-1"></i>Edit values</button>
+        </div>
+        <div style="font-size:12.3px;color:var(--text-dim);margin:4px 0 10px">
+          ${rec.rowCount
+            ? `${vxNum(rec.rowCount)} value${rec.rowCount === 1 ? "" : "s"} on file${rangeTxt ? `, ranging ${rangeTxt}` : ""} — selected by <b>${rec.driver === "—" ? "no input" : rec.driver}</b>.`
+            : "This factor has no value table — see the default above."}
+        </div>
+        ${rows
+          ? `<div class="vx-tw" style="max-height:340px;overflow:auto"><table class="vx-t">
+              <tbody>${rows.map(r => `<tr>${r.map(c => `<td style="font-size:11.8px">${c === null || c === undefined ? "—" : c}</td>`).join("")}</tr>`).join("")}</tbody>
+             </table></div>
+             ${rec.rowCount > rows.length ? `<div style="font-size:11.3px;color:var(--text-mute);margin-top:7px">Showing first ${rows.length} of ${vxNum(rec.rowCount)} — <a href="rate-tables.html?table=${encodeURIComponent(rec.tableId)}">open the full table →</a></div>` : ""}`
+          : (rec.rowCount
+              ? `<div style="font-size:12.3px"><a href="rate-tables.html?table=${encodeURIComponent(rec.tableId || "")}">Browse this factor's rows in Rate Tables →</a></div>`
+              : "")}
+      </div>
+    </div>`;
+  bootstrap.Offcanvas.getOrCreateInstance(el).show();
+}
+
+
+/* ---------------------------------------------------------------------------
+   Lookup-table selection + value editing.
+
+   A factor of Kind "Lookup" has to read SOME table, but the form never asked
+   which one: `tableId` was only ever set by the seed data, so any factor added
+   through the UI was a Lookup pointing at nothing. RATE_TABLES (now shared via
+   rate-tables-registry.js) is the real registry the Rate Tables screen renders
+   from, so the picker offers exactly the tables that actually exist.
+   --------------------------------------------------------------------------- */
+function vxFactorById(id) { return (VX.ratingFactors || []).find(f => f.id === id); }
+function allRateTables() { return (typeof RATE_TABLES !== "undefined") ? RATE_TABLES : []; }
+
+/* Tables for this factor's LOB first, then the rest — a Trucking factor almost
+   always wants a Trucking table, but cross-LOB picks stay possible. */
+function tableOptsFor(rec) {
+  const lob = rec && rec.lob;
+  const all = allRateTables();
+  const mine = all.filter(t => t.lob === lob);
+  const rest = all.filter(t => t.lob !== lob);
+  const opt = t => ({ value: t.id, label: `${t.name} \u00b7 ${t.cov}` });
+  return [{ value: "", label: "\u2014 none (no table) \u2014" }]
+    .concat(mine.map(opt))
+    .concat(rest.length ? [{ value: "", label: "\u2500\u2500 other lines of business \u2500\u2500" }] : [])
+    .concat(rest.map(t => ({ value: t.id, label: `${t.name} \u00b7 ${t.lob}` })));
+}
+function tableName(id) {
+  const t = allRateTables().find(x => x.id === id);
+  return t ? t.name : (id || "\u2014");
+}
+
+/* ---- value editing -------------------------------------------------------
+   Rate tables come in three shapes: a flat {key: value} map, a nested
+   {key: {key2: value}} map, and an array of row objects. Rather than
+   special-casing each, walk to the numeric leaves and address every one by a
+   path. One editor then works for all three, and writes back into the very
+   object engine.js dereferences while rating. */
+function leafPaths(node, path, out, depth) {
+  out = out || []; path = path || []; depth = depth || 0;
+  if (depth > 4) return out;
+  if (Array.isArray(node)) {
+    node.forEach((row, i) => {
+      if (row && typeof row === "object") {
+        Object.keys(row).forEach(k => {
+          if (typeof row[k] === "number") out.push({ path: path.concat([i, k]), label: rowLabel(row, i) + " \u00b7 " + k, value: row[k] });
+        });
+      }
+    });
+    return out;
+  }
+  if (node && typeof node === "object") {
+    Object.keys(node).forEach(k => {
+      const v = node[k];
+      if (typeof v === "number") out.push({ path: path.concat([k]), label: path.concat([k]).join(" \u203a "), value: v });
+      else if (v && typeof v === "object") leafPaths(v, path.concat([k]), out, depth + 1);
+    });
+  }
+  return out;
+}
+function rowLabel(row, i) {
+  for (const k of ["name", "state", "code", "label", "type", "class"]) if (row[k] != null) return String(row[k]);
+  return "row " + (i + 1);
+}
+function setPath(root, path, value) {
+  let n = root;
+  for (let i = 0; i < path.length - 1; i++) n = n[path[i]];
+  n[path[path.length - 1]] = value;
+}
+
+function editFactorValues(rec) {
+  if (!rec.tableId || !VX[rec.tableId]) {
+    vxModal(`${rec.name} \u2014 no table attached`, `
+      ${vxNotWiredBanner("This factor has no lookup table to edit.",
+        "Edit the factor and choose a <b>Lookup Table</b> to attach one, or set its <b>Default Value</b> if it is a constant.")}`,
+      [{ t: "Close", c: "secondary" }]);
+    return;
+  }
+  const leaves = leafPaths(VX[rec.tableId]);
+  if (!leaves.length) {
+    vxModal(`${rec.name} \u2014 values`, `<div class="sub">No editable numeric values found in this table.</div>`,
+      [{ t: "Close", c: "secondary" }]);
+    return;
+  }
+  const shown = leaves.slice(0, 250);
+  vxModal(`Edit values \u2014 ${rec.name}`, `
+    <div class="vx-exp2 mb-2" id="expFv">
+      <div class="hd"><i class="fa-solid fa-pen" style="color:var(--primary);font-size:11.5px"></i>
+        <b>${tableName(rec.tableId)}</b>
+        <span>${vxNum(leaves.length)} value${leaves.length === 1 ? "" : "s"}${leaves.length > shown.length ? `, first ${shown.length} shown` : ""}.</span>
+        <button type="button" class="tog" onclick="vxExpToggle('expFv')">Why?</button></div>
+      <div class="bd"><p>These are the live numbers <code>engine.js</code> reads while rating. Saving changes what the next quote is charged \u2014 there is no separate draft copy, exactly as on <a href="rate-tables.html?table=${encodeURIComponent(rec.tableId)}">Rate Tables</a>.</p></div>
+    </div>
+    <input class="form-control form-control-sm mb-2" id="fvq" placeholder="Filter rows\u2026"
+      oninput="fvFilter(this.value)">
+    <div class="vx-tw" style="max-height:400px;overflow:auto"><table class="vx-t">
+      <thead><tr><th>Row</th><th style="width:140px;text-align:right">Value</th></tr></thead>
+      <tbody id="fvBody">${shown.map((lf, i) => `<tr data-fvrow="${i}">
+        <td style="font-size:11.8px">${lf.label}</td>
+        <td style="text-align:right"><input type="number" step="0.0001" class="form-control form-control-sm fv"
+          data-i="${i}" value="${lf.value}" style="text-align:right"></td></tr>`).join("")}</tbody>
+    </table></div>`,
+    [{ t: "Cancel", c: "secondary" },
+     { t: "Save values", c: "primary", fn: () => {
+        let n = 0;
+        document.querySelectorAll(".fv").forEach(inp => {
+          const lf = shown[+inp.dataset.i];
+          const v = parseFloat(inp.value);
+          if (!isNaN(v) && v !== lf.value) { setPath(VX[rec.tableId], lf.path, v); n++; }
+        });
+        vxAutoSave();
+        vxToast(n ? "Values updated" : "No changes",
+                n ? `${n} value${n === 1 ? "" : "s"} written to ${tableName(rec.tableId)} \u2014 live for the next quote`
+                  : "Nothing was different", n ? "ok" : "info");
+        if (n) grid.reload();
+     } }], "modal-lg");
+}
+function fvFilter(q) {
+  q = (q || "").toLowerCase();
+  document.querySelectorAll("#fvBody tr").forEach(tr => {
+    tr.style.display = !q || tr.textContent.toLowerCase().includes(q) ? "" : "none";
+  });
+}
+
+function viewRows(rec) {
+  if (rec.custom) {
+    vxModal(`${rec.name} — custom factor`, `
+      ${vxNotWiredBanner("Registered, but <b>not wired to the rating engine</b>.",
+        "The engine currently executes hardcoded calculators and does not read configured factors, so adding a factor here does not change any premium.")}
+      <div class="row g-3">
+        <div class="col-md-6"><label>Code</label><div style="font-size:13px"><code>${rec.code}</code></div></div>
+        <div class="col-md-6"><label>Type</label><div style="font-size:13px">${rec.kind}</div></div>
+        <div class="col-md-6"><label>Driven by</label><div style="font-size:13px">${rec.driver || "—"}</div></div>
+        <div class="col-md-6"><label>Default</label><div style="font-size:13px">${rec.defaultValue ?? "—"}</div></div>
+      </div>`, [{ t: "Close", c: "secondary" }]);
+    return;
+  }
+  if (!rec.tableId) {
+    vxModal(`${rec.name}`, `
+      <div class="row g-3 mb-3">
+        <div class="col-md-6"><label>Type</label><div style="font-size:13px">${rec.kind}</div></div>
+        <div class="col-md-6"><label>Driven by</label><div style="font-size:13px">${rec.driver}</div></div>
+        <div class="col-md-6"><label>Reference</label><div style="font-size:13px"><code>${rec.sourceSheet || "—"}</code></div></div>
+        <div class="col-md-6"><label>Value</label><div style="font-size:13px">${rec.defaultValue ?? "—"}</div></div>
+      </div>
+      <div class="vx-ai" style="padding:10px 14px;font-size:12.4px"><i class="fa-solid fa-circle-info me-1"></i>
+        This factor has no browsable rate table — it is ${rec.kind === "Computed"
+          ? "computed at rating time from several answers rather than looked up"
+          : rec.kind === "Judgment" ? "set by an underwriter rather than a table"
+          : "a fixed constant applied identically on every quote"}.</div>`,
+      [{ t: "Close", c: "secondary" }]);
+    return;
+  }
+  location.href = "rate-tables.html?table=" + encodeURIComponent(rec.tableId);
+}
+
+/* Persist anything added through this screen so it survives a reload.
+   Runs off the grid's own state rather than intercepting its save button —
+   any factor lacking a `verified` flag was user-added. */
+function persistCustom() {
+  const added = VX.ratingFactors.filter(f => f.verified === undefined || f.custom);
+  VX.customFactors = added.map(f => ({ ...f, custom: true, wired: false }));
+  localStorage.setItem("vxCustomFactors", JSON.stringify(VX.customFactors));
+}
+["click", "change"].forEach(ev => document.addEventListener(ev, () => setTimeout(persistCustom, 200), true));
+
+/* Persistent rating context. The LOB selection genuinely filters the grid
+   below; product and version are shown because an admin needs to know which
+   rating plan they're configuring against — but the note says plainly that
+   factors are LOB-scoped rather than versioned, so nobody assumes picking a
+   different version shows a different factor set. */
+vxContextBar("#ctxBar", {
+  note: "Rating factors are shared across every version of a line of business — changing the version above updates the context shown, not the factor list.",
+  onChange: ctx => {
+    const sel = document.querySelector('#grid [data-f="lob"]');
+    if (sel && sel.value !== ctx.lob) { sel.value = ctx.lob; sel.dispatchEvent(new Event("change")); }
+  },
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Versions — Configuration | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-grid.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-theme-quartz.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/dist/ag-grid-community.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/grid.js"></script>
+<script src="assets/js/ag-grid-adapter.js"></script>
+<script>
+vxShell("Rating Versions", "Each version is a complete rating engine for a product. || Carries its effective window, rate lock date, attached formulas, and exactly which factors were added, changed or removed.",
+  [{ l: "Products & Rating" }, { l: "Rating Versions" }]);
+
+document.getElementById("vxPageActions").innerHTML =
+  `<button class="btn btn-outline-secondary btn-sm" id="cmpVerBtn"><i class="fa-solid fa-code-compare me-1"></i>Compare Versions</button>
+   <button class="btn btn-outline-secondary btn-sm" id="dupVerBtn"><i class="fa-solid fa-copy me-1"></i>Duplicate Version</button>
+   <button class="btn btn-primary btn-sm" id="nextVerBtn"><i class="fa-solid fa-plus me-1"></i>Create Next Version</button>`;
+
+/* Create Next Version — the common case (copy what's live, bump the label,
+   start editing) as one action instead of clone-then-rename-then-reset. */
+/* Versions are partitioned on /tenantId, so reading VX.versions raw lists
+   other tenants' rows — which is where the duplicate/stale entries in this
+   dialog came from. Everything below goes through here. */
+function tenantVersions(product) {
+  const tid = (typeof COSMOS !== "undefined") ? COSMOS.tenantId() : null;
+  return VX.versions.filter(v => (tid == null || v.tenantId == null || v.tenantId === tid)
+    && (!product || v.product === product));
+}
+function tenantVersionProducts() {
+  return [...new Set(tenantVersions().map(v => v.product))];
+}
+
+function nextVersionLabel(product) {
+  const vers = tenantVersions(product).map(v => v.version);
+  // Labels are vYYYY.MM — bump the month off the highest one on file.
+  const parsed = vers.map(v => /^v(\d{4})\.(\d{2})/.exec(v)).filter(Boolean)
+    .map(m => ({ y: +m[1], m: +m[2] })).sort((a, b) => (b.y - a.y) || (b.m - a.m))[0];
+  if (!parsed) return "v" + new Date().toISOString().slice(0, 7).replace("-", ".");
+  const next = parsed.m === 12 ? { y: parsed.y + 1, m: 1 } : { y: parsed.y, m: parsed.m + 1 };
+  return `v${next.y}.${String(next.m).padStart(2, "0")}`;
+}
+
+function createNextVersion() {
+  const products = tenantVersionProducts();
+  if (!products.length) {
+    vxModal("Create Next Version",
+      `<div class="vx-empty" style="padding:20px"><i class="fa-solid fa-code-branch"></i>
+        ${vxTenant().name} has no rating versions yet. Add a product in
+        <a href="products.html">Products</a> first — a version belongs to one.</div>`,
+      [{ t: "Close", c: "secondary" }]);
+    return;
+  }
+  vxModal("Create Next Version", `
+    <label>Product</label>
+    <select class="form-select form-select-sm mb-3" id="nvProd">${products.map(p => `<option>${p}</option>`).join("")}</select>
+    <div class="row g-3">
+      <div class="col-md-6"><label>Copy configuration from</label>
+        <select class="form-select form-select-sm" id="nvFrom"></select></div>
+      <div class="col-md-6"><label>New version label</label>
+        <input class="form-control form-control-sm" id="nvLabel"></div>
+      <div class="col-md-6"><label>Effective start</label>
+        <input type="date" class="form-control form-control-sm" id="nvStart"></div>
+      <div class="col-md-6"><label class="d-block">Carry over attached formulas</label>
+        <div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="nvFormulas" checked></div></div>
+    </div>
+    <div id="nvSummary"></div>`,
+    [{ t: "Cancel", c: "secondary" }, { t: "Create Draft", c: "primary", fn: () => {
+      const src = tenantVersions().find(v => v.id == document.getElementById("nvFrom").value);
+      if (!src) return;
+      const label = document.getElementById("nvLabel").value.trim() || nextVersionLabel(src.product);
+      const start = document.getElementById("nvStart").value;
+      const carry = document.getElementById("nvFormulas").checked;
+      if (tenantVersions(src.product).some(v => v.version === label)) {
+        vxToast("Label already used", `${src.product} already has a ${label}`, "warn");
+        return false;   // keep the dialog open
+      }
+      const srcFormulas = attachedFormulas(src);
+      API.clone("versions", src.id).then(r => {
+        const nv = r.data;
+        nv.version = label; nv.status = "Draft";
+        nv.effectiveStart = start || ""; nv.effectiveEnd = "";
+        nv.quotesRated = 0;
+        nv.rateLockDate = "";           // re-locked when this version is published
+        nv.createdOn = new Date().toISOString().slice(0, 10);
+        nv.createdBy = "vikas.kumar@veridex.io";
+        /* Formulas attach to a (product, version) PAIR held on each formula,
+           not on the version document — so cloning the version alone carried
+           none of them across, despite this dialog promising it did. Copy the
+           attachments explicitly. */
+        let carried = 0;
+        if (carry) {
+          srcFormulas.forEach(f => {
+            f.attachments = f.attachments || [];
+            if (!f.attachments.some(a => a.product === nv.product && a.ratingVersion === label)) {
+              f.attachments.push({ product: nv.product, ratingVersion: label });
+              carried++;
+            }
+          });
+          localStorage.setItem("vxSavedFormulas", JSON.stringify(VX.savedFormulas));
+        }
+        localStorage.setItem("vxVersionsState", JSON.stringify(VX.versions));
+        vxToast("Draft created",
+          `${label} for ${nv.product}, copied from ${src.version}` + (carried ? ` · ${carried} formula(s) carried over` : ""), "ok");
+        vxAutoSave(); grid.reload();
+      });
+    }}]);
+
+  /* Show what will actually be copied, so the dialog states facts about the
+     selected source rather than a generic promise. */
+  const summarise = src => {
+    const el = document.getElementById("nvSummary");
+    if (!el) return;
+    const fs = src ? attachedFormulas(src) : [];
+    const untested = fs.filter(f => !f.tested).length;
+    el.innerHTML = `<div class="vx-ai mt-3" style="font-size:12.3px"><i class="fa-solid fa-circle-info me-1"></i>
+      Creates a <b>Draft</b> copied from <b>${src ? src.version : "—"}</b> (${src ? src.status : "—"}) —
+      ${src ? src.factorCount : 0} factors and
+      ${fs.length ? `<b>${fs.length}</b> attached formula${fs.length === 1 ? "" : "s"}${untested ? ` (${untested} untested)` : ""}`
+                  : "no attached formulas"}.
+      A Draft rates nothing until you publish it.</div>`;
+  };
+
+  const fill = () => {
+    const p = document.getElementById("nvProd").value;
+    const vers = tenantVersions(p)
+      .slice()
+      .sort((a, b) => (b.effectiveStart || "").localeCompare(a.effectiveStart || ""));
+    document.getElementById("nvFrom").innerHTML = vers.map(v => `<option value="${v.id}">${v.version} · ${v.status}</option>`).join("");
+    // Default to copying whatever is actually live for that product
+    const live = vers.find(v => v.status === "Published") || vers[0];
+    if (live) document.getElementById("nvFrom").value = live.id;
+    document.getElementById("nvLabel").value = nextVersionLabel(p);
+    summarise(live);
+  };
+  document.getElementById("nvProd").onchange = fill;
+  document.getElementById("nvFrom").onchange = e =>
+    summarise(tenantVersions().find(v => v.id == e.target.value));
+  fill();
+}
+
+function compareVersionsPicker() {
+  const products = tenantVersionProducts();
+  const verOpts = p => tenantVersions(p).slice()
+    .sort((a, b) => b.effectiveStart.localeCompare(a.effectiveStart))
+    .map(v => `<option value="${v.id}">${v.version} (${v.status})</option>`).join("");
+
+  vxModal("Compare Versions", `
+    <label>Product</label>
+    <select class="form-select form-select-sm mb-3" id="cmpProd">${products.map(p => `<option>${p}</option>`).join("")}</select>
+    <div class="row g-3">
+      <div class="col-md-6"><label>Version A (older)</label><select class="form-select form-select-sm" id="cmpA"></select></div>
+      <div class="col-md-6"><label>Version B (newer)</label><select class="form-select form-select-sm" id="cmpB"></select></div>
+    </div>`,
+    [{ t: "Cancel", c: "secondary" }, { t: "Compare", c: "primary", fn: () => {
+      showChanges(document.getElementById("cmpB").value, document.getElementById("cmpA").value);
+    }}]);
+
+  const fillVersions = () => {
+    const p = document.getElementById("cmpProd").value;
+    document.getElementById("cmpA").innerHTML = verOpts(p);
+    document.getElementById("cmpB").innerHTML = verOpts(p);
+    // default B = newest, A = second-newest, so the common case needs zero extra picks
+    const opts = tenantVersions(p).slice().sort((a, b) => b.effectiveStart.localeCompare(a.effectiveStart));
+    if (opts[0]) document.getElementById("cmpB").value = opts[0].id;
+    if (opts[1]) document.getElementById("cmpA").value = opts[1].id;
+  };
+  document.getElementById("cmpProd").onchange = fillVersions;
+  fillVersions();
+}
+
+function duplicateVersionPicker() {
+  vxModal("Duplicate Version", `
+    <label>Pick a version to duplicate as a new Draft</label>
+    <select class="form-select form-select-sm" id="dupVerSel">
+      ${tenantVersions().map(v => `<option value="${v.id}">${v.product} — ${v.version} (${v.status})</option>`).join("")}
+    </select>
+    <div class="vx-ai mt-3" style="font-size:12.3px"><i class="fa-solid fa-circle-info me-1"></i>
+      Creates an exact copy as a new Draft version — same effective window, same attached formulas — so you can adjust factors without touching the source version.</div>`,
+    [{ t: "Cancel", c: "secondary" }, { t: "Duplicate", c: "primary", fn: () => {
+      const id = document.getElementById("dupVerSel").value;
+      API.clone("versions", id).then(r => {
+        vxToast("Version duplicated", `Created ${r.data.version} as a new Draft`, "ok");
+        vxAutoSave(); grid.reload();
+      });
+    }}]);
+}
+
+
+const TCOL = { Added: "green", Changed: "amber", Removed: "red" };
+
+/* Version lifecycle — one shared map so the grid, the engine modal and the
+   publish flow can never drift apart on what a status looks like. */
+const VVER_STATUS = {
+  Draft:     { c: "amber", i: "fa-pen-ruler",      d: "Being edited — not rating any business yet" },
+  Scheduled: { c: "blue",  i: "fa-calendar-check", d: "Approved, waiting for its effective date" },
+  Published: { c: "green", i: "fa-circle-check",   d: "Currently rating all new business" },
+  Expired:   { c: "gray",  i: "fa-clock-rotate-left", d: "Superseded by a newer published version" },
+  Archived:  { c: "gray",  i: "fa-box-archive",    d: "Deliberately retired — kept for audit only" },
+};
+const VVER_ORDER = ["Draft", "Scheduled", "Published", "Expired", "Archived"];
+function verStatusChip(s) {
+  const m = VVER_STATUS[s] || VVER_STATUS.Archived;
+  return `<span class="vx-b ${m.c}" title="${m.d}"><i class="fa-solid ${m.i} me-1"></i>${s}</span>`;
+}
+
+document.getElementById("vxBody").innerHTML = `
+  <div class="vx-exp2 vx-anim" id="expVer">
+    <div class="hd"><i class="fa-solid fa-lock" style="color:var(--primary);font-size:11.5px"></i><b>Rate lock</b><span>Effective date picks the version; the lock date holds a quote at the prior one.</span><button type="button" class="tog" onclick="vxExpToggle('expVer')">Why?</button></div>
+    <div class="bd">
+      <p><b>Effective date</b> decides which version rates a transaction — endorsements and renewals use the version whose window contains the transaction date.</p>
+      <p><b>Rate lock date</b> is the cut-off before which a quote is honoured at the <i>prior</i> version's rates. A quote issued before the lock date keeps its rates for the lock period even if a new version goes effective in the meantime.</p>
+      <p><b>Readiness</b> tracks whether every formula attached to a Draft version has been run through Evaluate Formula in the Formula Builder. Publishing with untested formulas attached requires an explicit override.</p>
+    </div>
+  </div>
+  <div class="vx-card vx-anim"><div id="grid"></div></div>`;
+
+function attachedFormulas(r) { return (VX.savedFormulas || []).filter(f => (f.attachments || []).some(a => a.product === r.product && a.ratingVersion === r.version)); }
+
+function formulasCell(r) {
+  const n = attachedFormulas(r).length;
+  return n ? `<span class="vx-b blue">${n} formula${n === 1 ? "" : "s"}</span>` : '<span class="vx-b gray">none attached</span>';
+}
+
+/* Manage this version's formula attachments from the version side.
+   A formula belongs to a rating version, so the relationship has to be
+   editable from both ends — the Formula Builder attaches a formula to
+   versions, and this attaches versions' formulas here. Same
+   VX.savedFormulas[].attachments records either way; nothing new is stored. */
+function manageFormulas(r) {
+  const eligible = (VX.savedFormulas || []).filter(f => f.lob === r.lob);
+  if (!eligible.length) {
+    vxModal(`Formulas — ${r.version}`,
+      `<div class="vx-empty" style="padding:18px"><i class="fa-solid fa-square-root-variable"></i>
+        No formulas exist for ${r.lob} yet. Build one in <a href="formula-builder.html">Formulas</a> first.</div>`,
+      [{ t: "Close", c: "secondary" }]);
+    return;
+  }
+  const isOn = f => (f.attachments || []).some(a => a.product === r.product && a.ratingVersion === r.version);
+  vxModal(`Formulas attached to ${r.version}`, `
+    <div style="font-size:12.3px;color:var(--text-dim);margin-bottom:10px">
+      <b>${r.product}</b> · ${r.lob} · <span class="vx-b ${r.status === "Published" ? "green" : "amber"}">${r.status}</span><br>
+      Tick every formula this rating version should execute. Only ${r.lob} formulas are listed — a formula rates one line of business.
+    </div>
+    <div style="max-height:300px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+      ${eligible.map(f => `<div class="form-check">
+        <input class="form-check-input MF" type="checkbox" id="mf${f.id}" data-fid="${f.id}" ${isOn(f) ? "checked" : ""}>
+        <label class="form-check-label" for="mf${f.id}" style="font-size:12.5px">${f.name}
+          <span class="vx-b ${f.scope === "Account" ? "purple" : "cyan"}">${f.scope === "Account" ? "Account level" : f.cob}</span>
+          ${f.tested ? '<span class="vx-b green">tested</span>' : '<span class="vx-b amber">untested</span>'}</label>
+      </div>`).join("")}
+    </div>`,
+    [{ t: "Cancel", c: "secondary" }, { t: "Save Attachments", c: "primary", fn: () => {
+      document.querySelectorAll(".MF").forEach(cb => {
+        const f = VX.savedFormulas.find(x => x.id == cb.dataset.fid);
+        if (!f) return;
+        f.attachments = f.attachments || [];
+        const at = a => a.product === r.product && a.ratingVersion === r.version;
+        if (cb.checked && !f.attachments.some(at)) f.attachments.push({ product: r.product, ratingVersion: r.version });
+        if (!cb.checked) f.attachments = f.attachments.filter(a => !at(a));
+      });
+      localStorage.setItem("vxSavedFormulas", JSON.stringify(VX.savedFormulas));
+      const n = attachedFormulas(r).length;
+      vxToast("Attachments saved", `${r.version} now runs ${n} formula${n === 1 ? "" : "s"}`, "ok");
+      vxAutoSave(); grid.reload();
+    }}]);
+}
+
+/* Formulas selectable for a version, scoped to that product's line of
+   business — a formula rates one LOB, so offering the rest would let an
+   admin attach maths that can never fire. Labelled with scope and tested
+   state, because publishing a version carrying untested formulas is exactly
+   what readinessCell warns about. */
+function lobOfProduct(productName) {
+  const p = VX.products.find(x => x.name === productName);
+  return p ? p.lob : null;
+}
+function formulaOpts(cur) {
+  const lob = (cur && cur.lob) || lobOfProduct(cur && cur.product);
+  if (!lob) return [];
+  return (VX.savedFormulas || []).filter(f => f.lob === lob).map(f => ({
+    value: f.id,
+    label: `${f.name} — ${f.scope === "Account" ? "Account level" : f.cob}` +
+           (f.tested ? " · tested" : " · untested"),
+  }));
+}
+
+/* Write the form's selection back onto the formulas themselves. The version
+   record never stores `_formulas`; it is a view of the other side of the
+   relationship, so persisting it means adding/removing this (product,
+   version) pair on each formula's attachments — the identical shape
+   manageFormulas() and the Formula Builder both write. */
+function saveFormulaAttachments(rec) {
+  const chosen = (rec._formulas || []).map(String);
+  const lob = rec.lob || lobOfProduct(rec.product);
+  (VX.savedFormulas || []).filter(f => f.lob === lob).forEach(f => {
+    f.attachments = f.attachments || [];
+    const at = a => a.product === rec.product && a.ratingVersion === rec.version;
+    const want = chosen.includes(String(f.id));
+    if (want && !f.attachments.some(at)) f.attachments.push({ product: rec.product, ratingVersion: rec.version });
+    if (!want) f.attachments = f.attachments.filter(a => !at(a));
+  });
+  localStorage.setItem("vxSavedFormulas", JSON.stringify(VX.savedFormulas));
+  /* `_formulas` is a view of the other side of the relationship, not a field
+     of the version document — strip it from both the form object and the
+     stored row. API.update merges into a NEW object, so deleting it here
+     only is not enough. */
+  delete rec._formulas;
+  const stored = VX.versions.find(v => v.id === rec.id);
+  if (stored) delete stored._formulas;
+  localStorage.setItem("vxVersionsState", JSON.stringify(VX.versions));
+}
+
+function readinessCell(r) {
+  if (r.status !== "Draft") return '<span style="color:var(--text-mute);font-size:11.5px">—</span>';
+  const attached = attachedFormulas(r);
+  if (!attached.length) return '<span class="vx-b gray"><i class="fa-solid fa-minus me-1"></i>No formulas attached</span>';
+  const untested = attached.filter(f => !f.tested);
+  return untested.length
+    ? `<span class="vx-b amber"><i class="fa-solid fa-triangle-exclamation me-1"></i>${untested.length} untested</span>`
+    : `<span class="vx-b green"><i class="fa-solid fa-circle-check me-1"></i>Ready to publish</span>`;
+}
+
+/* What each LOB's engine actually computes, in order. "Commercial Trucking"
+   is verified line-by-line against the source rating workbook (see
+   engine.js's trucking()); the others are engine.js's working
+   approximations for those LOBs and are flagged as such, not fabricated
+   as equally verified. */
+const ENGINE_PIPELINES = {
+  /* The real, verified formula was briefly removed then restored — see
+     truckingReal() in engine.js. The two candidate models (candidateModels
+     below) are kept as an ADDITIONAL, clearly-labelled comparison, not a
+     replacement — see engine.js's truckingModelA()/truckingModelB(). */
+  "Commercial Trucking": {
+    verified: true,
+    source: "the filed trucking rating manual",
+    caveat: "This flow matches app_type 483's real stored-procedure rater (udf_iso_new_rater_liab_calculations, ams-service) term-for-term — but that SQL has since been hand-patched with several 2026 date-gated overrides the workbook predates (a driver-criteria factor from 2026-03-05, broadened-pollution/defense-addback factors from 2026-03-12, a stated-value-by-year change from 2026-04-15) that aren't modeled here. Every trucking product uses this Custom (483) per-vehicle rater — the legacy 501 account-level rater was retired from the platform, so all trucking products rate through this flow by design.",
+    steps: [
+      "Rate each vehicle's Liability premium: Base Loss Cost × (ILF − Liability Deductible Factor) × LCM × Primary Class × Secondary Class × Fleet Size × Vehicle Age × OCN × Radius × NAICS × Tort Limitation × Miles Driven × Rating Class × Dashcam × CDL Experience Discount × Driver Class × Account-Level Factor — rounded",
+      "Rate each vehicle's Physical Damage premium: Vehicle Value × MAX(full factor chain, floored minimum rate)",
+      "Sum Liability and Physical Damage separately across every vehicle on the schedule",
+      "Multiply both coverage totals by the policy's Experience Mod",
+      "Add Cargo — rate not sourced from this workbook, kept as a flagged placeholder",
+      "Add policy fees, then state premium tax, to reach Final Premium",
+    ],
+    candidateModels: {
+      caveat: "Two independent, deliberately-divergent candidate models, computed alongside the real formula above purely for a side-by-side rate-indication comparison — not filed rates, and not what this platform actually charges. See r.modelA / r.modelB on any Trucking rating result.",
+      models: [
+        { name: "Model A — Classification (Manual) Rating",
+          steps: [
+            "Per vehicle: Base Rate × Vehicle Class Factor × Radius of Operation Factor × Driver Experience Factor × Safety Rating Factor × Fleet Size Discount Factor — rounded",
+            "Sum every vehicle's premium across the fleet",
+            "Add policy fees, then state premium tax, to reach Final Premium",
+          ] },
+        { name: "Model B — Exposure-Based (Mileage) Rating",
+          steps: [
+            "Mileage Premium = Total Annual Fleet Miles × Loss Cost Per Mile × Territory Relativity",
+            "Risk Score Load = Mileage Premium × (Risk Score Factor − 1), where Risk Score bands a composite of Safety Rating + Average Driver Violations",
+            "Add Per-Unit Exposure Charge (× rated units) and a Fixed Expense Load",
+            "Add policy fees, then state premium tax, to reach Final Premium",
+          ] },
+      ],
+    },
+  },
+  "General Liability": { verified: false, steps: [
+    "Premises/Operations: Basic Limit Loss Cost × Increased Limits Factor × LCM × Class Factor × Schedule Rating Mod × Experience Mod",
+    "Products/Completed Operations (if selected): 34% of the Premises/Operations premium",
+  ]},
+  "Commercial Property": { verified: false, steps: [
+    "(Total Insured Value / 100) × Base Rate × Construction Type × Protection Class × Occupancy × Wind/Hail Zone × Deductible × LCM × IRPM",
+    "Time Element (if selected): 22% of the base premium",
+  ]},
+  "Professional Liability (MPL)": { verified: false, steps: [
+    "Basic Limit Loss Cost × LCM × ILF (adjusted for retention) × Hazard Group × Defense Cost (ALAE) × Claims-Made/Year-in-Program × Loss Experience × State Mod × Underwriter Mod",
+  ]},
+  "Cyber": { verified: false, steps: [
+    "Base Rate (revenue-scaled) × Base Rate Deviation × Revenue Band × Industry Class × MFA Controls × Aggregate Limit × Retention × Schedule Rating",
+  ]},
+};
+
+/* ==========================================================================
+   Post-Rating Workflow Coverage — an honest map of ams-service's real,
+   full quote lifecycle (its urls.py: save-and-getpremium through
+   post-invoice-processor) against what THIS platform actually implements
+   downstream of a calculated premium. Same idea as Rate Tables' "Rating
+   Coverage" tab (full/partial/none against tracked rating tables) — this is
+   that same discipline applied to the WORKFLOW rather than the rate data.
+   Grouped by real ams-service endpoint, not restated as prose, so a gap
+   here points at an exact real capability, not a vague claim. Identical
+   across every version/LOB today (none of them go past a calculated quote
+   yet) — shown per version via "View Rating Engine" because that's where
+   an admin is already asking "what does this engine actually do." ========================================================================== */
+const WORKFLOW_COVERAGE = [
+  { group: "Quote Calculation", status: "full",
+    endpoints: "save-and-getpremium, getpremium-and-notify-vendor, revise-quote",
+    note: "The actual rating math — this platform's core, verified for Commercial Trucking." },
+  { group: "Rating Factor / Driver / Vehicle Detail", status: "full",
+    endpoints: "get-factor/<quote_id>/<json_id>, get-drivers-and-vehicles, get-full-vehicle-details",
+    note: "Rating Factors and Vehicle Schedule tabs on the sandbox quote page." },
+  { group: "Reference / Dropdown Data", status: "full",
+    endpoints: "get-newrater-dropdown-data, get-deductible-amount, get-business-subtype, get-voilationslist, get-miles-driven, get-highest-ratingclass-and-naics, get-available-radius-use, get-all-commodities, get-stated-value",
+    note: "The option lists and lookups behind the sandbox quote form's fields." },
+  { group: "Underwriter Referral", status: "partial",
+    endpoints: "send-for-review, update-all-approvals, ignore-rejected-approvals",
+    note: "eligibility.js already produces severity:\"refer\" outcomes, and Roles now models an Underwriter Manager who'd clear them — but there's no actual \"send to review\" action or approval queue on a quote yet." },
+  { group: "Commodity Management", status: "partial",
+    endpoints: "add-commodity, delete-commodity",
+    note: "Commodities Hauled is a curated, representative list (see the Cargo classification note) — not a tenant-editable CRUD the way the real endpoints allow." },
+  { group: "Bind & Policy Number", status: "none",
+    endpoints: "bind-quote, get-bindscreen-data, assign-policy-number, get-policy-number, get-policy-number-for-tp",
+    note: "Quotes.html has a \"Bound\" status value, but nothing actually transitions a quote through a bind screen or issues a real policy number." },
+  { group: "Endorsements", status: "none",
+    endpoints: "create-endorsement, update-endorsement, remove-endorsement, void-endorsement, process-endorsement-document",
+    note: "No endorsement concept exists on this platform at all — a bound policy can't be changed once written." },
+  { group: "Invoicing", status: "none",
+    endpoints: "post-invoice, post-external-invoice, post-hightech-invoice, post-invoice-processor, get-hightech-invoice-details",
+    note: "No billing/invoice generation after a quote is priced." },
+  { group: "Document Generation", status: "none",
+    endpoints: "get-quote-pdf, get-binder-pdf, get-policy-issuance-pdf, print-fsb-document",
+    note: "No PDF output for a quote, binder or issued policy." },
+  { group: "Subjective / UW Requirements", status: "none",
+    endpoints: "upload-subjective-documents, get-quote-subjectives, reset-quote-subjectives, update-quote-subjectives-status",
+    note: "No underwriting-requirements checklist or document upload attached to a quote." },
+];
+const WFCHIP = {
+  full:    '<span class="vx-b green">Implemented</span>',
+  partial: '<span class="vx-b amber">Partial</span>',
+  none:    '<span class="vx-b red">Not implemented</span>',
+};
+function workflowCoverageHtml() {
+  return `
+    <h6 style="font-size:12.5px;font-weight:700;margin:16px 0 8px"><i class="fa-solid fa-route me-1"></i>Post-Rating Workflow Coverage
+      <span class="vx-b gray" style="font-size:9px" title="Against ams-service's real urls.py">vs. the real system</span></h6>
+    <div class="vx-tw"><table class="vx-t">
+      <thead><tr><th>Capability</th><th>Status</th><th>Real endpoints</th><th>Note</th></tr></thead>
+      <tbody>${WORKFLOW_COVERAGE.map(w => `<tr>
+        <td><b>${w.group}</b></td>
+        <td>${WFCHIP[w.status]}</td>
+        <td><code style="font-size:10.3px">${w.endpoints}</code></td>
+        <td style="font-size:11.5px;color:var(--text-dim)">${w.note}</td></tr>`).join("")}
+      </tbody></table></div>`;
+}
+
+/* Account-Level Factor — the eight predefined credit/debit questions that
+   combine into ONE policy-level multiplier, clamped to the program band.
+   This is part of the real engine's definition, not a per-quote answer, so
+   it belongs on the rating engine alongside the calculation flow. Every
+   range below is computed from the real tables (D.truckAcct*) rather than
+   typed, so it can't drift from what the engine applies. Neither candidate
+   model (Model A / Model B) has an equivalent concept — this section is
+   about the real formula only.
+   Commercial Trucking only — no other line on this platform has an
+   equivalent policy-level factor. */
+function acctFactorSection(rec) {
+  if (rec.lob !== "Commercial Trucking") return "";
+  const pct = v => `${v > 0 ? "+" : ""}${(v * 100).toFixed(0)}%`;
+  const span = arr => {
+    const f = arr.map(x => x.factor).filter(v => typeof v === "number");
+    if (!f.length) return "—";
+    const lo = Math.min(...f), hi = Math.max(...f);
+    return lo === hi ? pct(lo) : `${pct(lo)} … ${pct(hi)}`;
+  };
+  const L = VX.truckAcctLicState;
+  const min = (VX.programParams.find(p => p.param === "Account Factor Min") || {}).value;
+  const max = (VX.programParams.find(p => p.param === "Account Factor Max") || {}).value;
+
+  const rows = [
+    ["ICC Filing", "Requires ICC filing?", span(Object.entries(VX.truckAcctICC).map(([, factor]) => ({ factor }))), "Table61"],
+    ["FMCSA / Carrier Safety", "Safety rating + open FMCSA alerts", span(VX.truckAcctCarrierSafety), "Table52"],
+    ["Renewal Discount", "Renewal AND eligible", span(Object.entries(VX.truckAcctRenewal).map(([, factor]) => ({ factor }))), "Table15"],
+    ["AL Loss Frequency", "3yr loss frequency × fleet size", span(VX.truckAcctLossFreq), "Table59"],
+    ["OOS — Vehicles", "Vehicle out-of-service rate", span(VX.truckAcctOOS.vehicles), "Table56"],
+    ["OOS — Drivers", "Driver out-of-service rate", span(VX.truckAcctOOS.drivers), "Table56"],
+    ["Business Years", "Years in business (New Venture … 7+)", span(VX.truckAcctBizExp), "Table60"],
+    ["Driver Licence State", "Foreign licence, or NY concentration", `${pct(0)} … ${pct(L.foreign)}`, "Insured!Z14"],
+  ];
+
+  return `
+    <h6 style="font-size:12.5px;font-weight:700;margin:16px 0 8px">
+      <i class="fa-solid fa-user-check me-1"></i>Account-Level Factor
+      <span class="vx-b gray">predefined</span></h6>
+    <div class="vx-exp2 mb-2" id="expAcct">
+      <div class="hd"><i class="fa-solid fa-sliders" style="color:var(--primary);font-size:11.5px"></i><b>Account factor</b><span><code>1 + Σ credits/debits</code>, clamped to <b>${min}–${max}</b>, applied per vehicle.</span><button type="button" class="tog" onclick="vxExpToggle('expAcct')">Why?</button></div>
+      <div class="bd"><p>Eight underwriting answers are summed into a single policy-level multiplier and applied inside the liability and physical-damage chains — not once at the end.</p>
+      <p>A <b>New Venture</b> floors the safety, out-of-service and loss-frequency lines at 0%: an unproven account can be debited by them but never credited.</p></div>
+    </div>
+    <div class="vx-tw"><table class="vx-t">
+      <thead><tr><th>Component</th><th>Driven by</th><th style="text-align:right">Range</th><th>Source</th></tr></thead>
+      <tbody>${rows.map(([n, d, r, s]) => `<tr>
+        <td><b>${n}</b></td>
+        <td style="font-size:12px;color:var(--text-dim)">${d}</td>
+        <td style="text-align:right;font-variant-numeric:tabular-nums">${r}</td>
+        <td><code style="font-size:10.6px">${s}</code></td></tr>`).join("")}
+        <tr style="background:var(--surface-2)">
+          <td colspan="2"><b>Clamped account factor</b></td>
+          <td style="text-align:right"><b>${min}× … ${max}×</b></td>
+          <td><code style="font-size:10.6px">Insured!Z15</code></td></tr>
+      </tbody></table></div>`;
+}
+
+function viewEngine(rec) {
+  const attached = attachedFormulas(rec);
+  const pipeline = ENGINE_PIPELINES[rec.lob];
+  const prod = VX.products.find(p => p.name === rec.product);
+  const fmtExpr = f => f.tokens && f.tokens.length ? f.tokens.map(t => t.v).join(" ") : "(empty)";
+
+  vxModal(`Rating Engine — ${rec.product} · ${rec.version}`, `
+    <div class="row g-2 mb-3">
+      <div class="col-md-3"><div class="vx-stat stack" style="padding:11px 13px"><div>
+        <div class="lbl">Status</div><div style="margin-top:4px">${verStatusChip(rec.status)}</div></div></div></div>
+      <div class="col-md-3"><div class="vx-stat stack" style="padding:11px 13px"><div>
+        <div class="lbl">App Type · Rater</div><div style="margin-top:4px">${prod ? `<span class="vx-b blue">${prod.appTypeId} · ${prod.raterType}</span>` : '<span style="color:var(--text-mute)">—</span>'}</div></div></div></div>
+      <div class="col-md-3"><div class="vx-stat stack" style="padding:11px 13px"><div>
+        <div class="lbl">Effective</div><div style="font-size:13px;font-weight:700;margin-top:3px">${rec.effectiveStart}</div></div></div></div>
+      <div class="col-md-3"><div class="vx-stat stack" style="padding:11px 13px"><div>
+        <div class="lbl">Formulas Attached</div><div style="font-size:13px;font-weight:700;margin-top:3px">${attached.length}</div></div></div></div>
+    </div>
+
+    <h6 style="font-size:12.5px;font-weight:700;margin-bottom:8px"><i class="fa-solid fa-diagram-project me-1"></i>Calculation Flow — ${rec.lob}</h6>
+    ${pipeline ? `
+      ${pipeline.verified
+        ? `<div class="vx-ai mb-2" style="padding:9px 13px;font-size:12px"><i class="fa-solid fa-circle-check me-1" style="color:var(--good)"></i>Verified line-by-line against ${pipeline.source}.</div>`
+        : `<div class="mb-2" style="border:1px solid var(--border);border-left:3px solid var(--warn);background:rgba(198,137,15,.08);border-radius:0 10px 10px 0;padding:9px 13px;font-size:12px"><i class="fa-solid fa-triangle-exclamation me-1" style="color:var(--warn)"></i>Working approximation — not yet verified line-by-line against a filed source rating manual or workbook.</div>`}
+      <ol style="padding-left:20px;font-size:12.5px;line-height:1.8">${pipeline.steps.map(s => `<li>${s}</li>`).join("")}</ol>
+      ${pipeline.caveat ? `<div style="border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:0 10px 10px 0;padding:9px 13px;font-size:11.5px;color:var(--text-dim);line-height:1.6"><i class="fa-solid fa-circle-info me-1" style="color:var(--accent)"></i>${pipeline.caveat}</div>` : ""}
+    ` : `<div style="font-size:12px;color:var(--text-mute)">No calculation flow documented for ${rec.lob} yet.</div>`}
+
+    ${pipeline && pipeline.candidateModels ? `
+    <h6 style="font-size:12.5px;font-weight:700;margin:18px 0 8px"><i class="fa-solid fa-flask me-1" style="color:var(--primary)"></i>Candidate Model Comparison <span class="vx-b gray" style="font-size:9px">not filed</span></h6>
+    ${pipeline.candidateModels.models.map(m => `
+      <h6 style="font-size:12px;font-weight:700;margin:12px 0 6px">${m.name}</h6>
+      <ol style="padding-left:20px;font-size:12.5px;line-height:1.8">${m.steps.map(s => `<li>${s}</li>`).join("")}</ol>`).join("")}
+    ${pipeline.candidateModels.caveat ? `<div style="border:1px solid var(--border);border-left:3px solid var(--primary);background:var(--primary-soft);border-radius:0 10px 10px 0;padding:9px 13px;font-size:11.5px;color:var(--text-dim);line-height:1.6"><i class="fa-solid fa-circle-info me-1" style="color:var(--primary)"></i>${pipeline.candidateModels.caveat}</div>` : ""}
+    ` : ""}
+
+    ${acctFactorSection(rec)}
+
+    ${workflowCoverageHtml()}
+
+    <h6 style="font-size:12.5px;font-weight:700;margin:16px 0 8px"><i class="fa-solid fa-square-root-variable me-1"></i>Formulas Attached to This Engine</h6>
+    ${attached.length ? `<div class="vx-tw"><table class="vx-t"><thead><tr><th>Formula</th><th>Scope</th><th>Expression</th><th>Tested</th><th>Status</th></tr></thead>
+      <tbody>${attached.map(f => `<tr data-fid="${f.id}" class="vx-row-click" title="Click for full details">
+        <td><b>${f.name}</b></td>
+        <td>${f.scope === "Class of Business" ? `<span class="vx-b blue">${f.cob}</span>` : '<span class="vx-b gray">Account</span>'}</td>
+        <td><code style="font-size:11px">${fmtExpr(f)}</code></td>
+        <td>${f.tested ? '<i class="fa-solid fa-circle-check" style="color:var(--good)"></i>' : '<i class="fa-solid fa-triangle-exclamation" style="color:var(--warn)"></i>'}</td>
+        <td><span class="vx-b ${f.status==="Active"?"green":"amber"}">${f.status}</span></td>
+      </tr>`).join("")}</tbody></table></div>
+      <div style="font-size:11px;color:var(--text-mute);margin-top:6px"><i class="fa-solid fa-arrow-pointer me-1"></i>Click any formula row for its full details.</div>`
+      : `<div class="vx-empty" style="padding:20px"><i class="fa-solid fa-inbox"></i>No formulas attached to this engine yet.<br><a href="formula-builder.html">Build one in the Formula Builder →</a></div>`}`,
+    [{ t: "Close", c: "secondary" }, { t: "Open Formula Builder", c: "primary", fn: () => { location.href = "formula-builder.html"; } }],
+    "modal-xl");
+
+  document.querySelectorAll('#vxModal [data-fid]').forEach(tr => {
+    tr.onclick = () => viewFormulaDetail(+tr.dataset.fid, rec);
+  });
+}
+
+function viewFormulaDetail(fid, engineRec) {
+  const f = VX.savedFormulas.find(x => x.id === fid);
+  if (!f) return;
+  const modalEl = document.getElementById("vxModal");
+  bootstrap.Modal.getInstance(modalEl)?.hide();
+  setTimeout(() => {
+    const expr = f.tokens && f.tokens.length
+      ? f.tokens.map(t => `<span class="vx-tok ${t.t}">${t.v}</span>`).join(" ")
+      : '<span style="color:var(--text-mute)">(empty formula)</span>';
+    vxModal(`Formula — ${f.name}`, `
+      <div class="row g-3 mb-3">
+        <div class="col-md-6"><label>Scope</label><div style="font-size:13px">${f.scope === "Class of Business" ? `Class of Business — <b>${f.cob}</b>` : "Account Level — applies once across the policy"}</div></div>
+        <div class="col-md-6"><label>Line of Business</label><div style="font-size:13px">${f.lob}</div></div>
+        <div class="col-md-6"><label>Rating Engines</label><div style="font-size:13px">${(f.attachments || []).length ? f.attachments.map(a => `${a.ratingVersion} <span style="color:var(--text-mute)">(${a.product})</span>`).join("<br>") : '<span style="color:var(--text-mute)">Unattached</span>'}</div></div>
+        <div class="col-md-6"><label>Status</label><div><span class="vx-b ${f.status==="Active"?"green":"amber"}">${f.status}</span></div></div>
+        <div class="col-md-6"><label>Tested</label><div>${f.tested
+          ? `<span class="vx-b green"><i class="fa-solid fa-circle-check me-1"></i>Yes — last run ${f.lastTestedAt || "—"}</span>`
+          : '<span class="vx-b amber"><i class="fa-solid fa-triangle-exclamation me-1"></i>Not tested since last change</span>'}</div></div>
+        <div class="col-md-6"><label>Last Updated</label><div style="font-size:13px">${f.updated} <span style="color:var(--text-mute)">by ${f.createdBy}</span></div></div>
+      </div>
+      <label>Expression</label>
+      <div class="vx-fb-canvas" style="min-height:auto;padding:10px 12px">${expr}</div>`,
+      [
+        { t: "← Back to Engine", c: "secondary", fn: () => { setTimeout(() => viewEngine(engineRec), 300); } },
+        { t: "Edit in Formula Builder", c: "primary", fn: () => { location.href = "formula-builder.html"; } },
+      ]);
+  }, 300);
+}
+
+function publishVersion(rec) {
+  if (rec.status === "Published") { vxToast("Already live", rec.version + " is already the published rating engine for " + rec.product, "info"); return; }
+  if (rec.status === "Expired" || rec.status === "Archived") {
+    vxToast(`Can't publish an ${rec.status.toLowerCase()} version`, "Duplicate it into a new draft first", "err"); return;
+  }
+  const attached = attachedFormulas(rec);
+  const untested = attached.filter(f => !f.tested);
+
+  const doPublish = () => {
+    const today = new Date().toISOString().slice(0, 10);
+    // Tenant-scoped: publishing must only retire THIS tenant's prior live
+    // version. Unscoped, it expired every tenant's version of the same
+    // product name — the clone pass gives several tenants the same names.
+    tenantVersions(rec.product).filter(v => v.status === "Published")
+      .forEach(v => { v.status = "Expired"; v.effectiveEnd = today; });
+    // A future effective date means Scheduled, not live yet — publishing
+    // shouldn't claim a version is rating business before its start date.
+    const startsInFuture = rec.effectiveStart && rec.effectiveStart > today;
+    rec.status = startsInFuture ? "Scheduled" : "Published";
+    if (!rec.effectiveStart) rec.effectiveStart = today;
+    rec.effectiveEnd = "";
+    // Formula status is a separate lifecycle from version status — engine.js
+    // matches savedFormulas on status === "Active", so this must stay "Active".
+    attached.forEach(f => f.status = "Active");
+    const prod = VX.products.find(p => p.name === rec.product);
+    if (prod && !startsInFuture) { prod.version = rec.version; prod.status = "Active"; prod.updated = today; }
+    localStorage.setItem("vxVersionsState", JSON.stringify(VX.versions));
+    localStorage.setItem("vxSavedFormulas", JSON.stringify(VX.savedFormulas));
+    localStorage.setItem("vxProductsState", JSON.stringify(VX.products));
+    vxToast(startsInFuture ? "Scheduled" : "Published",
+      startsInFuture
+        ? `${rec.version} goes live for ${rec.product} on ${rec.effectiveStart}`
+        : `${rec.version} is now the published rating engine for ${rec.product}`, "ok");
+    grid.reload();
+  };
+
+  if (untested.length) {
+    vxModal(`Publish ${rec.version} for ${rec.product}?`,
+      `<div style="display:flex;gap:14px;align-items:flex-start">
+        <div style="width:40px;height:40px;border-radius:10px;flex:none;display:grid;place-items:center;background:rgba(210,69,69,.12);color:var(--bad)">
+          <i class="fa-solid fa-triangle-exclamation"></i></div>
+        <div style="font-size:13.5px;line-height:1.6">
+          This retires the current Active version and makes <b>${rec.version}</b> the rating engine used for all new policies on <b>${rec.product}</b>,
+          carrying ${attached.length} formula${attached.length === 1 ? "" : "s"} into production —
+          <b>${untested.length}</b> of them untested: ${untested.map(f => `<b>${f.name}</b>`).join(", ")}
+          ${untested.length === 1 ? "hasn't" : "haven't"} been run through Evaluate Formula in the Formula Builder.
+          <div style="margin-top:8px"><a href="formula-builder.html">Go test ${untested.length === 1 ? "it" : "them"} first →</a></div>
+        </div></div>`,
+      [{ t: "Cancel", c: "secondary" }, { t: "Publish Anyway", c: "danger", fn: doPublish }], "modal-md");
+    return;
+  }
+
+  vxConfirm(`Publish ${rec.version} for ${rec.product}?`,
+    `This retires the current Active version and makes <b>${rec.version}</b> the rating engine used for all new policies on <b>${rec.product}</b>.` +
+    (attached.length
+      ? ` It carries <b>${attached.length}</b> tested formula${attached.length === 1 ? "" : "s"} into production.`
+      : ` No formulas are attached to this version yet — attach some from the Formula Builder before publishing if this line rates on formulas.`),
+    doPublish);
+}
+
+const grid = vxAgGrid({ el:"#grid", key:"versions", name:"Rating Version", size:12,
+  cols:[
+    {k:"product",l:"Product"},
+    {k:"version",l:"Version",r:r=>'<b>'+r.version+'</b>'},
+    {k:"status",l:"Status",r:r=>verStatusChip(r.status)},
+    {k:"_readiness",l:"Readiness",sort:false,r:readinessCell},
+    {k:"_formulas",l:"Formulas",sort:false,r:formulasCell},
+    {k:"effectiveStart",l:"Effective Start"},
+    {k:"effectiveEnd",l:"Effective End",r:r=>r.effectiveEnd||'<span style="color:var(--text-mute)">Open</span>'},
+    {k:"rateLockDate",l:"Rate Lock Date",r:r=>r.rateLockDate
+      ? '<i class="fa-solid fa-lock me-1" style="color:var(--text-mute);font-size:10px"></i>'+r.rateLockDate
+      : '<span style="color:var(--text-mute)" title="Set when the version gets an effective date">not set</span>'},
+    {k:"rateLockDays",l:"Lock Period",r:r=>r.rateLockDays+" days"},
+    {k:"changes",l:"Factor Changes",sort:false,r:r=>
+      '<span class="vx-b green">+'+r.added+' added</span> '+
+      '<span class="vx-b amber">'+r.changed+' changed</span> '+
+      (r.removed?'<span class="vx-b red">'+r.removed+' removed</span>':'')},
+    {k:"rateImpact",l:"Rate Impact",r:r=>'<b style="color:'+(r.rateImpact>0?"var(--bad)":"var(--good)")+'">'+(r.rateImpact>0?"+":"")+r.rateImpact.toFixed(1)+'%</b>'},
+    {k:"factorCount",l:"Total Factors"},
+    {k:"quotesRated",l:"Quotes Rated",r:r=>vxNum(r.quotesRated)},
+    {k:"createdBy",l:"Created By"}],
+  form:[
+    {k:"product",l:"Product",t:"select",opts:[...new Set(VX.products.map(p=>p.name))]},
+    {k:"version",l:"Version Label"},
+    {k:"status",l:"Status",t:"select",opts:VVER_ORDER,def:"Draft"},
+    {k:"effectiveStart",l:"Effective Start",t:"date"},
+    {k:"effectiveEnd",l:"Effective End",t:"date"},
+    {k:"rateLockDate",l:"Rate Lock Date",t:"date"},
+    {k:"rateLockDays",l:"Rate Lock Period (days)",t:"number"},
+    {k:"rateImpact",l:"Estimated Rate Impact %",t:"number",step:"0.1"},
+    {k:"createdBy",l:"Created By"},
+    /* Formula attachment inline in the form. It was only reachable through a
+       small row-action icon before, which is not discoverable — and a version
+       IS the thing a formula attaches to, so it belongs on the version's own
+       record. The relationship is stored on each formula's `attachments`,
+       not on the version, so this reads through `val` and is written back in
+       onAfterSave rather than being saved as a plain field. */
+    {k:"_formulas",l:"Attached Formulas",t:"multi",stacked:true,maxH:190,
+      dependsOn:"product",clearOnChange:false,
+      val:r=>attachedFormulas(r).map(f=>f.id),
+      opts:formulaOpts,
+      empty:"No formulas exist for this product's line of business yet — build one in Formulas.",
+      hint:"A formula rates on the version it is attached to. Only formulas for this product's line of business are listed."},
+    {k:"notes",l:"Notes",t:"textarea"}],
+  filters:[{k:"status",l:"Status",opts:VVER_ORDER},{k:"lob",l:"LOB",opts:vxLobNames()}],
+  extraView:[{k:"notes",l:"Notes"},{k:"createdOn",l:"Created On"}],
+  rowActions:[{i:"fa-diagram-project",t:"View Rating Engine",fn:viewEngine},
+    {i:"fa-square-root-variable",t:"Attach / detach formulas",fn:manageFormulas},
+    {i:"fa-rocket",t:"Publish (Go Live)",fn:publishVersion}],
+  onHist: rec => showChanges(rec.id),
+  onAfterSave: saveFormulaAttachments,
+});
+
+document.getElementById("dupVerBtn").onclick = duplicateVersionPicker;
+document.getElementById("cmpVerBtn").onclick = compareVersionsPicker;
+document.getElementById("nextVerBtn").onclick = createNextVersion;
+
+/* Arriving from a product's "View Rating Engine" link (products.html) —
+   jump straight to that product's current engine instead of making the
+   admin hunt for it in the grid. */
+(() => {
+  const qProduct = new URLSearchParams(location.search).get("product");
+  if (!qProduct) return;
+  const rec = VX.versions.find(v => v.product === qProduct && v.status === "Published")
+    || VX.versions.find(v => v.product === qProduct && v.status === "Draft");
+  if (rec) setTimeout(() => viewEngine(rec), 400);
+})();
+
+/* Arriving from the Dashboard's Publish action — open that version's
+   publish flow directly, so publishing a draft is 2 clicks from the
+   dashboard rather than a hunt through this grid. */
+(() => {
+  const qPublish = new URLSearchParams(location.search).get("publish");
+  if (!qPublish) return;
+  const rec = VX.versions.find(v => v.id == qPublish);
+  if (rec) setTimeout(() => publishVersion(rec), 500);
+})();
+
+/* What Changed drawer replaces the generic history modal for versions —
+   wired via vxAgGrid's onHist hook above, not a DOM click-interception hack. */
+function showChanges(id, pickedOlderId) {
+  const v = VX.versions.find(x => x.id == id);
+  if (!v) return;
+  const realPrior = tenantVersions(v.product).filter(x => x.id !== v.id)
+    .sort((a, b) => b.effectiveStart.localeCompare(a.effectiveStart))
+    .find(x => x.effectiveStart < v.effectiveStart);
+  const pickedOlder = pickedOlderId != null ? VX.versions.find(x => x.id == pickedOlderId) : null;
+  // Change tracking only stores a diff of a version against the one immediately
+  // before it — if the admin picked a non-adjacent pair, be honest about that
+  // instead of fabricating a diff, and fall back to the real adjacent pair.
+  const mismatch = pickedOlder && realPrior && pickedOlder.id !== realPrior.id;
+  const prior = realPrior;
+
+  const rows = t => v.changes.filter(c => c.type === t);
+  const sec = (t, icon) => {
+    const list = rows(t);
+    if (!list.length) return "";
+    return `<h6 style="font-size:12.3px;font-weight:700;margin:14px 0 7px;display:flex;align-items:center;gap:7px">
+        <span class="vx-b ${TCOL[t]}"><i class="fa-solid ${icon} me-1"></i>${t}</span>
+        <span style="color:var(--text-mute);font-weight:500">${list.length} factor${list.length>1?"s":""}</span></h6>
+      <div class="vx-tw"><table class="vx-t">
+        <thead><tr><th>Factor</th><th>Category</th><th>From</th><th>To</th><th>Why</th></tr></thead>
+        <tbody>${list.map(c => `<tr>
+          <td><b>${c.factor}</b></td>
+          <td><span class="vx-b gray">${c.category}</span></td>
+          <td style="color:var(--text-mute)">${c.from}</td>
+          <td style="font-weight:650;color:${t==="Added"?"var(--good)":t==="Removed"?"var(--bad)":"var(--primary)"}">${c.to}</td>
+          <td style="font-size:12px;color:var(--text-dim)">${c.detail}</td></tr>`).join("")}
+        </tbody></table></div>`;
+  };
+
+  vxModal(`What changed in ${v.version} — ${v.product}`, `
+    ${mismatch ? vxNotWiredBanner(`Change tracking only stores a diff of a version against the one immediately before it. <b>${pickedOlder.version}</b> is not ${v.version}'s immediate predecessor — that's <b>${realPrior ? realPrior.version : "none"}</b> — so a direct ${pickedOlder.version} → ${v.version} diff isn't available. Showing ${v.version}'s tracked changes vs its real predecessor below instead.`) : ""}
+    <div class="row g-2 mb-2">
+      <div class="col-md-3"><div class="vx-stat stack" style="padding:11px 13px"><div>
+        <div class="lbl">Effective</div><div style="font-size:14px;font-weight:700;margin-top:3px">${v.effectiveStart || "not set"}</div>
+        <div class="dt flat">${v.effectiveEnd || "open-ended"}</div></div></div></div>
+      <div class="col-md-3"><div class="vx-stat stack" style="padding:11px 13px"><div>
+        <div class="lbl"><i class="fa-solid fa-lock me-1"></i>Rate Lock</div>
+        <div style="font-size:14px;font-weight:700;margin-top:3px">${v.rateLockDate || "not set"}</div>
+        <div class="dt flat">${v.rateLockDays}-day lock</div></div></div></div>
+      <div class="col-md-3"><div class="vx-stat stack" style="padding:11px 13px"><div>
+        <div class="lbl">Rate Impact</div>
+        <div style="font-size:14px;font-weight:700;margin-top:3px;color:${v.rateImpact>0?"var(--bad)":"var(--good)"}">${v.rateImpact>0?"+":""}${v.rateImpact.toFixed(1)}%</div>
+        <div class="dt flat">avg premium</div></div></div></div>
+      <div class="col-md-3"><div class="vx-stat stack" style="padding:11px 13px"><div>
+        <div class="lbl">Quotes Rated</div><div style="font-size:14px;font-weight:700;margin-top:3px">${vxNum(v.quotesRated)}</div>
+        <div class="dt flat">on this version</div></div></div></div>
+    </div>
+
+    <div class="vx-ai" style="padding:10px 13px">
+      <b>${v.version}</b> supersedes <b>${prior ? prior.version : "— (first version)"}</b>.
+      It contains <b>${v.factorCount}</b> rating factors in total, of which
+      <b>${v.added} were added</b>, <b>${v.changed} were changed</b>${v.removed?` and <b>${v.removed} removed</b>`:""}.
+      Quotes issued on or before <b>${v.rateLockDate}</b> stay on ${prior ? prior.version : "the prior version"}'s rates for ${v.rateLockDays} days.
+    </div>
+
+    ${sec("Added","fa-plus")}${sec("Changed","fa-pen")}${sec("Removed","fa-minus")}`,
+    [{ t: "Close", c: "secondary" },
+     { t: "Export Change Log", c: "primary", fn: () => {
+        vxCSV(`${v.product.replace(/\s+/g,"-")}-${v.version}-changes`,
+          [{k:"type",l:"Type"},{k:"factor",l:"Factor"},{k:"category",l:"Category"},{k:"from",l:"From"},{k:"to",l:"To"},{k:"detail",l:"Reason"}],
+          v.changes);
+     }}], "modal-xl");
+}
+</script>
+</body>
+</html>

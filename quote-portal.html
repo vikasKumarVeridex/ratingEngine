@@ -1,0 +1,2525 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sandbox Quote Generation — Main | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+<style>
+.lobcard{border:2px solid var(--border);border-radius:12px;padding:16px;cursor:pointer;transition:.16s;background:var(--surface);height:100%}
+.lobcard:hover{border-color:var(--primary);transform:translateY(-2px);box-shadow:var(--shadow)}
+.lobcard.on{border-color:var(--primary);background:var(--primary-soft)}
+.lobcard i{font-size:20px;margin-bottom:8px;display:block}
+.lobcard b{display:block;font-size:13.5px;margin-bottom:3px}
+.lobcard span{font-size:11.5px;color:var(--text-dim);line-height:1.4}
+.grp{border:1px solid var(--border);border-radius:11px;margin-bottom:12px;overflow:hidden}
+.grp>h3{background:var(--surface-2);margin:0;padding:10px 14px;font-size:12.8px;font-weight:700;display:flex;align-items:center;gap:8px}
+.grp>.bd{padding:14px}
+.cov{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px;background:var(--surface)}
+.cov.on{border-color:var(--primary);background:var(--primary-soft)}
+.cov b{font-size:12.6px;flex:1}
+
+/* ---- factor provenance: Default -> Input -> Matched Rule -> Applied -> Impact ---- */
+.ftrow{cursor:pointer}
+.ftrow:hover{background:var(--primary-soft)}
+.fchain{display:flex;flex-wrap:wrap;margin:0 0 10px}
+.fstep{flex:1 1 118px;min-width:110px;padding:7px 10px;background:var(--surface);border:1px solid var(--border)}
+.fstep:first-child{border-radius:8px 0 0 8px}
+.fstep:last-child{border-radius:0 8px 8px 0}
+.fstep+.fstep{border-left:none}
+.fstep .k{font-size:9px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--text-mute);display:block;margin-bottom:3px}
+.fstep .v{font-size:12.3px;font-weight:650;line-height:1.35;word-break:break-word}
+.fstep.applied{background:var(--primary-soft);border-color:var(--primary)}
+.fstep.applied .v{color:var(--primary)}
+.fstep.up .v{color:var(--bad)}
+.fstep.down .v{color:var(--good)}
+.fopt{display:flex;justify-content:space-between;gap:10px;padding:4px 9px;font-size:11.7px;border-radius:5px}
+.fopt.on{background:var(--primary-soft);color:var(--primary);font-weight:750}
+.fimp{font-size:10.5px;font-weight:750;padding:1px 7px;border-radius:20px;white-space:nowrap;display:inline-block}
+.fimp.up{background:rgba(210,69,69,.13);color:var(--bad)}
+.fimp.down{background:rgba(18,160,106,.13);color:var(--good)}
+.fimp.flat{background:var(--surface-3);color:var(--text-mute)}
+.fbar{height:5px;border-radius:3px;background:var(--surface-3);overflow:hidden;min-width:52px}
+.fbar i{display:block;height:100%;border-radius:3px}
+</style>
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/rate-data-full.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/app-types.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/grid.js"></script>
+<script src="assets/js/engine.js"></script>
+<script src="assets/js/eligibility.js"></script>
+<script>
+vxShell("Sandbox Quote Generation", "Pick a product, fill in the details, get a premium. || A sandbox for exercising the rating engine — each product shows only its own questions.",
+  [{ l: "Main" }, { l: "Sandbox Quote Generation" }]);
+
+/* ============================================================
+   Option lists below mirror the REAL values found in ams-ui /
+   ams-service. Source file noted per list.
+   ============================================================ */
+
+// ams-ui add-submission.component.html:6018-6024 (radiusOfOperationsFormGroup)
+const TRUCK_RADIUS = [["local_200","Local (200 mi)"],["local_intermediate","Local / Intermediate"],
+  ["12_western","12 Western States"],["48_states","48 States"],["long_haul","Long Haul (1001+ mi)"]];
+// ams-ui add-submission-new-rater.component.ts:1366-1373
+const TRUCK_LIMITS = [500000,1000000,2000000];
+// CA_Liab_Deductible (Combined Single Limit) — real 10-value ladder
+const TRUCK_DED = [0,1000,2500,5000,10000,20000,25000,50000,75000,100000];
+// DeductFctr_ALT (PhysDamRatesByTIV!J1:L8) — real 7-value ladder
+const TRUCK_APD_DED = [1000,2500,5000,7500,10000,15000,20000];
+
+// ams-ui gl-additional-coverages.component.ts:55-82 (gklLimit) — real 27-value ladder
+const GKL_LIMITS = [6000,7500,9000,12000,15000,18000,22500,30000,37500,45000,60000,75000,90000,120000,150000,180000,225000,300000,375000,450000,600000,750000,900000,1200000,1500000,2000000,2500000];
+const GL_LIMITS = [100000,300000,500000,1000000,2000000,5000000];
+
+// ams-ui cyber-insuring-agreements.component.ts:57-78 (two real limit ladders)
+const CYBER_LIMITS_A = [100000,250000,500000,750000,1000000,2000000,3000000,4000000,5000000];
+const CYBER_LIMITS_B = [25000,50000,100000,250000,500000,750000,1000000,2000000,3000000,4000000,5000000];
+const CYBER_RETENTIONS = [25000,50000,100000,250000];
+// ams-ui cyber-insuring-agreements.component.ts:95-124 — real insuring agreements
+const CYBER_AGREEMENTS = {
+  "Liability": ["Privacy and Security","Payment Card Costs","Media","Regulatory Proceedings"],
+  "Breach Response": ["Privacy Breach Notification","Computer and Legal Experts","Betterment","Cyber Extortion","Data Restoration","Public Relations"],
+  "Cyber Crime": ["Computer Fraud","Funds Transfer Fraud","Social Engineering Fraud","Telecom Fraud"],
+  "Business Loss": ["Business Interruption","Dependent Business Interruption","Reputation Harm","System Failure","Accounting Costs"],
+};
+
+// ams-ui mpl-coverages-section.component.html:143,155 + .ts:42-52
+const MPL_ALAE = ["Defense Within Limits","Defense Outside Limits"];
+const MPL_YIP = ["1st","2nd","3rd","4th or More"];
+const MPL_LIMITS = [100000,200000,300000,500000,1000000,2000000];
+const MPL_RETENTIONS = [1000,2500,5000,10000,25000,50000];
+
+// Real NCCI standard Employers Liability limit triad — every state WC filing
+// offers exactly these three (Each Accident / Disease Policy Limit / Disease
+// Each Employee); a state can require the $500K or $1M tier as its minimum.
+const WC_EL_LIMITS = ["$100K / $500K / $100K", "$500K / $500K / $500K", "$1M / $1M / $1M"];
+
+// ams-ui gl-property.component.html:222-228 (construction), :214-217 (sprinklered)
+const PROP_CONSTRUCTION = [["FRAME","Frame"],["JM","Joisted Masonry"],["NC","Non-Combustible"],["MNC","Masonry Non-Combustible"],["MFR","Modified Fire Resistive"],["FR","Fire Resistive"]];
+const PROP_SPRINKLER = ["No","Yes","Partial"];
+// ams-ui property-cat.component.ts:46-64 (wind/hail deductible)
+const PROP_WH_DED = ["EXCLUDED","1%","2%","3%","4%","5%","6%","7%","8%","9%","10%","$10,000","$25,000","$50,000","$75,000","$100,000","$250,000","$500,000"];
+const PROP_DED = [1000,2500,5000,10000,25000,50000,100000];
+
+const LOBS = [
+  { k:"TRUCK", n:"Commercial Trucking", i:"fa-truck", c:"var(--cat-1)", d:"Auto Liability, Physical Damage & Cargo" },
+  { k:"GL",    n:"General Liability",   i:"fa-store", c:"var(--cat-2)", d:"Premises/Ops & Products liability" },
+  { k:"PROP",  n:"Commercial Property", i:"fa-building", c:"var(--cat-3)", d:"Building, BPP & Time Element" },
+  { k:"MPL",   n:"Professional Liability", i:"fa-user-tie", c:"var(--cat-4)", d:"Claims-made misc professional" },
+  { k:"CYBER", n:"Cyber", i:"fa-shield-virus", c:"var(--cat-5)", d:"Privacy, breach, crime & business loss" },
+  { k:"WC",    n:"Workers' Compensation", i:"fa-hard-hat", c:"var(--cat-6)", d:"Statutory benefits & employers liability — admitted, not surplus lines" },
+];
+
+const opt = (arr, cur) => arr.map(o => {
+  const [v, l] = Array.isArray(o) ? o : [o, typeof o === "number" ? vxMoney(o) : o];
+  return `<option value="${v}" ${String(v) === String(cur) ? "selected" : ""}>${l}</option>`;
+}).join("");
+
+/* ?lob= lets the Dashboard's "Test Rating" action land straight on the
+   right line of business (matched by LOB name, since that's what the
+   dashboard's switcher works in). */
+const S = { lob: "TRUCK", v: {}, res: null };
+(() => {
+  const q = new URLSearchParams(location.search).get("lob");
+  if (!q) return;
+  const hit = VX.lobs.find(l => l.name === q);
+  // Whitelisted against LOBS (this page's own registry of what actually has a
+  // sandbox form) rather than trusting any code VX.lobs happens to carry —
+  // this used to hardcode the 5 codes that existed when it was written, which
+  // silently dropped ?lob= for every line added afterward, including this one.
+  if (hit && LOBS.some(l => l.k === hit.code)) S.lob = hit.code;
+})();
+
+/* ---------- Coverage = Class of Business, parent → child ----------
+   Selecting a PRIMARY coverage reveals its CHILD coverages. Premium rolls up
+   per primary group, matching the real parent_cob_id / class_of_business_id
+   model used in the ams premium grid. */
+/* ==========================================================================
+   Coverage tab — one card per class of business.
+   Each selected coverage shows the limits/deductibles that belong to IT
+   (rather than a detached "Limits & Deductibles" block at the bottom), and
+   once a premium has been calculated each child class shows its rating
+   factor and its share of that coverage's premium. Nothing about the
+   calculation changes — the child split is the same weighting childRows()
+   already uses for the breakdown panel.
+   ========================================================================== */
+
+/* Limit / deductible fields, mapped to the coverage they actually belong to. */
+const COV_FIELDS = {
+  "Auto Liability":         [["liabLimit","Liability Limit (CSL)",TRUCK_LIMITS,1000000],
+                             ["liabDeductible","Liability Deductible",TRUCK_DED,5000]],
+  /* APD's limit is the scheduled stated value, not a chosen limit — shown
+     derived so the coverage doesn't look like it's missing one. */
+  "Physical Damage":        [["_apdLimit","Limit (Total Insured Value)","derived",
+                               v => { const tiv = (v.vehicles || []).reduce((a, x) =>
+                                        a + (+x.value || 0) + (x.trailer && !String(x.trailer).startsWith("None") ? (+x.trailerValue || 0) : 0), 0);
+                                      return { value: tiv ? vxMoney(tiv) : "—",
+                                               note: `Sum of ${(v.vehicles || []).length} scheduled unit(s) + trailers — set on the Vehicle Schedule` }; }],
+                             ["apdDeductible","Physical Damage Deductible",TRUCK_APD_DED,5000]],
+  "Motor Truck Cargo":      [["cargoLimit","Cargo Limit ($)","num",100000],
+                             ["cargoCommodity","Commodity Hauled",null,null]],
+  "General Liability":      [["limit","Each Occurrence Limit",GL_LIMITS,1000000],
+                             ["gklLimit","Garagekeepers Limit (optional)",[0].concat(GKL_LIMITS),0]],
+  "Property":               [["deductible","All-Other-Perils Deductible",PROP_DED,5000],
+                             ["windHailDed","Wind / Hail Deductible",PROP_WH_DED,"2%"]],
+  "Professional Liability": [["limit","Per-Claim Limit",MPL_LIMITS,200000],
+                             ["retention","Retention",MPL_RETENTIONS,5000],
+                             ["alae","Defense Cost (ALAE)",MPL_ALAE,"Defense Within Limits"]],
+  "Liability":              [["limit","Aggregate Limit",CYBER_LIMITS_A,1000000],
+                             ["sublimit","Cyber Crime Sub-Limit",CYBER_LIMITS_B,250000],
+                             ["retention","Retention",CYBER_RETENTIONS,25000]],
+  /* Employers Liability sells as a matched triad (Each Accident / Disease
+     Policy Limit / Disease Each Employee), not three independent numbers —
+     "$100K/$500K/$100K", "$500K/$500K/$500K", "$1M/$1M/$1M" is the real,
+     standard NCCI convention every WC filing offers. Part One (statutory
+     benefits) carries no dollar limit by law, so there is nothing to select
+     for it. */
+  "Workers' Compensation":  [["wcElLimit","Employers Liability Limit",WC_EL_LIMITS,"$500K / $500K / $500K"],
+                             ["_wcTotalPayroll","Total Scheduled Payroll","derived",
+                               v => ({ value: vxMoney((v.wcExposures || []).reduce((a, x) => a + (+x.payroll || 0), 0)),
+                                       note: `Sum of ${(v.wcExposures || []).length} class-code row(s) — set on the Risk Details tab` })]],
+};
+
+/* Which rated group belongs to a coverage — same name reconciliation
+   childRows() uses, kept in one place so the two can't drift. */
+function ratedGroupFor(covName) {
+  const r = S.res;
+  if (!r) return null;
+  return r.groups.find(g => g.name === covName
+    || (covName === "Motor Truck Cargo" && g.name.startsWith("Cargo"))
+    || g.name.startsWith(covName) || covName.startsWith(g.name)) || null;
+}
+
+function covFieldHtml(k, label, arr, def) {
+  const v = S.v;
+  /* A derived limit: read-only, computed from answers given elsewhere.
+     Physical Damage has no limit box of its own because its limit IS the
+     scheduled stated value — but showing nothing made the field look
+     missing, so it is displayed with the figure and where it comes from. */
+  if (arr === "derived") {
+    const d = def(v);
+    return `<div class="col-md-4"><label>${label}</label>
+      <div class="form-control form-control-sm" style="background:var(--surface-2);color:var(--text);cursor:not-allowed">${d.value}</div>
+      <div style="font-size:10.5px;color:var(--text-mute);margin-top:3px">${d.note}</div></div>`;
+  }
+  if (k === "cargoCommodity") {
+    if (v[k] === undefined) v[k] = VX.truckCargoCommodities[0].code;
+    const c = VX.truckCargoCommodities.find(x => x.code === v[k]);
+    return `<div class="col-md-4"><label>${label}</label>
+      <select class="form-select form-select-sm F" data-k="${k}">
+        ${VX.truckCargoCommodities.map(x => `<option value="${x.code}" ${x.code === v[k] ? "selected" : ""}>${x.label}${x.excluded ? " — EXCLUDED" : ""}</option>`).join("")}
+      </select>${c && c.excluded ? `<div style="font-size:10.8px;color:var(--bad);margin-top:3px"><i class="fa-solid fa-ban me-1"></i>${c.reason}</div>` : ""}</div>`;
+  }
+  if (v[k] === undefined) v[k] = def;
+  if (arr === "num") {
+    return `<div class="col-md-4"><label>${label}</label>
+      <input type="number" class="form-control form-control-sm F" data-k="${k}" value="${v[k]}"></div>`;
+  }
+  const isMoney = typeof arr[0] === "number";
+  return `<div class="col-md-4"><label>${label}</label>
+    <select class="form-select form-select-sm F" data-k="${k}">
+      ${arr.map(o => `<option value="${o}" ${String(o) === String(v[k]) ? "selected" : ""}>${isMoney ? (o === 0 ? "None" : vxMoney(o)) : o}</option>`).join("")}
+    </select></div>`;
+}
+
+function coverageTree(lobName, color) {
+  const parents = VX.cobParents.filter(p => p.lob === lobName);
+  if (!S.v.cov) {
+    S.v.cov = {};
+    parents.forEach(p => {
+      const kids = VX.cob.filter(c => c.parentCobId === p.id);
+      S.v.cov[p.id] = { on: p.mandatory, kids: kids.filter(k => k.mandatory).map(k => k.id) };
+    });
+  }
+
+  const cards = parents.map(p => {
+    const kids = VX.cob.filter(c => c.parentCobId === p.id);
+    const st = S.v.cov[p.id] || { on: false, kids: [] };
+    const g = st.on ? ratedGroupFor(p.name) : null;
+    const chosen = kids.filter(k => st.kids.includes(k.id));
+    const wt = chosen.reduce((a, k) => a + (k.factor || 0.1), 0) || 1;
+    const fields = COV_FIELDS[p.name] || [];
+
+    return `<div class="vx-covcard ${st.on ? "on" : ""}">
+      <div class="hd">
+        <input class="form-check-input PCOV" type="checkbox" data-p="${p.id}" ${st.on ? "checked" : ""} ${p.mandatory ? "disabled" : ""}>
+        <b>${p.name}</b>
+        <span class="vx-b ${p.mandatory ? "green" : "gray"}">${p.mandatory ? "Required" : "Optional"}</span>
+        <span class="vx-b cyan">${chosen.length}/${kids.length} classes</span>
+        ${g ? `<span class="prem">${vxMoney(g.subtotal)}</span>` : ""}
+      </div>
+      ${st.on ? `
+        ${fields.length ? `<div class="sec"><div class="lbl">Limits &amp; Deductibles</div>
+          <div class="row g-3">${fields.map(f => covFieldHtml(f[0], f[1], f[2], f[3])).join("")}</div></div>` : ""}
+        <div class="sec"><div class="lbl">Classes of business included${g ? " — factor &amp; premium share" : ""}</div>
+          <table class="vx-t covkids"><tbody>
+            ${kids.map(k => {
+              const on = st.kids.includes(k.id);
+              const share = (g && on) ? g.subtotal * (k.factor || 0.1) / wt : null;
+              return `<tr class="${on ? "" : "off"}">
+                <td style="width:26px"><input class="form-check-input KCOV" type="checkbox" data-p="${p.id}" data-k="${k.id}"
+                  id="k${k.id}" ${on ? "checked" : ""} ${k.mandatory ? "disabled" : ""}></td>
+                <td><label for="k${k.id}" style="cursor:pointer;margin:0">${k.name}</label>
+                  ${k.mandatory ? '<span class="vx-b green ms-1">required</span>' : ""}</td>
+                <td class="num">${on ? `<span class="vx-b gray" title="Relative weight of this class within the coverage">${(k.factor || 0.1).toFixed(3)}×</span>` : ""}</td>
+                <td class="num">${share != null ? `<b>${vxMoney(share)}</b>` : (on && !g ? '<span class="pt-mute">not yet rated</span>' : "")}</td>
+              </tr>`;
+            }).join("")}
+          </tbody></table>
+        </div>` : `<div class="sec off-note">Tick the box to quote this coverage and set its limits.</div>`}
+    </div>`;
+  }).join("");
+
+  const total = S.res ? S.res.coveragePremium : null;
+  return `<div class="vx-covwrap">${cards}
+    ${total != null ? `<div class="vx-covtotal"><span>Coverage Premium</span><b>${vxMoney(total)}</b></div>` : ""}
+  </div>`;
+}
+
+/* ================= Vehicle schedule (each unit can tow a trailer) =================
+   Mirrors the Vehicles tab: Vehicle #, Type/Class, Model Year, Value, Trailer
+   Type, Radius, Annual Miles, Garaging State. */
+function newVehicle(n) {
+  const year = 2022;
+  return { n, desc: "Unit " + n, vin: "", primaryClass: "321", year, value: VX.truckStatedValueFor(year, "powerUnit"),
+    /* `trailer` / `trailerValue` stay on the row because the engine reads them,
+       but they are now DERIVED from the trailer schedule rather than typed
+       here — see syncTrailers(). */
+    trailer: "Dry Van / Box — Single", trailerValue: 35000, miles: 65000, garageState: S.v.state || "TX",
+    // Vehicles-tab fields the rater sets per unit. Left blank/undefined they
+    // inherit the account-level answer, so simple fleets stay simple.
+    units: 1, vehType: "Trucks, Tractors And Trailers", garageZip: "", garageCity: "",
+    valuationBasis: "Stated Amount", secondaryClass: "", covLiab: true, covApd: true,
+    radiusClass: "", ratingClass: "", naicsCode: "", liabLimit: "",
+    liabDedType: "Combined Single Limit", liabDeductible: "", apdDedType: "Collision & Comprehensive All Perils", apdDeductible: "" };
+}
+/* Per-unit detail. These are all Vehicles-tab columns the rater sets per
+   vehicle; leaving one on "Use account value" inherits the policy-level
+   answer, so a uniform fleet needs no extra input at all. */
+function vehicleDetail(x, i) {
+  const inherit = `<option value="">Use account value</option>`;
+  const f = (lbl, name, inner, hint) => `<div class="col-md-3 mb-2"><label style="font-size:10.5px">${lbl}</label>${inner}
+    ${hint ? `<small class="d-block" style="font-size:9.8px;color:var(--text-mute);line-height:1.3">${hint}</small>` : ""}</div>`;
+  const selV = (name, opts, cur, withInherit) => `<select class="form-select form-select-sm V" data-i="${i}" data-f="${name}">
+    ${withInherit ? inherit : ""}${opts.map(([v, l]) => `<option value="${v}" ${String(v) === String(cur) ? "selected" : ""}>${l}</option>`).join("")}</select>`;
+  const numV = (name, cur, w) => `<input type="number" class="form-control form-control-sm V" data-i="${i}" data-f="${name}" value="${cur}" style="${w || ""}">`;
+  const txtV = (name, cur) => `<input type="text" class="form-control form-control-sm V" data-i="${i}" data-f="${name}" value="${cur}">`;
+  return `<div style="font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--text-mute);margin-bottom:7px">
+      Unit ${x.n} — per-vehicle detail</div>
+    <div class="row g-2">
+      ${f("Number of Units", "units", numV("units", x.units || 1, "width:80px"), "One row can stand for several identical units")}
+      ${f("Vehicle Type", "vehType", selV("vehType", [["Trucks, Tractors And Trailers","Trucks/Tractors/Trailers"],["Private Passenger Types","Private Passenger Types"]], x.vehType), "Selects the TTT or PPT factor columns")}
+      ${f("Garaging Zip", "garageZip", txtV("garageZip", x.garageZip || ""), "Rater resolves territory from ZIP")}
+      ${f("Garaging City", "garageCity", txtV("garageCity", x.garageCity || ""))}
+      ${f("Valuation Basis", "valuationBasis", selV("valuationBasis", VX.truckValuationBasis.map(b => [b, b]), x.valuationBasis))}
+      ${f("Secondary Class", "secondaryClass", selV("secondaryClass",
+          (typeof VXFULL !== "undefined" ? VXFULL.secondaryClasses : []).map(r => [r[0], `${r[0]} — ${r[1] || "Secondary Class " + r[0]} (${r[2]}×)`]),
+          x.secondaryClass, true), "Ranges 0.49×–2.35× by what the vehicle hauls")}
+      ${f("Radius", "radiusClass", selV("radiusClass", TRUCK_RADIUS, x.radiusClass, true), "Overrides the account radius")}
+      ${f("Rating Class", "ratingClass", selV("ratingClass", VX.truckRatingClass.map(r => [r.ratingClass, r.ratingClass]), x.ratingClass, true))}
+      ${f("NAICS Code", "naicsCode", selV("naicsCode", VX.truckNAICS.map(n => [n.code, n.code]), x.naicsCode, true))}
+      ${f("Liability Limit", "liabLimit", selV("liabLimit", TRUCK_LIMITS.map(l => [l, vxMoney(l)]), x.liabLimit, true))}
+      ${f("Liab Deductible Type", "liabDedType", selV("liabDedType", VX.truckLiabDeductTypes.map(t => [t, t]), x.liabDedType))}
+      ${f("Liab Deductible", "liabDeductible", selV("liabDeductible", TRUCK_DED.map(d => [d, vxMoney(d)]), x.liabDeductible, true))}
+      ${f("APD Deductible", "apdDeductible", selV("apdDeductible", TRUCK_APD_DED.map(d => [d, vxMoney(d)]), x.apdDeductible, true))}
+      ${f("Coverage — Liability", "covLiab", `<div class="form-check form-switch"><input class="form-check-input V" type="checkbox" data-i="${i}" data-f="covLiab" ${x.covLiab !== false ? "checked" : ""}></div>`, "Uncheck to exclude this unit")}
+      ${f("Coverage — Physical Damage", "covApd", `<div class="form-check form-switch"><input class="form-check-input V" type="checkbox" data-i="${i}" data-f="covApd" ${x.covApd !== false ? "checked" : ""}></div>`)}
+    </div>`;
+}
+function toggleVeh(i) {
+  const el = document.getElementById("vd" + i);
+  if (el) el.style.display = el.style.display === "none" ? "table-row" : "none";
+}
+function vehicleSchedule() {
+  if (!S.v.vehicles) S.v.vehicles = [newVehicle(1), newVehicle(2)];
+  syncTrailers();
+  const cls = VX.truckPrimary.filter(p => ["311","312","321","322","331","341","351","671","672"].includes(p.code));
+  return unitErrorBanner() + `<div class="grp"><h3><i class="fa-solid fa-truck-front" style="color:var(--cat-1)"></i>
+      Vehicle Schedule <span class="vx-b blue">${S.v.vehicles.length} units</span>
+      <button class="btn btn-primary btn-sm ms-auto" onclick="addVeh()"><i class="fa-solid fa-plus me-1"></i>Add Vehicle</button></h3>
+    <div class="bd"><div class="vx-tw"><table class="vx-t">
+      <thead><tr><th>#</th><th>Description</th><th>VIN</th><th>Vehicle Class</th><th>Model Yr</th><th>Value</th>
+        <th>Trailers</th><th>Annual Miles</th><th>Garaged</th><th></th></tr></thead>
+      <tbody>${S.v.vehicles.map((x, i) => `<tr>
+        <td><b>${x.n}</b></td>
+        <td><input class="form-control form-control-sm V" data-i="${i}" data-f="desc" value="${x.desc}" style="min-width:110px"></td>
+        <td><input class="form-control form-control-sm V" data-i="${i}" data-f="vin" value="${x.vin || ""}"
+          placeholder="17-char VIN" maxlength="17" style="min-width:170px;text-transform:uppercase"></td>
+        <td><select class="form-select form-select-sm V" data-i="${i}" data-f="primaryClass" style="min-width:190px">
+          ${cls.map(c => `<option value="${c.code}" ${c.code === x.primaryClass ? "selected" : ""}>${c.code} — ${c.desc}</option>`).join("")}</select></td>
+        <td><input type="number" class="form-control form-control-sm V" data-i="${i}" data-f="year" value="${x.year}" style="width:82px"></td>
+        <td><input type="number" class="form-control form-control-sm V" data-i="${i}" data-f="value" value="${x.value}" style="width:106px"></td>
+        <td>${(() => { const m = (S.v.trailers || []).filter(t => +t.unit === +x.n);
+          return m.length ? `<span class="vx-b blue" title="${m.map(t => t.type).join(", ")}">${m.length} attached</span>`
+                          : '<span class="vx-b gray">none</span>'; })()}</td>
+        <td><input type="number" class="form-control form-control-sm V" data-i="${i}" data-f="miles" value="${x.miles}" style="width:96px"></td>
+        <td><select class="form-select form-select-sm V" data-i="${i}" data-f="garageState" style="width:78px">
+          ${VX.states.map(s => `<option ${s.abv === x.garageState ? "selected" : ""}>${s.abv}</option>`).join("")}</select></td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-outline-secondary btn-sm" onclick="toggleVeh(${i})" title="Per-unit detail — the rater sets these per vehicle"><i class="fa-solid fa-sliders"></i></button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="delVeh(${i})" ${S.v.vehicles.length < 2 ? "disabled" : ""}><i class="fa-solid fa-xmark"></i></button></td>
+      </tr>
+      <tr id="vd${i}" style="display:none"><td colspan="10" style="background:var(--surface-2);padding:12px 14px">
+        ${vehicleDetail(x, i)}</td></tr>`).join("")}</tbody></table></div>
+      <div style="font-size:11.5px;color:var(--text-mute);margin-top:7px">
+        Each power unit is rated separately, then summed. Trailers are scheduled below and carry their own VIN.
+        Value defaults from Model Year (a real depreciation schedule) — edit it directly if the actual stated value differs.</div>
+    </div></div>` + trailerSchedule();
+}
+
+/* ================= Trailer schedule =================
+   Trailers are titled separately from the power unit and carry their own VIN,
+   so they are scheduled separately. Each one names the unit it is attached to;
+   the engine still rates off the power unit's `trailer` / `trailerValue`, which
+   syncTrailers() derives from this list so the rating contract is unchanged. */
+function newTrailer(n, unit) {
+  const year = 2021;
+  return { n, vin: "", type: "Dry Van / Box — Single", value: VX.truckStatedValueFor(year, "trailerDryVan"), year, unit: unit || 1 };
+}
+function seedTrailers() {
+  if (S.v.trailers) return;
+  /* Seed from whatever the vehicle rows already carried, so an existing quote
+     keeps the exact same rating basis after the split. */
+  S.v.trailers = [];
+  (S.v.vehicles || []).forEach(v => {
+    if (v.trailer && !String(v.trailer).startsWith("None")) {
+      S.v.trailers.push({ n: S.v.trailers.length + 1, vin: "", type: v.trailer,
+                          value: +v.trailerValue || 0, year: (+v.year || 2022) - 1, unit: v.n });
+    }
+  });
+}
+/* Push the schedule back onto each power unit: first attached trailer sets the
+   type (the Semitrailer PD factor is per power unit), and the values sum into
+   the APD basis. A unit with no trailer attached rates as "None". */
+function syncTrailers() {
+  seedTrailers();
+  const NONE = (VX.trailerTypes.find(t => String(t.type).startsWith("None")) || { type: "None" }).type;
+  (S.v.vehicles || []).forEach(v => {
+    const mine = (S.v.trailers || []).filter(t => +t.unit === +v.n);
+    v.trailer = mine.length ? mine[0].type : NONE;
+    v.trailerValue = mine.reduce((a, t) => a + (+t.value || 0), 0);
+  });
+}
+/* A VIN is 17 characters and never uses I, O or Q. Blank is allowed — this is
+   a sandbox quote, not a bind — but a wrong one is worth catching. */
+function badVin(v) {
+  const x = String(v || "").trim().toUpperCase();
+  if (!x) return null;
+  if (x.length !== 17) return "must be 17 characters";
+  if (/[IOQ]/.test(x)) return "cannot contain I, O or Q";
+  if (!/^[A-HJ-NPR-Z0-9]+$/.test(x)) return "has invalid characters";
+  return null;
+}
+/* Errors that should stop a quote being taken seriously, gathered in one place
+   so the Vehicles tab can show them together. */
+function unitErrors() {
+  seedTrailers();
+  const errs = [];
+  const veh = S.v.vehicles || [], trl = S.v.trailers || [];
+  if (!veh.length) errs.push("No power units scheduled — add at least one vehicle.");
+  // a trailer with nothing to tow it
+  trl.forEach(t => {
+    if (!veh.some(v => +v.n === +t.unit))
+      errs.push(`Trailer ${t.n} is attached to unit ${t.unit}, which is not on the schedule.`);
+  });
+  // a tractor with no trailer is an incomplete combination
+  veh.forEach(v => {
+    const cls = VX.truckPrimary.find(p => p.code === v.primaryClass);
+    const isTractor = cls && /tractor/i.test(cls.desc || "");
+    if (isTractor && !trl.some(t => +t.unit === +v.n))
+      errs.push(`Unit ${v.n} (${cls.desc}) is a tractor with no trailer scheduled — add a trailer or change its class.`);
+  });
+  // VIN format + duplicates across BOTH schedules, since a VIN is unique to a titled unit
+  const seen = {};
+  veh.forEach(v => { const e = badVin(v.vin); if (e) errs.push(`Unit ${v.n} VIN ${e}.`); });
+  trl.forEach(t => { const e = badVin(t.vin); if (e) errs.push(`Trailer ${t.n} VIN ${e}.`); });
+  [...veh.map(v => ["Unit " + v.n, v.vin]), ...trl.map(t => ["Trailer " + t.n, t.vin])]
+    .forEach(([lbl, vin]) => {
+      const k = String(vin || "").trim().toUpperCase();
+      if (!k) return;
+      if (seen[k]) errs.push(`${lbl} repeats the VIN already used by ${seen[k]}.`);
+      else seen[k] = lbl;
+    });
+  return errs;
+}
+function unitErrorBanner() {
+  const e = unitErrors();
+  if (!e.length) return "";
+  return `<div class="vx-exp2 vx-anim" style="border-left-color:var(--bad);background:rgba(224,92,92,.07)">
+    <div class="hd"><i class="fa-solid fa-circle-exclamation" style="color:var(--bad);font-size:11.5px"></i>
+      <b>${e.length} problem${e.length === 1 ? "" : "s"} with this schedule</b></div>
+    <div class="bd" style="display:block;border-top:none;padding-top:6px">
+      ${e.map(x => `<div style="margin-bottom:3px">\u2022 ${x}</div>`).join("")}</div></div>`;
+}
+
+function trailerSchedule() {
+  seedTrailers();
+  const veh = S.v.vehicles || [];
+  return `<div class="grp"><h3><i class="fa-solid fa-trailer" style="color:var(--cat-1)"></i>
+      Trailer Schedule <span class="vx-b blue">${S.v.trailers.length} trailer${S.v.trailers.length === 1 ? "" : "s"}</span>
+      <button class="btn btn-primary btn-sm ms-auto" onclick="addTrl()"><i class="fa-solid fa-plus me-1"></i>Add Trailer</button></h3>
+    <div class="bd">${S.v.trailers.length ? `<div class="vx-tw"><table class="vx-t">
+      <thead><tr><th>#</th><th>VIN</th><th>Trailer Type</th><th>Model Yr</th><th>Stated Value</th><th>Attached To</th><th></th></tr></thead>
+      <tbody>${S.v.trailers.map((t, i) => `<tr>
+        <td><b>${t.n}</b></td>
+        <td><input class="form-control form-control-sm T" data-i="${i}" data-f="vin" value="${t.vin || ""}"
+          placeholder="17-char VIN" maxlength="17" style="min-width:170px;text-transform:uppercase"></td>
+        <td><select class="form-select form-select-sm T" data-i="${i}" data-f="type" style="min-width:170px">
+          ${VX.trailerTypes.filter(x => !String(x.type).startsWith("None")).map(x => `<option ${x.type === t.type ? "selected" : ""}>${x.type}</option>`).join("")}</select></td>
+        <td><input type="number" class="form-control form-control-sm T" data-i="${i}" data-f="year" value="${t.year}" style="width:82px"></td>
+        <td><input type="number" class="form-control form-control-sm T" data-i="${i}" data-f="value" value="${t.value}" style="width:106px"></td>
+        <td><select class="form-select form-select-sm T" data-i="${i}" data-f="unit" style="width:120px">
+          ${veh.map(v => `<option value="${v.n}" ${+v.n === +t.unit ? "selected" : ""}>Unit ${v.n}</option>`).join("")}</select></td>
+        <td><button class="btn btn-outline-secondary btn-sm" onclick="delTrl(${i})"><i class="fa-solid fa-xmark"></i></button></td>
+      </tr>`).join("")}</tbody></table></div>`
+      : `<div class="vx-empty" style="padding:18px"><i class="fa-solid fa-trailer"></i>No trailers scheduled. Tractors need one to rate a complete combination.</div>`}
+      <div style="font-size:11.5px;color:var(--text-mute);margin-top:7px">
+        Each trailer is titled separately and carries its own VIN. Its type applies the Semitrailer Physical Damage
+        factor to the unit it is attached to, and its stated value is added to that unit's APD basis.
+        Value defaults from Model Year + Trailer Type (Dry Van / Reefer / Flatbed depreciate differently) — edit it directly if the actual stated value differs.</div>
+    </div></div>`;
+}
+function addTrl() {
+  seedTrailers();
+  const firstUnit = ((S.v.vehicles || [])[0] || {}).n || 1;
+  S.v.trailers.push(newTrailer(S.v.trailers.length + 1, firstUnit));
+  syncTrailers(); render(); vxToast("Trailer added", "", "ok");
+}
+function delTrl(i) {
+  S.v.trailers.splice(i, 1);
+  S.v.trailers.forEach((t, k) => t.n = k + 1);
+  syncTrailers(); render();
+}
+
+/* ================= Driver schedule ================= */
+function newDriver(n) {
+  return { n, name: "Driver " + n, age: 42, licState: S.v.state || "TX", cdlYears: 8, violations: 0, cls: "A — Clean" };
+}
+function driverClassFor(d) {
+  const v = +d.violations || 0;
+  return v === 0 ? "A — Clean" : v <= 2 ? "B — Minor" : v <= 4 ? "C — Moderate" : v <= 6 ? "D — Elevated" : "E — High Risk";
+}
+function driverSchedule() {
+  if (!S.v.drivers) S.v.drivers = [newDriver(1), newDriver(2)];
+  S.v.drivers.forEach(d => d.cls = driverClassFor(d));
+  const surch = S.v.drivers.filter(d => +d.violations > 0).length;
+  return `<div class="grp" id="driverScheduleCard" style="transition:outline .2s"><h3><i class="fa-solid fa-id-card" style="color:var(--cat-1)"></i>
+      Driver Schedule <span class="vx-b blue">${S.v.drivers.length} drivers</span>
+      ${surch ? `<span class="vx-b amber">${surch} surcharged</span>` : ""}
+      <button class="btn btn-primary btn-sm ms-auto" onclick="addDrv()"><i class="fa-solid fa-plus me-1"></i>Add Driver</button></h3>
+    <div class="bd"><div class="vx-tw"><table class="vx-t">
+      <thead><tr><th>#</th><th>Driver Name</th><th>Age</th><th>Licence State</th><th>CDL Exp (yrs)</th>
+        <th>Violations / Accidents (36 mo)</th><th>Violation Type</th><th>Violation Class</th><th>Class Factor</th><th></th></tr></thead>
+      <tbody>${S.v.drivers.map((d, i) => {
+        const c = VX.driverClasses.find(x => x.cls === d.cls) || VX.driverClasses[0];
+        const hasViol = +d.violations > 0;
+        return `<tr>
+          <td><b>${d.n}</b></td>
+          <td><input class="form-control form-control-sm D" data-i="${i}" data-f="name" value="${d.name}" style="min-width:130px"></td>
+          <td><input type="number" class="form-control form-control-sm D" data-i="${i}" data-f="age" value="${d.age}" style="width:72px"></td>
+          <td><select class="form-select form-select-sm D" data-i="${i}" data-f="licState" style="width:78px">
+            ${VX.states.map(s => `<option ${s.abv === d.licState ? "selected" : ""}>${s.abv}</option>`).join("")}</select></td>
+          <td><input type="number" class="form-control form-control-sm D" data-i="${i}" data-f="cdlYears" value="${d.cdlYears}" style="width:80px"></td>
+          <td><input type="number" min="0" class="form-control form-control-sm D" data-i="${i}" data-f="violations" value="${d.violations}" style="width:86px"></td>
+          <td>${hasViol && typeof VXFULL !== "undefined" ? `<select class="form-select form-select-sm D" data-i="${i}" data-f="violationCode" style="min-width:230px">
+              <option value="">Unspecified — use count only</option>
+              ${VXFULL.violations.map(v => `<option value="${v[0]}" ${v[0] === d.violationCode ? "selected" : ""}>${v[1]} (${v[2]}${v[3] ? "+" + v[3] + "/ea" : ""} pts)</option>`).join("")}
+            </select>` : `<span style="color:var(--text-mute);font-size:11px">${hasViol ? "—" : "no violations"}</span>`}</td>
+          <td><span class="vx-b ${c.factor >= 1.45 ? "red" : c.factor > 1 ? "amber" : "green"}">${d.cls}</span></td>
+          <td>${c.factor.toFixed(2)}×</td>
+          <td><button class="btn btn-outline-secondary btn-sm" onclick="delDrv(${i})" ${S.v.drivers.length < 2 ? "disabled" : ""}><i class="fa-solid fa-xmark"></i></button></td>
+        </tr>`; }).join("")}</tbody></table></div>
+      <div style="font-size:11.5px;color:var(--text-mute);margin-top:7px">
+        Violation class is derived from violations/accidents in the past 36 months. Picking a specific Violation Type
+        applies its real first/additional-offense point value (SVC table) instead of a generic count-based estimate.
+        The worst-rated driver sets the policy driver factor; each driver with a violation also incurs the
+        per-driver <b>Driver Surcharge Fee</b>.</div>
+    </div></div>`;
+}
+
+/* Garagekeepers' Insurance — covers customer vehicles in the insured's care,
+   custody and control (e.g. a repair shop or truck stop), NOT the insured's
+   own fleet. A genuinely separate coverage from Auto Liability / Physical
+   Damage, added 2026-08-19 from the full GKL_LossCosts table. Only rendered
+   once the coverage is actually selected in the tree above, since most
+   trucking accounts don't carry it. */
+const GKL_COLL_OPTS = ["No", "Yes - $100 Deductible", "Yes - $250 Deductible", "Yes - $500 Deductible"];
+function newGklLoc(n) {
+  return { n, state: S.v.state || "TX", coverage: "Garagekeepers Legal Liability", limit: 75000,
+    collDed: "Yes - $250 Deductible", compDed: "No" };
+}
+function garagekeepersSchedule() {
+  const has = (S.v.cob || []).some(c => c.startsWith("Garagekeepers"));
+  if (!has) return "";
+  if (!S.v.gkl || !S.v.gkl.length) S.v.gkl = [newGklLoc(1)];
+  const gklOpts = (typeof VXFULL !== "undefined") ? VXFULL.gklCoverageOptions : null;
+  const compOpts = (typeof VXFULL !== "undefined") ? VXFULL.gklCompDed : null;
+  if (!gklOpts) return `<div class="grp"><h3><i class="fa-solid fa-warehouse" style="color:var(--cat-5)"></i>Garagekeepers' Insurance</h3>
+    <div class="bd"><div class="vx-ai" style="padding:10px 14px">Rate data for this coverage is not loaded on this page.</div></div></div>`;
+  return `<div class="grp"><h3><i class="fa-solid fa-warehouse" style="color:var(--cat-5)"></i>
+      Garagekeepers' Insurance <span class="vx-b amber">${S.v.gkl.length} location${S.v.gkl.length === 1 ? "" : "s"}</span>
+      <button class="btn btn-primary btn-sm ms-auto" onclick="addGkl()"><i class="fa-solid fa-plus me-1"></i>Add Location</button></h3>
+    <div class="bd"><div class="sub" style="margin-top:-6px">Covers customer vehicles in the insured's care, custody and control — a repair shop or terminal, not the insured's own fleet.</div>
+    <div class="vx-tw"><table class="vx-t">
+      <thead><tr><th>#</th><th>State</th><th>Coverage</th><th>Max Limit</th><th>Collision</th><th>Comprehensive</th><th></th></tr></thead>
+      <tbody>${S.v.gkl.map((x, i) => `<tr>
+        <td><b>${x.n}</b></td>
+        <td><select class="form-select form-select-sm K" data-i="${i}" data-f="state" style="width:78px">
+          ${VX.states.map(s => `<option ${s.abv === x.state ? "selected" : ""}>${s.abv}</option>`).join("")}</select></td>
+        <td><select class="form-select form-select-sm K" data-i="${i}" data-f="coverage" style="min-width:220px">
+          ${gklOpts.map(o => `<option ${o[0] === x.coverage ? "selected" : ""}>${o[0]}</option>`).join("")}</select></td>
+        <td><select class="form-select form-select-sm K" data-i="${i}" data-f="limit" style="width:110px">
+          ${[...new Set(VXFULL.gklLossCosts.filter(r => r[0] === x.state).map(r => r[2]))].sort((a, b) => a - b)
+            .map(l => `<option value="${l}" ${l === +x.limit ? "selected" : ""}>${vxMoney(l)}</option>`).join("")}</select></td>
+        <td><select class="form-select form-select-sm K" data-i="${i}" data-f="collDed" style="min-width:150px">
+          ${GKL_COLL_OPTS.map(o => `<option ${o === x.collDed ? "selected" : ""}>${o}</option>`).join("")}</select></td>
+        <td><select class="form-select form-select-sm K" data-i="${i}" data-f="compDed" style="min-width:230px">
+          ${compOpts.map(o => `<option ${o[0] === x.compDed ? "selected" : ""}>${o[0]}</option>`).join("")}</select></td>
+        <td><button class="btn btn-outline-secondary btn-sm" onclick="delGkl(${i})" ${S.v.gkl.length < 2 ? "disabled" : ""}><i class="fa-solid fa-xmark"></i></button></td>
+      </tr>`).join("")}</tbody></table></div>
+      <div style="font-size:11.5px;color:var(--text-mute);margin-top:7px">
+        Each location prices Collision and Comprehensive independently. Direct Coverage — Excess carries a 15% surcharge;
+        the On-Hook and Sound-Receiving-Equipment endorsements price at their own, much lower, factors.</div>
+    </div></div>`;
+}
+function addGkl() { S.v.gkl.push(newGklLoc(S.v.gkl.length + 1)); render(); }
+function delGkl(i) { S.v.gkl.splice(i, 1); S.v.gkl.forEach((x, k) => x.n = k + 1); render(); }
+
+/* ================= Locations schedule ================= */
+/* GL / GL Package / Property / MPL all carry a real location schedule in the
+   ams-service submission (gl_locations — and mpl_locations there is
+   literally data["gl_locations"] reused, so this platform does the same
+   thing rather than inventing a separate MPL structure). One shared
+   S.v.locations array, since a single quote has one insured with one set of
+   physical addresses regardless of which coverage is being written on it. */
+function newLocation(n) {
+  return { n, address: "", city: "", state: S.v.state || "TX", zip: "" };
+}
+function locationSchedule(scopeNote) {
+  if (!S.v.locations || !S.v.locations.length) S.v.locations = [newLocation(1)];
+  return `<div class="grp"><h3><i class="fa-solid fa-location-dot" style="color:var(--cat-2)"></i>
+      Locations <span class="vx-b blue">${S.v.locations.length} location${S.v.locations.length === 1 ? "" : "s"}</span>
+      <button class="btn btn-primary btn-sm ms-auto" onclick="addLoc()"><i class="fa-solid fa-plus me-1"></i>Add Location</button></h3>
+    <div class="bd">${scopeNote ? `<div class="sub" style="margin-top:-6px">${scopeNote}</div>` : ""}
+    <div class="vx-tw"><table class="vx-t">
+      <thead><tr><th>#</th><th>Address</th><th>City</th><th>State</th><th>ZIP</th><th></th></tr></thead>
+      <tbody>${S.v.locations.map((x, i) => `<tr>
+        <td><b>${x.n}</b></td>
+        <td><input class="form-control form-control-sm LOC" data-i="${i}" data-f="address" value="${x.address}" placeholder="Street address" style="min-width:190px"></td>
+        <td><input class="form-control form-control-sm LOC" data-i="${i}" data-f="city" value="${x.city}" style="min-width:120px"></td>
+        <td><select class="form-select form-select-sm LOC" data-i="${i}" data-f="state" style="width:78px">
+          ${VX.states.map(s => `<option ${s.abv === x.state ? "selected" : ""}>${s.abv}</option>`).join("")}</select></td>
+        <td><input class="form-control form-control-sm LOC" data-i="${i}" data-f="zip" value="${x.zip}" style="width:90px"></td>
+        <td><button class="btn btn-outline-secondary btn-sm" onclick="delLoc(${i})" ${S.v.locations.length < 2 ? "disabled" : ""}><i class="fa-solid fa-xmark"></i></button></td>
+      </tr>`).join("")}</tbody></table></div>
+    </div></div>`;
+}
+function addLoc() { S.v.locations.push(newLocation(S.v.locations.length + 1)); render(); }
+function delLoc(i) { S.v.locations.splice(i, 1); S.v.locations.forEach((x, k) => x.n = k + 1); render(); }
+
+/* ================= GL Class Codes schedule ================= */
+/* Real submission field is gl_class_codes — a list of {class, exposure
+   basis, exposure amount}, not a single dropdown + one revenue number. The
+   schedule is the source of truth here: v.classCode / v.revenue are derived
+   from it (first row's class; sum of exposure amounts) so the existing
+   gl() engine function needs no changes and a single-row default reproduces
+   today's premium exactly. */
+function newClassCode(n, code, amt) {
+  return { n, classCode: code, exposureBasis: "Revenue", exposureAmount: amt };
+}
+function syncGlFromSchedule() {
+  const rows = S.v.glClassCodes || [];
+  if (!rows.length) return;
+  S.v.classCode = rows[0].classCode;
+  S.v.revenue = rows.reduce((s, r) => s + (+r.exposureAmount || 0), 0);
+}
+const GL_EXPOSURE_BASIS = ["Revenue", "Payroll", "Gross Sales", "Per Unit"];
+function classCodeSchedule() {
+  if (!S.v.glClassCodes || !S.v.glClassCodes.length) {
+    S.v.glClassCodes = [newClassCode(1, S.v.classCode || "238160", S.v.revenue || 2500000)];
+  }
+  syncGlFromSchedule();
+  const glcob = VX.cob.filter(c => c.lob === "General Liability");
+  return `<div class="grp"><h3><i class="fa-solid fa-list-check" style="color:var(--cat-2)"></i>
+      Class Codes <span class="vx-b blue">${S.v.glClassCodes.length} class${S.v.glClassCodes.length === 1 ? "" : "es"}</span>
+      <button class="btn btn-primary btn-sm ms-auto" onclick="addClassCode()"><i class="fa-solid fa-plus me-1"></i>Add Class Code</button></h3>
+    <div class="bd"><div class="sub" style="margin-top:-6px">Real submission field (gl_class_codes) is a schedule, not a single class. Premium below rates off the first row's class; total exposure is the sum of every row.</div>
+    <div class="vx-tw"><table class="vx-t">
+      <thead><tr><th>#</th><th>Class of Business</th><th>Exposure Basis</th><th>Exposure Amount ($)</th><th></th></tr></thead>
+      <tbody>${S.v.glClassCodes.map((x, i) => `<tr>
+        <td><b>${x.n}</b>${i === 0 ? ' <span class="vx-b green" style="font-size:9px">rates premium</span>' : ""}</td>
+        <td><select class="form-select form-select-sm GCC" data-i="${i}" data-f="classCode" style="min-width:220px">
+          ${glcob.slice(0, 10).map(c => `<option value="${c.code}" ${c.code === x.classCode ? "selected" : ""}>${c.code} — ${c.name}</option>`).join("")}</select></td>
+        <td><select class="form-select form-select-sm GCC" data-i="${i}" data-f="exposureBasis" style="width:130px">
+          ${GL_EXPOSURE_BASIS.map(b => `<option ${b === x.exposureBasis ? "selected" : ""}>${b}</option>`).join("")}</select></td>
+        <td><input type="number" class="form-control form-control-sm GCC" data-i="${i}" data-f="exposureAmount" value="${x.exposureAmount}" style="width:130px"></td>
+        <td><button class="btn btn-outline-secondary btn-sm" onclick="delClassCode(${i})" ${S.v.glClassCodes.length < 2 ? "disabled" : ""}><i class="fa-solid fa-xmark"></i></button></td>
+      </tr>`).join("")}</tbody></table></div>
+      <div style="font-size:11px;color:var(--text-mute);margin-top:6px">Total exposure: $${S.v.revenue.toLocaleString("en-US")}</div>
+    </div></div>`;
+}
+function addClassCode() { S.v.glClassCodes.push(newClassCode(S.v.glClassCodes.length + 1, S.v.classCode || "238160", 0)); syncGlFromSchedule(); render(); }
+function delClassCode(i) { S.v.glClassCodes.splice(i, 1); S.v.glClassCodes.forEach((x, k) => x.n = k + 1); syncGlFromSchedule(); render(); }
+
+/* ================= WC Exposures schedule ================= */
+/* Unlike GL's classCodeSchedule (which rates off row 1 and sums exposure for
+   display only), the engine genuinely prices EVERY row here and sums the
+   per-class manual premiums — that's the real WC manual-rating method, not a
+   simplification, so no "syncFromSchedule" derivation step is needed: the
+   engine reads S.v.wcExposures directly. */
+function newWcExposure(n, code, payroll) {
+  return { n, classCode: code, payroll };
+}
+function wcExposureSchedule() {
+  if (!S.v.wcExposures || !S.v.wcExposures.length) {
+    S.v.wcExposures = [newWcExposure(1, "8810", 500000)];
+  }
+  const totalPayroll = S.v.wcExposures.reduce((s, x) => s + (+x.payroll || 0), 0);
+  return `<div class="grp"><h3><i class="fa-solid fa-people-group" style="color:var(--cat-6)"></i>
+      Exposures <span class="vx-b blue">${S.v.wcExposures.length} class${S.v.wcExposures.length === 1 ? "" : "es"}</span>
+      <button class="btn btn-primary btn-sm ms-auto" onclick="addWcExposure()"><i class="fa-solid fa-plus me-1"></i>Add Class Code</button></h3>
+    <div class="bd"><div class="sub" style="margin-top:-6px">Real submission field (wc_exposures_data_capture) — every row prices independently off its own class code and payroll; the premium below is the sum of every row, then Experience Mod and Schedule Credit apply once to the total.</div>
+    <div class="vx-tw"><table class="vx-t">
+      <thead><tr><th>#</th><th>Class Code</th><th>Payroll ($)</th><th>Rate / $100</th><th></th></tr></thead>
+      <tbody>${S.v.wcExposures.map((x, i) => {
+        const cls = VX.wcClassRates.find(c => c.classCode === x.classCode) || VX.wcClassRates[0];
+        return `<tr>
+        <td><b>${x.n}</b></td>
+        <td><select class="form-select form-select-sm WCX" data-i="${i}" data-f="classCode" style="min-width:280px">
+          ${VX.wcClassRates.map(c => `<option value="${c.classCode}" ${c.classCode === x.classCode ? "selected" : ""}>${c.classCode} — ${c.desc}</option>`).join("")}</select></td>
+        <td><input type="number" class="form-control form-control-sm WCX" data-i="${i}" data-f="payroll" value="${x.payroll}" style="width:130px"></td>
+        <td><span class="vx-b gray">$${cls.ratePer100.toFixed(2)}</span></td>
+        <td><button class="btn btn-outline-secondary btn-sm" onclick="delWcExposure(${i})" ${S.v.wcExposures.length < 2 ? "disabled" : ""}><i class="fa-solid fa-xmark"></i></button></td>
+      </tr>`; }).join("")}</tbody></table></div>
+      <div style="font-size:11px;color:var(--text-mute);margin-top:6px">Total scheduled payroll: $${totalPayroll.toLocaleString("en-US")}</div>
+    </div></div>`;
+}
+function addWcExposure() { S.v.wcExposures.push(newWcExposure(S.v.wcExposures.length + 1, "8810", 0)); render(); }
+function delWcExposure(i) { S.v.wcExposures.splice(i, 1); S.v.wcExposures.forEach((x, k) => x.n = k + 1); render(); }
+/* Live breakdown of the real Account-Level Factor (Insured!Z15) as the user
+   fills in the credits/debits section — mirrors engine.js's trucking()
+   calculation exactly so this matches what Evaluate will actually charge. */
+function _acctFactorLines() {
+  const v = S.v;
+  const g = (k, d) => v[k] === undefined ? d : v[k];
+  const units = (S.v.vehicles || []).length || 1;
+  const newVenture = String(g("yearsInBusiness", 5)) === "New Venture";
+  const nvFloor = x => newVenture ? Math.max(0, x) : x;
+  const bizExp = (VX.truckAcctBizExp.find(b => String(b.yearsInBusiness) === String(g("yearsInBusiness", 5))) || { factor: 0 }).factor;
+  const safety = (VX.truckAcctCarrierSafety.find(s => s.rating === g("carrierSafetyRating", "Satisfactory") &&
+    (s.fmcsaAlerts === "4+" ? +g("fmcsaAlerts", 0) >= 4 : s.fmcsaAlerts === +g("fmcsaAlerts", 0))) || { factor: 0 }).factor;
+  const oosVeh = (VX.truckAcctOOS.vehicles.find(b => b.band === g("oosVehiclesBand", "<=10%")) || { factor: 0 }).factor;
+  const oosDrv = (VX.truckAcctOOS.drivers.find(b => b.band === g("oosDriversBand", "<=4%")) || { factor: 0 }).factor;
+  const lossFreq = (VX.truckAcctLossFreq.find(f => f.band === g("lossFreqBand", ">24% and <=26%")
+    && units >= f.min && units <= f.max) || { factor: 0 }).factor;
+  const icc = VX.truckAcctICC[g("iccFiling", "yes")];
+  const isRenewal = g("policyType", "New Business") === "Renewal";
+  const renewal = (isRenewal && g("renewalEligible", "no") === "yes") ? VX.truckAcctRenewal.yes : VX.truckAcctRenewal.no;
+  // Insured!Z14 — foreign licence, else NY concentration
+  const L = VX.truckAcctLicState;
+  const ls = (S.v.drivers || []).map(d => String(d.licState || "").toUpperCase());
+  const nyShare = ls.length ? ls.filter(x => x === "NY").length / ls.length : 0;
+  const lic = ls.includes("FOREIGN") ? L.foreign : (nyShare > 0 ? (nyShare <= L.nyLowMaxShare ? L.nyLow : L.nyHigh) : 0);
+  const acctMin = VX.programParams.find(p => p.param === "Account Factor Min").value;
+  const acctMax = VX.programParams.find(p => p.param === "Account Factor Max").value;
+  // context: what's currently selected, so the breakdown doesn't require re-reading the fields above.
+  // jump: for the two drivers whose input lives in a different card, where to scroll on click.
+  const licDesc = ls.includes("FOREIGN") ? "foreign licence on file"
+    : nyShare > 0 ? `${Math.round(nyShare * 100)}% NY-licenced drivers` : "no NY or foreign licences";
+  // Three real, flat, account-level terms verified against ams-service's own
+  // stored procedure — see engine.js's matching comment. DriverCriteria is
+  // shared by both Liability and PD; Pollution and DefenseAddback are
+  // Liability-only in the real system.
+  const driverCriteria = g("driverCriteria1Year", "no") === "yes" ? VX.truckAcctDriverCriteria.yes : VX.truckAcctDriverCriteria.no;
+  const pollution = g("broadenedPollution", "no") === "yes" ? VX.truckAcctPollution.yes : VX.truckAcctPollution.no;
+  const defenseAddback = g("defenseAddback", "no") === "yes" ? VX.truckAcctDefenseAddback.yes : VX.truckAcctDefenseAddback.no;
+  const shared = [
+    ["Renewal Discount", renewal, isRenewal ? `Renewal, eligible: ${g("renewalEligible", "no") === "yes" ? "Yes" : "No"}` : "Not a renewal", false, "renewalEligWrap"],
+    ["Business Experience", bizExp, `${g("yearsInBusiness", 5)} yr${g("yearsInBusiness", 5) === 1 ? "" : "s"} in business`, false, null],
+    ["Carrier Safety / FMCSA Alerts", nvFloor(safety), `${g("carrierSafetyRating", "Satisfactory")}, ${g("fmcsaAlerts", 0)} alert${g("fmcsaAlerts", 0) === 1 ? "" : "s"}`, nvFloor(safety) !== safety, null],
+    ["Vehicle OOS Rate", nvFloor(oosVeh), g("oosVehiclesBand", "<=10%"), nvFloor(oosVeh) !== oosVeh, null],
+    ["Driver OOS Rate", nvFloor(oosDrv), g("oosDriversBand", "<=4%"), nvFloor(oosDrv) !== oosDrv, null],
+    ["ICC Filing", icc, g("iccFiling", "yes") === "yes" ? "Filing required" : "Not required", false, null],
+    ["Loss Frequency", nvFloor(lossFreq), g("lossFreqBand", ">24% and <=26%"), nvFloor(lossFreq) !== lossFreq, null],
+    ["Driver Licence States", lic, licDesc, false, "driverScheduleCard"],
+    ["Driver Criteria (1-Year)", driverCriteria, g("driverCriteria1Year", "no") === "yes" ? "Breached" : "Meets criteria", false, null],
+  ];
+  const liabLines = [...shared,
+    ["Broadened Pollution", pollution, g("broadenedPollution", "no") === "yes" ? "Yes" : "No", false, null],
+    ["Defense Cost Addback", defenseAddback, g("defenseAddback", "no") === "yes" ? "Yes" : "No", false, null]];
+  const pdLines = shared;
+  const clamp = raw => +Math.min(acctMax, Math.max(acctMin, raw)).toFixed(3);
+  const liabRaw = 1 + liabLines.reduce((s, [, val]) => s + val, 0);
+  const pdRaw = 1 + pdLines.reduce((s, [, val]) => s + val, 0);
+  return {
+    liab: { lines: liabLines, raw: +liabRaw.toFixed(3), clamped: clamp(liabRaw) },
+    pd: { lines: pdLines, raw: +pdRaw.toFixed(3), clamped: clamp(pdRaw) },
+    acctMin, acctMax, newVenture,
+    // Back-compat: existing readers of the un-split shape get Liability's.
+    lines: liabLines, raw: +liabRaw.toFixed(3), clamped: clamp(liabRaw),
+  };
+}
+/* Mirrors engine.js's Experience Mod formula exactly (same territory/ILF
+   resolution) so this live preview can't drift from what Calculate produces
+   — unlike the account-factor preview above, which is a genuine
+   approximation, this one is numerically exact. */
+function _expModPreview() {
+  const v = S.v, g = (k, d) => v[k] === undefined ? d : v[k];
+  const st = g("state", "TX");
+  const units = (v.vehicles || []).reduce((s, x) => s + Math.max(1, +x.units || 1), 0) || 1;
+  const quoteZip = g("garageZip", "") || ((v.vehicles || [])[0] || {}).garageZip;
+  const territory = (typeof VXFULL !== "undefined" && quoteZip) ? VXFULL.territoryForZip(st, quoteZip) : null;
+  const fullLC = (typeof VXFULL !== "undefined" && territory) ? VXFULL.lossCostFor(st, territory, "Trucks, Tractors And Trailers", "Liability") : null;
+  const baseLC = fullLC ?? (VX.truckBaseLC[st] ?? VX.truckBaseLC.DEFAULT);
+  const ilfTable = VX.truckILF[st] || VX.truckILF.DEFAULT;
+  const fullIlf = (typeof VXFULL !== "undefined") ? VXFULL.ilfFor(st, 2, +g("liabLimit", 1000000)) : null;
+  const ilf = fullIlf ?? (ilfTable[g("liabLimit", 1000000)] || ilfTable[1000000]);
+  const lcm = VX.programParams.find(p => p.param === "Liability LCM").value;
+
+  const priorClaims = +g("priorClaims", 0);
+  const priorIncurred = +g("priorIncurredLosses", 0);
+  const expMonths = +g("experienceMonths", 36);
+  const earnedCarYears = units * (expMonths / 12);
+  const frequency = earnedCarYears ? priorClaims / earnedCarYears : 0;
+  const bookPremiumProxy = baseLC * ilf * lcm * units;
+  const lossRatio = (bookPremiumProxy * earnedCarYears) ? priorIncurred / (bookPremiumProxy * earnedCarYears) : 0;
+  const credAdj = units ? ((1 - Math.pow(0.975, units * expMonths)) / 2) * (0.7 - 2 * frequency - lossRatio) : 0;
+  const mod = +Math.max(0.90, 1 - credAdj).toFixed(3);
+  return { mod, priorClaims, priorIncurred, expMonths, units, capped: (1 - credAdj) < 0.90 };
+}
+function renderExpModPreview() {
+  const el = document.getElementById("expModPreview");
+  if (!el) return;
+  const { mod, capped, units, expMonths } = _expModPreview();
+  el.innerHTML = `
+    <div style="border:1px solid var(--border);border-radius:10px;padding:12px 14px;background:var(--surface-2)">
+      <div class="d-flex justify-content-between align-items-center">
+        <b style="font-size:12px">Live preview</b>
+        <span class="vx-b ${mod < 1 ? "green" : mod > 1 ? "amber" : "gray"}">Experience Mod: ${mod.toFixed(3)}×</span>
+      </div>
+      <div style="font-size:10.6px;color:var(--text-mute);margin-top:4px;line-height:1.4">
+        Credibility-weighted over ${units} unit${units === 1 ? "" : "s"} × ${expMonths} months.
+        ${capped ? "The full credit this history earns exceeds the program's 10% cap — capped to 0.900×." : "Applied to the summed coverage premium, not per vehicle. Credit capped at 10%; a bad history can debit without limit."}</div>
+    </div>`;
+}
+/* Rating Factors tab — the full factor chain for this risk.
+   This tab used to write into an element that did not exist (`acctBreak` vs
+   `acctBreakdown`), so it rendered blank on every line of business, and even
+   when wired it only ever showed the trucking account factor. It now shows
+   every factor the engine actually applied, per coverage.
+
+   It rates on demand: the chain is a property of a completed calculation, so
+   landing here without one triggers the same calc() the Premium tab uses
+   rather than showing an empty panel. */
+let _factorChainPending = false;
+/* Closed by default. A trucking quote carries several coverage groups of 15+
+   factors each; opening them all makes the tab a wall of numbers with no way
+   to see what coverages are even present. Collapsed, the headers act as a
+   contents page — name, factor count and subtotal — and you open the one you
+   came for. Expand all is one click away. */
+const FX_OPEN = {};
+function factorSectionOpen(name) {
+  if (FX_OPEN[name] === undefined) FX_OPEN[name] = false;
+  return FX_OPEN[name];
+}
+function toggleFactorSection(name) {
+  FX_OPEN[name] = !factorSectionOpen(name);
+  renderFactorChain();
+}
+function setAllFactorSections(open) {
+  const r = S.res;
+  if (r && r.groups) r.groups.forEach(g => { FX_OPEN[g.name] = open; });
+  FX_OPEN.__acct = open;
+  renderFactorChain();
+  renderAcctSection();
+}
+/* The Account-Level card is a section too, so it collapses on the same control. */
+function renderAcctSection() {
+  const card = document.getElementById("acctCard");
+  if (!card) return;
+  const open = FX_OPEN.__acct === true;
+  const chev = card.querySelector("[data-acctchev]");
+  const body = card.querySelector("[data-acctbody]");
+  if (chev) chev.className = "fa-solid fa-chevron-" + (open ? "down" : "right");
+  if (body) body.style.display = open ? "" : "none";
+}
+function toggleAcctSection() { FX_OPEN.__acct = FX_OPEN.__acct !== true; renderAcctSection(); }
+
+function renderFactorChain() {
+  const el = document.getElementById("factorChain");
+  if (!el) return;
+
+  if (!S.res) {
+    el.innerHTML = `<div class="vx-empty" style="padding:26px"><i class="fa-solid fa-spinner fa-spin"></i>
+      Rating this risk to resolve its factors…</div>`;
+    if (!_factorChainPending) {
+      _factorChainPending = true;
+      Promise.resolve().then(() => calc()).finally(() => { _factorChainPending = false; });
+    }
+    return;
+  }
+
+  const r = S.res;
+  const pct = (v, base) => (base != null && typeof v === "number" && base !== 0)
+    ? ((v / base - 1) * 100) : null;
+
+  /* Every coverage is its own collapsible section. A trucking quote can carry
+     four groups of 15+ factors each — as one continuous scroll it is unreadable,
+     and the header you need for context scrolls away from the rows it labels.
+     Open state is remembered per group for the session, so recalculating does
+     not re-close what you were reading. */
+  el.innerHTML = r.groups.map((g, gi) => {
+    const open = factorSectionOpen(g.name);
+    return `
+    <div style="margin-bottom:12px;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+      <div class="fx-head" onclick="toggleFactorSection('${String(g.name).replace(/'/g, "\'")}')"
+        style="display:flex;align-items:center;gap:8px;padding:10px 13px;cursor:pointer;background:var(--surface-2)">
+        <i class="fa-solid fa-chevron-${open ? "down" : "right"}" data-fxchev
+          style="font-size:10px;color:var(--text-mute);width:11px"></i>
+        <i class="fa-solid ${g.icon}" style="color:${g.color}"></i>
+        <b style="font-size:13px">${g.name}</b>
+        <span class="vx-b gray">${(g.factors || []).length} factors</span>
+        <span style="margin-left:auto;font-weight:600">${vxMoney(g.subtotal)}</span>
+      </div>
+      <div class="fx-body" style="display:${open ? "" : "none"};padding:11px 13px">
+      <div class="vx-tw"><table class="vx-t">
+        <thead><tr><th>Rating factor</th><th>Driven by</th><th>Your answer</th><th>Matched rule</th>
+          <th style="text-align:right">Applied</th><th style="text-align:right">Default</th><th style="text-align:right">Effect</th></tr></thead>
+        <tbody>${(g.factors || []).map(f => {
+          const adj = f.kind === "x" ? pct(f.value, f.base) : null;
+          const differs = f.base != null && typeof f.value === "number" && Math.abs(f.value - f.base) > 1e-9;
+          return `<tr>
+            <td><b style="font-size:12.2px">${f.label}</b>${f.varies ? ' <span class="vx-b amber" style="font-size:9px">per unit</span>' : ""}
+              ${f.note ? `<div style="font-size:10.5px;color:var(--text-mute);line-height:1.4;margin-top:2px">${f.note}</div>` : ""}</td>
+            <td style="font-size:11.8px;color:var(--text-dim)">${f.driver || "—"}</td>
+            <td style="font-size:11.8px">${f.input ?? "—"}</td>
+            <td style="font-size:11.5px;color:var(--text-dim)">${f.matched || "—"}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums"><b${differs ? ' style="color:var(--primary)"' : ""}>${fmtF(f.value, f.kind)}</b></td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--text-mute)">${f.base != null ? fmtF(f.base, f.kind) : "—"}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums">${adj == null ? '<span style="color:var(--text-mute)">—</span>'
+              : `<span style="color:${adj > 0 ? "var(--bad)" : adj < 0 ? "var(--good)" : "var(--text-mute)"}">${adj > 0 ? "+" : ""}${adj.toFixed(1)}%</span>`}</td>
+          </tr>`; }).join("")}</tbody>
+      </table></div>
+      </div>
+    </div>`; }).join("") + `
+    <div style="font-size:11.3px;color:var(--text-mute);border-top:1px solid var(--border);padding-top:9px">
+      <i class="fa-solid fa-circle-info me-1"></i><b>Applied</b> is the value used for this risk;
+      <b>Default</b> is the neutral value the factor takes with no matching answer. Judgment factors are entered on
+      <a href="#" onclick="event.preventDefault();goTab('risk')">Risk Details</a>; everything else is looked up from your answers.
+    </div>`;
+}
+
+/* One card per coverage — Liability and Physical Damage each compute a
+   separately-clamped Account-Level Factor from real, distinct term sets
+   (verified against ams-service's udf_get_factor_for_iso_new_rater; see
+   engine.js). Shown side by side so it's visibly obvious they can differ,
+   not implied to be the same number shown twice. */
+function acctCard(title, lines, raw, clamped, acctMin, acctMax, newVenture) {
+  const capped = raw !== clamped;
+  return `<div style="border:1px solid var(--border);border-radius:10px;padding:12px 14px;background:var(--surface-2)">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <b style="font-size:12px">${title}</b>
+        <span class="vx-b ${clamped < 1 ? "green" : clamped > 1 ? "amber" : "gray"}">${clamped.toFixed(3)}×</span>
+      </div>
+      ${lines.map(([label, val, ctx, floored, jump]) => `<div class="d-flex justify-content-between align-items-start" style="font-size:11.8px;padding:3px 0">
+        <span>
+          <span style="color:var(--text-dim)">${label}</span>
+          ${jump ? `<a href="#" onclick="event.preventDefault();document.getElementById('${jump}').scrollIntoView({behavior:'smooth',block:'center'});document.getElementById('${jump}').style.outline='2px solid var(--primary)';setTimeout(()=>document.getElementById('${jump}').style.outline='',1200)" style="font-size:9.5px;margin-left:5px;white-space:nowrap"><i class="fa-solid fa-arrow-up-right-from-square" style="font-size:8px"></i> set ${jump === "renewalEligWrap" ? "above" : "on Driver Schedule"}</a>` : ""}
+          <div style="font-size:10.3px;color:var(--text-mute);line-height:1.3">${ctx}${floored ? ` <span class="vx-b amber" style="font-size:8.5px">floored — New Venture</span>` : ""}</div>
+        </span>
+        <span style="font-variant-numeric:tabular-nums;white-space:nowrap;padding-top:1px" title="${floored ? "This band's real credit is negative, but a New Venture cannot earn it — floored to 0%." : ""}">${val > 0 ? "+" : ""}${(val * 100).toFixed(1)}%</span>
+      </div>`).join("")}
+      ${capped ? `<div style="font-size:11px;color:var(--text-mute);margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
+        Raw total ${raw.toFixed(3)}× is outside the program's ${acctMin}–${acctMax} band — clamped to ${clamped.toFixed(3)}×.</div>` : ""}
+      ${newVenture ? `<div style="font-size:11px;color:var(--warn);margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
+        <i class="fa-solid fa-circle-info me-1"></i>New Venture: Carrier Safety, OOS and Loss Frequency can only debit here, never credit.</div>` : ""}
+    </div>`;
+}
+function renderAcctBreakdown() {
+  const el = document.getElementById("acctBreakdown");
+  if (!el) return;
+  const { liab, pd, acctMin, acctMax, newVenture } = _acctFactorLines();
+  el.innerHTML = `<div class="sub" style="margin:0 0 8px">How this adds up — Auto Liability and Physical Damage compute their own factor.</div>
+    <div class="row g-2">
+      <div class="col-md-6">${acctCard("Account-Level Factor — Auto Liability", liab.lines, liab.raw, liab.clamped, acctMin, acctMax, newVenture)}</div>
+      <div class="col-md-6">${acctCard("Account-Level Factor — Physical Damage", pd.lines, pd.raw, pd.clamped, acctMin, acctMax, newVenture)}</div>
+    </div>`;
+}
+function addVeh() { S.v.vehicles.push(newVehicle(S.v.vehicles.length + 1)); render(); vxToast("Vehicle added", "", "ok"); }
+function delVeh(i) { S.v.vehicles.splice(i, 1); S.v.vehicles.forEach((x, k) => x.n = k + 1); render(); }
+function addDrv() { S.v.drivers.push(newDriver(S.v.drivers.length + 1)); render(); vxToast("Driver added", "", "ok"); }
+function delDrv(i) { S.v.drivers.splice(i, 1); S.v.drivers.forEach((d, k) => d.n = k + 1); render(); }
+
+/* ---------- per-LOB question sets (only what that LOB needs) ---------- */
+/* Split into two tabs: the coverage tree (what is being insured) and the
+   risk detail questions (the answers that drive rating). Both branches read
+   the same S.v, so switching tabs never loses input. */
+/* Section routing between the Coverage and Risk Details tabs.
+   The LOB branches below are one big expression, so the tab a section belongs
+   to is captured by side effect rather than by returning early:
+     COV(...) captures the coverage tree
+     LIM(...) captures limits / deductibles / retentions (Coverage tab)
+     DET(...) passes the remaining risk questions straight through
+   questions() then hands back whichever set the requested tab needs. Doing it
+   this way means a section can sit anywhere inside a branch without the
+   surrounding template literal having to be broken apart. */
+let _qTree = "", _qLims = [], _qCmd = "", _qVeh = "";
+const COV = h => { _qTree = h; return ""; };
+/* Limits/deductibles now render inside their own coverage card (see
+   coverageTree + COV_FIELDS), so the old standalone blocks are dropped
+   rather than shown twice. */
+const LIM = () => "";
+/* CMD captures the Commodities block the same way COV captures the coverage
+   tree — it is a whole step of its own now, not part of Risk Details. */
+const CMD = h => { _qCmd = h; return ""; };
+/* VEH captures the vehicle/unit schedule. A fleet schedule is a data-entry
+   step in its own right — rows with their own class, value and garaging — not
+   one more question among the risk answers, so it gets its own step like
+   Commodities did. */
+const VEH = h => { _qVeh = h; return ""; };
+const DET = h => h;
+
+function questions(mode) {
+  _qTree = ""; _qLims = []; _qCmd = ""; _qVeh = "";
+  const detail = questionsInner();
+  if (mode === "cov") return _qTree + _qLims.join("");
+  if (mode === "commodities") return _qCmd;
+  if (mode === "vehicles") return _qVeh;
+  return detail;
+}
+
+function questionsInner() {
+  const v = S.v;
+  const hintHtml = hint => hint ? `<small class="d-block" style="font-size:10.5px;color:var(--text-mute);margin-top:2px;line-height:1.35">${hint}</small>` : "";
+  const sel = (k, label, arr, def, hint) => {
+    if (v[k] === undefined) v[k] = def;
+    return `<div class="col-md-4"><label>${label}</label>
+      <select class="form-select form-select-sm F" data-k="${k}">${opt(arr, v[k])}</select>${hintHtml(hint)}</div>`;
+  };
+  const num = (k, label, def, step, hint) => {
+    if (v[k] === undefined) v[k] = def;
+    return `<div class="col-md-4"><label>${label}</label>
+      <input type="number" ${step ? `step="${step}"` : ""} class="form-control form-control-sm F" data-k="${k}" value="${v[k]}">${hintHtml(hint)}</div>`;
+  };
+  const txt = (k, label, def, hint) => {
+    if (v[k] === undefined) v[k] = def;
+    return `<div class="col-md-4"><label>${label}</label>
+      <input type="text" class="form-control form-control-sm F" data-k="${k}" value="${v[k]}">${hintHtml(hint)}</div>`;
+  };
+  const chk = (k, label, def, hint) => {
+    if (v[k] === undefined) v[k] = def;
+    return `<div class="col-md-4"><label class="d-block">${label}</label>
+      <div class="form-check form-switch"><input class="form-check-input F" type="checkbox" data-k="${k}" ${v[k] ? "checked" : ""}></div>${hintHtml(hint)}</div>`;
+  };
+  /* Cargo Limit + Commodity Hauled only make sense once Motor Truck Cargo is
+     actually selected in the coverage tree above — previously these sat
+     unconditionally inside "Limits & Deductibles" with no visible link to
+     that checkbox, so checking Cargo on/off appeared to do nothing here. */
+  function cargoSection() {
+    if (!(S.v.cob || []).includes("Cargo")) return "";
+    if (!S.v.cargoCommodities || !S.v.cargoCommodities.length) {
+      S.v.cargoCommodities = [{ code: "GENFRT", maxValue: 15000, avgValue: 10000, loadPct: 100 }];
+    }
+    const totalLoad = S.v.cargoCommodities.reduce((s, c) => s + (+c.loadPct || 0), 0);
+    const excludedSelected = S.v.cargoCommodities.filter(c => (VX.truckCargoCommodities.find(x => x.code === c.code) || {}).excluded);
+    const allExcluded = S.v.cargoCommodities.length && excludedSelected.length === S.v.cargoCommodities.length;
+
+    return `<div class="grp"><h3><i class="fa-solid fa-box" style="color:var(--cat-4)"></i>
+        Commodities Hauled <span class="vx-b blue">${S.v.cargoCommodities.length} selected</span></h3>
+      <div class="bd"><div class="sub" style="margin-top:-6px">Check every commodity this fleet hauls. A mix rates the whole Cargo charge off the single highest classification factor among coverable commodities selected — see the Cargo tab on the Premium page for the breakdown.</div>
+      <div class="vx-tw" style="max-height:280px;overflow:auto"><table class="vx-t">
+        <thead><tr><th></th><th>Commodity</th><th>Max Value ($)</th><th>Avg Value ($)</th><th>% of Load</th></tr></thead>
+        <tbody>${VX.truckCargoCommodities.map(c => {
+          const row = S.v.cargoCommodities.find(x => x.code === c.code);
+          const checked = !!row;
+          return `<tr>
+            <td><input type="checkbox" class="form-check-input CGC" data-code="${c.code}" ${checked ? "checked" : ""}></td>
+            <td>${c.excluded ? '<i class="fa-solid fa-ban me-1" style="color:var(--bad)" title="Excluded"></i>' : ""}${c.label}${c.hazardousMod ? ' <span class="vx-b amber" style="font-size:9px">hazard load</span>' : ""}</td>
+            <td><input type="number" class="form-control form-control-sm CGCF" data-code="${c.code}" data-f="maxValue" value="${row ? row.maxValue : 0}" ${checked ? "" : "disabled"} style="width:100px"></td>
+            <td><input type="number" class="form-control form-control-sm CGCF" data-code="${c.code}" data-f="avgValue" value="${row ? row.avgValue : 0}" ${checked ? "" : "disabled"} style="width:100px"></td>
+            <td><input type="number" class="form-control form-control-sm CGCF" data-code="${c.code}" data-f="loadPct" value="${row ? row.loadPct : 0}" ${checked ? "" : "disabled"} style="width:80px"></td>
+          </tr>`;
+        }).join("")}</tbody></table></div>
+      <div style="font-size:11px;color:${totalLoad === 100 ? "var(--text-mute)" : "var(--warn)"};margin-top:7px">Total % of Load: ${totalLoad}%${totalLoad !== 100 ? " — should total 100%" : ""}</div>
+      ${allExcluded ? `<div class="mt-2" style="border:1px solid var(--border);border-left:3px solid var(--bad);background:rgba(210,69,69,.09);border-radius:0 10px 10px 0;padding:10px 14px;font-size:12.3px;line-height:1.55">
+          <i class="fa-solid fa-ban me-1" style="color:var(--bad)"></i><b>Every selected commodity is excluded from Cargo coverage.</b>
+          The Cargo premium below will show $0 until a coverable commodity is selected.</div>` : ""}
+      </div></div>
+
+      <div class="grp"><h3><i class="fa-solid fa-sliders" style="color:var(--cat-4)"></i>Cargo Rate Basis</h3>
+        <div class="bd"><div class="row g-3">
+          ${num("cargoLimit","Cargo Limit ($)",100000)}
+          ${num("cargoBaseRate","Base Rate ($)",1000)}
+          ${num("cargoBasicLoad","Basic Load (Load Factor)",1.2,"0.01","Same figure the Underwriting card below calls “Basic Load” — one input, shown twice.")}
+        </div></div></div>
+
+      <div class="grp"><h3><i class="fa-solid fa-clipboard-question" style="color:var(--cat-4)"></i>Eligibility Questions</h3>
+        <div class="bd"><div class="row g-3">
+          ${chk("pullsDoubles","Do you pull – Doubles?",false)}
+          ${chk("pullsTriples","Do you pull – Triples?",false)}
+          ${chk("unsecuredLoads","Do you pull – Unsecured Loads?",false)}
+          ${chk("oversizeOverweight","Do you haul oversize and/or overweight loads?",false)}
+          ${chk("wasteRefuse","Do you haul any waste/refuse materials?",false)}
+        </div></div></div>
+
+      <div class="grp"><h3><i class="fa-solid fa-file-signature" style="color:var(--cat-4)"></i>Underwriting
+          <span class="vx-b gray" style="margin-left:6px" title="Servicing/audit fields, not part of the calculated premium">not wired to premium</span></h3>
+        <div class="bd"><div class="sub" style="margin-top:-6px">Captured for submission completeness, same disclosure pattern as Liquor Liability — these do not change the Cargo premium below.</div>
+        <div class="row g-3">
+          ${sel("cargoReportingFreq","Reporting Frequency",["None","Monthly","Quarterly","Semi-Annual","Annual"],"None")}
+          ${num("cargoMinEarned","Min Earned (%)",25)}
+          ${num("cargoBrokerFeeOverride","Broker Fee Override ($, optional)",0)}
+        </div></div></div>`;
+  }
+
+  if (S.lob === "TRUCK") {
+    return COV(coverageTree("Commercial Trucking", "var(--cat-1)")) + VEH(vehicleSchedule() + driverSchedule() + garagekeepersSchedule()) + DET("" + `
+      <div class="grp"><h3><i class="fa-solid fa-road" style="color:var(--cat-1)"></i>Operations</h3><div class="bd"><div class="row g-3">
+        ${sel("radiusClass","Radius of Operation",TRUCK_RADIUS,"48_states")}
+        ${sel("ratingClass","Cargo / Hauling Type",VX.truckRatingClass.map(r=>[r.ratingClass,r.ratingClass]),"Dry Van or Box - Single Trailer")}
+        ${sel("dashcam","Dashcams Installed",VX.truckDashcam.map(d=>[d.option,d.option]),"YES - Preferred Vendor")}
+        ${sel("naicsCode","Industry Classification (NAICS)",VX.truckNAICS.map(n=>[n.code,n.code+" — "+n.label]),"484230")}
+      </div></div></div>
+` + LIM(`      <div class="grp"><h3><i class="fa-solid fa-file-shield" style="color:var(--cat-1)"></i>Limits &amp; Deductibles</h3><div class="bd"><div class="row g-3">
+        ${sel("liabLimit","Liability Limit (Combined Single Limit)",TRUCK_LIMITS,1000000)}
+        ${sel("liabDeductible","Liability Deductible",TRUCK_DED,5000)}
+        ${sel("apdDeductible","Physical Damage Deductible",TRUCK_APD_DED,5000)}
+      </div></div></div>`) + `
+      ${CMD(cargoSection())}
+      <div class="grp"><h3><i class="fa-solid fa-building-user" style="color:var(--cat-1)"></i>Named Insured &amp; Policy</h3>
+        <div class="bd"><div class="sub" style="margin-top:-6px">Named insured details and policy-level questions.</div>
+        <div class="row g-3">
+        ${txt("mailingAddress","Mailing Address","1400 Commerce St","Street address of the named insured.")}
+        ${txt("mailingCity","Mailing City","Dallas")}
+        ${txt("mailingZip","Mailing Zip Code","75201")}
+        ${sel("policyType","Policy Type",VX.truckPolicyTypes,"New Business","Renewal unlocks the renewal-discount question below.")}
+        ${txt("priorCarrier","Prior Carrier","—","Expiring carrier, if any. Recorded on the submission; not rated.")}
+        <div class="col-md-4" id="renewalEligWrap" style="${(v.policyType||"New Business")==="Renewal"?"":"display:none"}">
+          <label>Eligible for Renewal Discount?</label>
+          <select class="form-select form-select-sm F" data-k="renewalEligible">${opt([["no","No"],["yes","Yes"]], v.renewalEligible || "no")}</select>
+          <small class="d-block" style="font-size:10.5px;color:var(--text-mute);margin-top:2px;line-height:1.35">Requires prior-term loss ratio under 50%, no more than 2 cancellations, and no unreported units or drivers.</small></div>
+      </div></div></div>
+      <div class="grp"><h3><i class="fa-solid fa-clipboard-check" style="color:var(--cat-1)"></i>Account-Level Credits / Debits</h3>
+        <div class="bd"><div class="sub" style="margin-top:-6px">Auto Liability and Physical Damage each compute their own Account-Level Factor from these answers, clamped 0.85×&ndash;1.50× — separately, not one shared value. <span class="hintdot" title="Each is a banded selection in the source rater, not a free number. &quot;No Inspections&quot; and &quot;No Loss Data&quot; are real answers, not zero.">Banded, not free-form.</span></div>
+        <div class="row g-3">
+        ${sel("yearsInBusiness","Years in Business",VX.truckAcctBizExp.map(b=>[b.yearsInBusiness,String(b.yearsInBusiness)]),5,"A New Venture also forfeits the safety, out-of-service and loss-frequency credits below.")}
+        ${sel("carrierSafetyRating","FMCSA Carrier Safety Rating",["Satisfactory","None","Conditional","Unsatisfactory"],"Satisfactory","Unsatisfactory is a hard decline, not just a debit.")}
+        ${sel("fmcsaAlerts","FMCSA Alerts on File",[[0,"0"],[1,"1"],[2,"2"],[3,"3"],["4+","4+"]],0,"Open compliance alerts from the FMCSA SAFER system.")}
+        ${sel("oosVehiclesBand","Vehicle Out-of-Service Rate",VX.truckAcctOOS.vehicles.map(b=>[b.band,b.band]),"<=10%","As a share of roadside vehicle inspections.")}
+        ${sel("oosDriversBand","Driver Out-of-Service Rate",VX.truckAcctOOS.drivers.map(b=>[b.band,b.band]),"<=4%","Driver bands are tighter than vehicle bands.")}
+        ${sel("lossFreqBand","Loss Frequency, Trailing 3yr",VX.truckAcctLossFreqBands.map(b=>[b,b]),">24% and <=26%","Credit and debit both scale with fleet size — the same band is worth more on a large fleet.")}
+        ${sel("iccFiling","Requires ICC Filing?",[["yes","Yes"],["no","No"]],"yes","For-hire carriers generally require this; not requiring it earns a credit.")}
+        ${sel("driverCriteria1Year","Driver Criteria — 1-Year Threshold Breached?",[["no","No"],["yes","Yes"]],"no","A flat +15% on BOTH Liability and Physical Damage when any rated driver breaches the filed 1-year criteria.")}
+        ${sel("broadenedPollution","Broadened Pollution Form?",[["no","No"],["yes","Yes"]],"no","A flat +10% on Liability only — Physical Damage does not carry this term in the real rater.")}
+        ${sel("defenseAddback","Defense Cost Addback?",[["no","No"],["yes","Yes"]],"no","A flat +10% on Liability only — same as Broadened Pollution, not applied to Physical Damage.")}
+      </div>
+      <div class="mt-3" id="acctBreakdown"></div>
+      </div></div>
+      <div class="grp"><h3><i class="fa-solid fa-clock-rotate-left" style="color:var(--cat-1)"></i>Loss History (Experience Rating)</h3>
+        <div class="bd"><div class="sub" style="margin-top:-6px">Aggregate 3-year figures. A clean account (0 claims / $0) earns close to the maximum 10% credit. <span class="hintdot" title="The real workbook takes an individual claim listing. This captures the same inputs the credibility formula needs, without a full loss-run grid.">Why aggregate?</span></div><div class="row g-3">
+        ${num("priorClaims","BI/PD Claims > $500 (3yr)",0)}
+        ${num("priorIncurredLosses","Limited Incurred Losses ($, 3yr)",0)}
+        ${num("experienceMonths","Experience Period (months)",36)}
+      </div>
+      <div class="mt-3" id="expModPreview"></div>
+      </div></div>
+      <div class="grp"><h3><i class="fa-solid fa-sliders" style="color:var(--cat-1)"></i>Underwriter Adjustments</h3>
+        <div class="bd"><div class="sub" style="margin-top:-6px">Underwriter judgment, layered on top of the filed factor chain — clamped to the filed program band (${(VX.truckUwCreditDebit||{min:0.75,max:1.25}).min}×–${(VX.truckUwCreditDebit||{min:0.75,max:1.25}).max}×), same clamp <code>engine.js</code> enforces regardless of what's typed here.</div><div class="row g-3">
+        ${num("uwCreditDebit","Underwriter Credit / Debit (1.00 = neutral)",1,"0.01")}
+      </div></div></div>`);
+  }
+
+  if (S.lob === "GL") {
+    const isGlPkg = curAppTypeId() === 496;
+    return COV(coverageTree("General Liability", "var(--cat-2)")) + DET("" + locationSchedule("Every location on the account — GL rates off total exposure across every class code below.")
+      + classCodeSchedule()
+      + (isGlPkg ? liquorSection() : "") + `
+` + LIM(`      <div class="grp"><h3><i class="fa-solid fa-file-shield" style="color:var(--cat-2)"></i>Coverage &amp; Limits</h3><div class="bd"><div class="row g-3">
+        ${sel("limit","Each Occurrence Limit",GL_LIMITS,1000000)}
+        ${chk("products","Include Products / Completed Ops",true)}
+        ${sel("gklLimit","Garagekeepers Limit (optional)",[0].concat(GKL_LIMITS),0)}
+      </div></div></div>`) + `
+      <div class="grp"><h3><i class="fa-solid fa-sliders" style="color:var(--cat-2)"></i>Underwriter Adjustments</h3><div class="bd"><div class="row g-3">
+        ${num("schedMod","Schedule Rating Mod (−0.25 to +0.25)",0,"0.01")}
+        ${num("expMod","Experience Mod (floor 0.90)",1,"0.01")}
+      </div></div></div>`);
+  }
+
+  if (S.lob === "PROP") {
+    return COV(coverageTree("Commercial Property", "var(--cat-3)")) + DET("" + locationSchedule("property_building_info is per-location in a real submission. Location 1's Building Characteristics below drive the quoted premium; additional locations are scheduled for the submission but not separately rated in this prototype.") + `
+      <div class="grp"><h3><i class="fa-solid fa-building" style="color:var(--cat-3)"></i>Building Characteristics <span class="vx-b blue">Location 1</span></h3><div class="bd"><div class="row g-3">
+        ${sel("construction","Construction Type",PROP_CONSTRUCTION,"JM")}
+        ${sel("ppc","Protection Class",VX.propPPC.map(p=>[p.ppc,"PPC "+p.ppc]),4)}
+        ${sel("sprinkler","Sprinklered",PROP_SPRINKLER,"Yes")}
+        ${sel("occupancy","Occupancy",VX.propOccupancy.map(o=>[o.code,o.label]),"RETAIL")}
+      </div></div></div>
+` + DET(`      <div class="grp"><h3><i class="fa-solid fa-sack-dollar" style="color:var(--cat-3)"></i>Insured Values</h3><div class="bd"><div class="row g-3">
+        ${num("buildingValue","Building Value ($)",1200000)}
+        ${num("bppValue","Business Personal Property ($)",250000)}
+        ${sel("windHail","Wind / Hail Zone",VX.propWindHail.map(w=>[w.code,w.label]),"Z1")}
+      </div></div></div>`) + LIM(`      <div class="grp"><h3><i class="fa-solid fa-file-shield" style="color:var(--cat-3)"></i>Deductibles &amp; Optional Coverage</h3><div class="bd"><div class="row g-3">
+        ${sel("deductible","All-Other-Perils Deductible",PROP_DED,5000)}
+        ${sel("windHailDed","Wind / Hail Deductible",PROP_WH_DED,"2%")}
+        ${chk("timeElement","Include Business Income / Extra Expense",true)}
+      </div></div></div>`) + `
+      <div class="grp"><h3><i class="fa-solid fa-sliders" style="color:var(--cat-3)"></i>Schedule Rating (IRPM)</h3><div class="bd"><div class="row g-3">
+        ${num("irpm","IRPM Modification (−0.25 to +0.25)",0,"0.01")}
+      </div></div></div>`);
+  }
+
+  if (S.lob === "MPL") {
+    return COV(coverageTree("Professional Liability (MPL)", "var(--cat-4)")) + DET("" + locationSchedule("mpl_locations in the real submission reuses the GL locations structure — this prototype does the same.") + `
+      <div class="grp"><h3><i class="fa-solid fa-user-tie" style="color:var(--cat-4)"></i>Professional Details</h3><div class="bd"><div class="row g-3">
+        ${num("revenue","Annual Revenue ($)",250000)}
+        ${sel("hazardGroup","Hazard Group",VX.mplHazardGroups.map(h=>[h.hg,"HG "+h.hg+" — "+h.desc]),2)}
+        ${sel("yip","Year in Program",MPL_YIP,"4th or More")}
+      </div></div></div>
+` + LIM(`      <div class="grp"><h3><i class="fa-solid fa-file-shield" style="color:var(--cat-4)"></i>Limits &amp; Retention</h3><div class="bd"><div class="row g-3">
+        ${sel("limit","Per-Claim Limit",MPL_LIMITS,200000)}
+        ${sel("retention","Retention",MPL_RETENTIONS,5000)}
+        ${sel("alae","Defense Cost (ALAE) Treatment",MPL_ALAE,"Defense Within Limits")}
+      </div></div></div>`) + `
+      <div class="grp"><h3><i class="fa-solid fa-sliders" style="color:var(--cat-4)"></i>Loss History &amp; Adjustments</h3><div class="bd"><div class="row g-3">
+        ${num("experienceFactor","Loss Experience Factor",0.9,"0.01")}
+        ${num("uwAdjust","Underwriter Credit / Debit (max −25%)",0,"0.01")}
+      </div></div></div>`);
+  }
+
+  if (S.lob === "CYBER") {
+    return COV(coverageTree("Cyber", "var(--cat-5)")) + DET("" + `
+      <div class="grp"><h3><i class="fa-solid fa-briefcase" style="color:var(--cat-5)"></i>Business Profile</h3><div class="bd"><div class="row g-3">
+        ${num("revenue","Annual Revenue ($)",8000000)}
+        ${sel("industry","Industry Classification",VX.cyberIndustry.map(c=>[c.code,c.label]),"RETAIL")}
+        ${sel("mfa","MFA Controls",VX.cyberMFA.map(m=>[m.code,m.label]),"PARTIAL")}
+      </div></div></div>
+` + LIM(`      <div class="grp"><h3><i class="fa-solid fa-file-shield" style="color:var(--cat-5)"></i>Limit &amp; Retention</h3><div class="bd"><div class="row g-3">
+        ${sel("limit","Aggregate Limit",CYBER_LIMITS_A,1000000)}
+        ${sel("sublimit","Cyber Crime Sub-Limit",CYBER_LIMITS_B,250000)}
+        ${sel("retention","Retention",CYBER_RETENTIONS,25000)}
+      </div></div></div>`) + DET(`      <div class="grp"><h3><i class="fa-solid fa-sliders" style="color:var(--cat-5)"></i>Underwriter Adjustments</h3><div class="bd"><div class="row g-3">
+        ${num("schedMod","Schedule Rating Mod",0,"0.01")}
+      </div></div></div>`) + ``);
+  }
+
+  if (S.lob === "WC") {
+    return COV(coverageTree("Workers' Compensation", "var(--cat-6)")) + DET("" + wcExposureSchedule() + `
+      <div class="grp"><h3><i class="fa-solid fa-sliders" style="color:var(--cat-6)"></i>Experience &amp; Schedule Rating</h3>
+        <div class="bd"><div class="sub" style="margin-top:-6px">Real mods are computed by NCCI/the state rating bureau from the account's own loss history — entered here as a direct underwriter input, not derived on this platform. Schedule credit is clamped to the standard ±25% NCCI band.</div>
+        <div class="row g-3">
+        ${num("wcExpMod","Experience Mod",1,"0.01","Below 1.00 is a credit (favorable loss history); above 1.00 is a debit.")}
+        ${num("wcSchedMod","Schedule Rating Credit / Debit (−0.25 to +0.25)",0,"0.01")}
+      </div></div></div>
+      <div class="grp"><h3><i class="fa-solid fa-clipboard-question" style="color:var(--cat-6)"></i>Eligibility Questions</h3>
+        <div class="bd"><div class="sub" style="margin-top:-6px">Real production Eligibility Questions for standalone Workers' Compensation.</div>
+        <div class="row g-3">
+        ${num("oshaViolations","OSHA Violations, Prior 3 Years",0,"1","3 or more requires underwriter review.")}
+        ${chk("wcFatality","Workplace Fatality, Prior 3 Years?",false,"A hard decline, not just a referral.")}
+        ${chk("wcSubcontractorsUninsured","Subcontractors Hired Without Their Own WC Coverage?",false)}
+        ${chk("wcPriorDeclined","Prior Carrier Declined or Non-Renewed WC Coverage?",false)}
+      </div></div></div>`);
+  }
+  return "";
+}
+
+/* ==========================================================================
+   Tabbed quote workflow
+   --------------------------------------------------------------------------
+   Insured → Risk Details → Coverage → Rating Factors → Premium Calculation.
+   Every field writes into the single S.v state object via bind(), and each
+   tab re-renders FROM S.v — so switching tabs (in any order, any number of
+   times) can never lose input. S is also mirrored to sessionStorage so a
+   reload resumes the in-progress quote.
+   ========================================================================== */
+/* Commodities is a conditional step: it sits directly after Coverage and only
+   appears once Motor Truck Cargo is actually selected, because what a fleet
+   hauls is a substantial section in its own right (per-commodity values, load
+   split, eligibility and underwriting) rather than a few more questions on
+   Risk Details — and it is meaningless on a quote that isn't writing Cargo. */
+const ALL_TABS = [
+  { k: "insured",     n: "Insured",         i: "fa-building-user" },
+  { k: "risk",        n: "Risk Details",    i: "fa-clipboard-list" },
+  { k: "vehicles",    n: "Vehicles",        i: "fa-truck-front", when: () => hasVehicles() },
+  { k: "cov",         n: "Coverage",        i: "fa-shield-halved" },
+  { k: "commodities", n: "Commodities",     i: "fa-box", when: () => hasCargo() },
+  { k: "factors",     n: "Rating Factors",  i: "fa-sliders" },
+  { k: "premium",     n: "Premium",         i: "fa-calculator" },
+];
+function hasCargo() { return (S.v.cob || []).includes("Cargo"); }
+/* Only trucking schedules units; every other LOB rates off locations or
+   revenue, so the step would be an empty page for them. */
+function hasVehicles() { return S.lob === "TRUCK"; }
+/* TABS is read in several places (next/back navigation, the tab bar) — keep
+   it a live view of the steps that currently apply. */
+Object.defineProperty(window, "TABS", { get: () => ALL_TABS.filter(t => !t.when || t.when()) });
+if (!S.tab) S.tab = "insured";
+
+/* A tab counts as complete only when the answers it owns are actually
+   present — not when it has merely been visited. */
+function tabComplete(k) {
+  const v = S.v;
+  if (k === "insured") return !!(S.insName && v.state && S.eff);
+  if (k === "risk")    return Object.keys(v).some(x => !["state","cov","selectedCoverages","county"].includes(x));
+  if (k === "cov")     return !!(v.selectedCoverages && v.selectedCoverages.length);
+  // Commodities counts as done once every selected commodity has a load share
+  // and they add up to a full load — that's what the rating actually needs.
+  if (k === "commodities") {
+    const c = v.cargoCommodities || [];
+    return c.length > 0 && c.reduce((a, x) => a + (+x.loadPct || 0), 0) === 100;
+  }
+  if (k === "factors") return !!S.res || tabComplete("risk");
+  if (k === "premium") return !!S.res;
+  return false;
+}
+
+function saveQuoteState() {
+  try { sessionStorage.setItem("vxQuoteDraft", JSON.stringify({ lob: S.lob, v: S.v, tab: S.tab, insName: S.insName, eff: S.eff, county: S.county, underwriter: S.underwriter, underwriterManager: S.underwriterManager })); } catch (e) {}
+}
+function restoreQuoteState() {
+  try {
+    const d = JSON.parse(sessionStorage.getItem("vxQuoteDraft") || "null");
+    if (!d) return;
+    if (d.lob) S.lob = d.lob;
+    if (d.v) S.v = d.v;
+    if (d.tab) S.tab = d.tab;
+    S.insName = d.insName; S.eff = d.eff; S.county = d.county; S.underwriter = d.underwriter; S.underwriterManager = d.underwriterManager;
+  } catch (e) {}
+}
+
+function goTab(k) { S.tab = k; saveQuoteState(); render(); }
+
+/* Tenant → LOB → Product context. LOBs and products come from the active
+   tenant's Cosmos partition, so a user only ever quotes what their tenant
+   actually has configured. */
+/* Seed the defaults a quote needs to rate. These used to be created as a
+   side effect of rendering each form section — which broke once the form was
+   split across tabs, because jumping straight to Premium never rendered the
+   sections and the engine got an incomplete input (NaN premium). Seeding is
+   now explicit and render-independent. */
+/* Resolve the CONFIGURED line-of-business name for a portal LOB code. The
+   portal's short labels ("Professional Liability") deliberately differ from
+   the configured names ("Professional Liability (MPL)"); matching on the
+   label silently produced an empty coverage map for that line. */
+function curAppTypeId() {
+  const p = VX.products.find(x => x.name === S.product);
+  return p ? p.appTypeId : null;
+}
+/* Liquor Liability (liquore_coverage in the real submission) — GL Package
+   (appTypeId 496) only. This prototype has no filed liquor rate on file
+   (same gap as Cargo — nothing in the extracted rate tables prices it), so
+   it is captured for submission completeness but not wired into the
+   premium; the disclosure below says so rather than inventing a rate. */
+function liquorSection() {
+  const on = !!S.v.liquorRater;
+  return `<div class="grp"><h3><i class="fa-solid fa-wine-glass" style="color:var(--cat-2)"></i>Liquor Liability</h3>
+    <div class="bd"><div class="row g-3">
+      ${chk("liquorRater","Write Liquor Liability on this policy",false)}
+      ${on ? num("liquorSales","Annual Liquor Sales ($)",50000) : ""}
+    </div>
+    ${on ? `<div class="mt-2" style="border:1px solid var(--border);border-left:3px solid var(--warn);background:rgba(198,137,15,.09);border-radius:0 10px 10px 0;padding:10px 14px;font-size:12px;line-height:1.5">
+      <i class="fa-solid fa-circle-info me-1" style="color:var(--warn)"></i>Captured for the submission (liquore_coverage), but this program has no filed liquor liability rate on file — it is not added to the premium below.</div>` : ""}
+    </div></div>`;
+}
+function lobNameFor(code) {
+  const hit = (VX.lobs || []).find(l => l.code === code);
+  if (hit) return hit.name;
+  const L = LOBS.find(l => l.k === code);
+  return L ? L.n : null;
+}
+
+function ensureQuoteDefaults() {
+  const L = LOBS.find(l => l.k === S.lob);
+  if (!L) return;
+  const lobName = lobNameFor(S.lob);
+  if (!S.v.cov) {
+    S.v.cov = {};
+    VX.cobParents.filter(p => p.lob === lobName).forEach(p => {
+      const kids = VX.cob.filter(c => c.parentCobId === p.id);
+      S.v.cov[p.id] = { on: p.mandatory, kids: kids.filter(k => k.mandatory).map(k => k.id) };
+    });
+  }
+  if (S.lob === "TRUCK") {
+    if (!S.v.vehicles) S.v.vehicles = [newVehicle(1), newVehicle(2)];
+    if (!S.v.drivers) S.v.drivers = [newDriver(1), newDriver(2)];
+    if (!S.v.gkl || !S.v.gkl.length) S.v.gkl = [newGklLoc(1)];
+  }
+  if (S.lob === "GL") {
+    // classCode/revenue are derived from the class-codes schedule — seed it
+    // even if the Risk Details tab (where the schedule renders) was skipped,
+    // so jumping straight to Premium doesn't calculate off undefined values.
+    if (!S.v.glClassCodes || !S.v.glClassCodes.length) S.v.glClassCodes = [newClassCode(1, S.v.classCode || "238160", S.v.revenue || 2500000)];
+    syncGlFromSchedule();
+  }
+  if (!S.v.state) S.v.state = "TX";
+  syncCob();
+}
+
+function renderQuoteContext() {
+  const el = document.getElementById("quoteCtx");
+  if (!el) return;
+  /* Match on LOB CODE, not display name — the quote portal's short labels
+     ("Professional Liability") deliberately differ from the configured names
+     ("Professional Liability (MPL)"), and matching on name silently dropped
+     that line of business from the picker. */
+  const tenantLobs = (typeof COSMOS !== "undefined" ? COSMOS.lobsFor() : VX.lobs);
+  const tCodes = new Set(tenantLobs.map(l => l.code));
+  const lobNameByCode = {};
+  tenantLobs.forEach(l => (lobNameByCode[l.code] = l.name));
+  const avail = LOBS.filter(l => tCodes.has(l.k));
+  const cur = avail.find(l => l.k === S.lob) || avail[0];
+  if (cur && cur.k !== S.lob) { S.lob = cur.k; S.v = { state: S.v.state || "TX" }; S.res = null; }
+  const prods = (typeof COSMOS !== "undefined" ? COSMOS.productsFor(cur ? lobNameByCode[cur.k] : null) : [])
+    .map(p => p.name);
+  if (prods.length && !prods.includes(S.product)) S.product = prods[0];
+
+  // Application type + rater — which real submission shape this quote follows.
+  const prodRec = VX.products.find(p => p.name === S.product);
+  const at = (prodRec && typeof vxAppType === "function") ? vxAppType(prodRec.appTypeId) : null;
+
+  el.innerHTML = `
+    <div class="vx-ctxbar">
+      <div class="seg meta"><label>Tenant</label><div class="val">${vxTenant().name}</div></div>
+      <i class="fa-solid fa-chevron-right vx-ctx-sep"></i>
+      <div class="seg"><label>Line of Business</label>
+        <select class="form-select form-select-sm" id="qLob">
+          ${avail.map(l => `<option value="${l.k}" ${l.k === S.lob ? "selected" : ""}>${l.n}</option>`).join("")}
+        </select></div>
+      <i class="fa-solid fa-chevron-right vx-ctx-sep"></i>
+      <div class="seg"><label>Product</label>
+        <select class="form-select form-select-sm" id="qProd" ${prods.length ? "" : "disabled"}>
+          ${prods.length ? prods.map(n => `<option ${n === S.product ? "selected" : ""}>${n}</option>`).join("")
+                         : `<option>No product configured</option>`}
+        </select></div>
+      ${prodRec ? `<i class="fa-solid fa-chevron-right vx-ctx-sep"></i>
+      <div class="seg meta" title="${at ? at.name : ''}"><label>App Type · Rater</label>
+        <div class="val">${prodRec.appTypeId} · ${prodRec.raterType} <span class="vx-b amber" style="margin-left:4px">Non-Admitted</span></div></div>` : ""}
+    </div>`;
+
+  const lobSel = document.getElementById("qLob");
+  if (lobSel) lobSel.onchange = () => {
+    S.lob = lobSel.value; S.v = { state: S.v.state || "TX" }; S.res = null; S.tab = "insured";
+    saveQuoteState(); render();
+  };
+  const prodSel = document.getElementById("qProd");
+  // Different products under the same LOB can be different app types (e.g.
+  // Standard GL vs GL Package) with different real submission sections —
+  // re-render so the tab content reflects whichever product is now active.
+  if (prodSel && prods.length) prodSel.onchange = () => { S.product = prodSel.value; saveQuoteState(); render(); };
+}
+
+function tabBar() {
+  return `<div class="vx-qtabs">${TABS.map((t, i) => {
+    const cur = t.k === S.tab, done = !cur && tabComplete(t.k);
+    return `<button class="vx-qtab ${cur ? "cur" : done ? "done" : ""}" data-tab="${t.k}">
+      <span class="n">${done ? '<i class="fa-solid fa-check"></i>' : i + 1}</span>
+      <span class="l"><i class="fa-solid ${t.i} me-1"></i>${t.n}</span></button>`;
+  }).join("")}</div>`;
+}
+
+function render() {
+  const L = LOBS.find(l => l.k === S.lob);
+  ensureQuoteDefaults();
+  /* Commodities disappears when Cargo is deselected — if that was the open
+     tab, fall back to Coverage rather than rendering a step that no longer
+     exists. */
+  if (!TABS.some(t => t.k === S.tab)) S.tab = "cov";
+  const body = {
+    insured: () => `
+      <div class="vx-card vx-anim">
+        <h2>Insured &amp; Location</h2>
+        <div class="sub">Who is being insured, and where the risk sits. The county determines local tax on top of the state rate.</div>
+        <div class="row g-3">
+          <div class="col-md-5"><label>Insured Name</label><input class="form-control form-control-sm" id="insName" value="${S.insName || "Lonestar Freight LLC"}"></div>
+          <div class="col-md-2"><label>State</label><select class="form-select form-select-sm F" data-k="state">
+            ${VX.states.map(s => `<option value="${s.abv}" ${s.abv === (S.v.state || "TX") ? "selected" : ""}>${s.abv}</option>`).join("")}</select></div>
+          <div class="col-md-3"><label>County (drives local tax)</label><select class="form-select form-select-sm" id="county"></select></div>
+          <div class="col-md-2"><label>Effective Date</label><input type="date" class="form-control form-control-sm" id="eff" value="${S.eff || "2026-09-01"}"></div>
+        </div>
+        <div id="taxNote" class="mt-2"></div>
+      </div>
+      <div class="grp"><h3><i class="fa-solid fa-user-tie" style="color:var(--primary)"></i>Underwriter</h3>
+        <div class="bd"><div class="row g-3">
+          <div class="col-md-5"><label>Underwriter</label><input class="form-control form-control-sm" id="underwriter" list="uwNames" value="${S.underwriter || ""}" placeholder="Who this account is assigned to">
+            <datalist id="uwNames">${(VX.users || []).filter(u => u.role === "Underwriter").map(u => `<option value="${u.name}">`).join("")}</datalist></div>
+          <div class="col-md-5"><label>Underwriter Manager</label><input class="form-control form-control-sm" id="underwriterManager" list="uwmNames" value="${S.underwriterManager || ""}" placeholder="Who reviews this account if it's referred">
+            <datalist id="uwmNames">${(VX.users || []).filter(u => u.role === "Underwriter Manager").map(u => `<option value="${u.name}">`).join("")}</datalist>
+            <small class="d-block" style="font-size:10.5px;color:var(--text-mute);margin-top:2px">Clears any quote an eligibility rule has referred (see Roles) — distinct from the day-to-day Underwriter above.</small></div>
+        </div></div>
+      </div>
+      <div class="grp"><h3><i class="fa-solid fa-user-tie" style="color:var(--primary)"></i>Broker Info</h3>
+        <div class="bd"><div class="row g-3">
+          <div class="col-md-4"><label>Producing Agency</label><input class="form-control form-control-sm F" data-k="brokerAgency" value="${S.v.brokerAgency || ""}"></div>
+          <div class="col-md-4"><label>Producer / Agent Name</label><input class="form-control form-control-sm F" data-k="brokerAgent" value="${S.v.brokerAgent || ""}"></div>
+          <div class="col-md-4"><label>Agency Code / NPN</label><input class="form-control form-control-sm F" data-k="brokerAgencyCode" value="${S.v.brokerAgencyCode || ""}"></div>
+          <div class="col-md-4"><label>Agent License #</label><input class="form-control form-control-sm F" data-k="brokerLicense" value="${S.v.brokerLicense || ""}"></div>
+          <div class="col-md-4"><label>Broker Email</label><input type="email" class="form-control form-control-sm F" data-k="brokerEmail" value="${S.v.brokerEmail || ""}"></div>
+          <div class="col-md-4"><label>Broker Phone</label><input type="tel" class="form-control form-control-sm F" data-k="brokerPhone" value="${S.v.brokerPhone || ""}"></div>
+        </div></div></div>`,
+    risk: () => `
+      <div class="vx-card vx-anim">
+        <h2>${L.n} — Risk Details</h2>
+        <div class="sub">Only the questions this product needs. Every answer feeds a rating factor.</div>
+        ${questions("det")}
+      </div>`,
+    cov: () => `
+      <div class="vx-card vx-anim">
+        <h2>Coverage Selection</h2>
+        <div class="sub">Pick the primary coverages to quote — each one reveals the child coverages it carries.</div>
+        ${questions("cov")}
+      </div>`,
+    vehicles: () => `
+      <div class="vx-card vx-anim">
+        <h2>Vehicles &amp; Drivers</h2>
+        <div class="sub">The scheduled units and drivers on this account. Each unit rates on its own class, value and garaging, so the schedule drives premium directly.</div>
+      </div>
+      ${questions("vehicles")}`,
+    commodities: () => `
+      <div class="vx-card vx-anim">
+        <h2>Commodities Hauled</h2>
+        <div class="sub">What this fleet actually carries. The Cargo charge rates off the single highest classification factor among the coverable commodities selected, so the mix matters — not just the limit.</div>
+      </div>
+      ${questions("commodities")}`,
+    factors: () => `
+      <div class="vx-card vx-anim">
+        <div class="vx-card-head">
+          <div><h2>Rating Factors</h2>
+          <div class="sub">Every factor the engine applies to this risk — what drove it, the rule it matched,
+            and what it did to the premium.</div></div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary btn-sm" onclick="setAllFactorSections(true)">Expand all</button>
+            <button class="btn btn-outline-secondary btn-sm" onclick="setAllFactorSections(false)">Collapse all</button>
+          </div>
+        </div>
+        <div id="factorChain"></div>
+      </div>
+      <div class="vx-card vx-anim" id="acctCard" style="display:none;padding:0;overflow:hidden">
+        <div onclick="toggleAcctSection()" style="display:flex;align-items:center;gap:8px;padding:13px 16px;
+          cursor:pointer;background:var(--surface-2)">
+          <i class="fa-solid fa-chevron-right" data-acctchev style="font-size:10px;color:var(--text-mute);width:11px"></i>
+          <i class="fa-solid fa-sliders" style="color:var(--primary)"></i>
+          <b style="font-size:13px">Account-Level Factor</b>
+          <span class="vx-b gray">8 answers</span>
+        </div>
+        <div data-acctbody style="padding:14px 16px;display:none">
+          <div class="sub" style="margin-top:-4px">The eight underwriting answers that combine into a single
+            policy-level credit or debit.</div>
+          <div id="acctBreakdown"></div>
+          <div id="expModPreview" class="mt-3"></div>
+        </div>
+      </div>`,
+    premium: () => `<div id="premiumPane"></div>`,
+  }[S.tab]();
+
+  document.getElementById("vxBody").innerHTML = `
+    <div id="quoteCtx"></div>
+    ${tabBar()}
+    <div class="row g-3">
+      <div class="col-lg-8">${body}
+        <div class="d-flex gap-2 mt-3">
+          ${S.tab !== "insured" ? `<button class="btn btn-outline-secondary btn-sm" id="prevTab"><i class="fa-solid fa-arrow-left me-1"></i>Back</button>` : ""}
+          ${S.tab !== "premium"
+            ? `<button class="btn btn-primary btn-sm ms-auto" id="nextTab">Continue<i class="fa-solid fa-arrow-right ms-1"></i></button>`
+            : `<button class="btn btn-primary btn-sm ms-auto" id="calcBtn"><i class="fa-solid fa-bolt me-1"></i>${S.res ? "Recalculate" : "Calculate"} Premium</button>`}
+        </div>
+      </div>
+      <div class="col-lg-4"><div id="side">
+        <div class="vx-card vx-anim"><div class="vx-empty"><i class="fa-solid fa-calculator"></i>
+          ${S.res ? "" : "Complete the tabs and calculate to see the premium and how it was built up."}</div></div>
+      </div></div>
+    </div>`;
+
+  renderQuoteContext();
+  bind();
+  if (S.tab === "insured") counties();
+  if (S.tab === "factors") {
+    // Account-level breakdown + experience mod are Commercial Trucking only —
+    // the other lines have no equivalent policy-level factor, so the card is
+    // hidden rather than shown empty.
+    const acctCard = document.getElementById("acctCard");
+    if (acctCard) acctCard.style.display = S.lob === "TRUCK" ? "" : "none";
+    if (S.lob === "TRUCK") { renderAcctBreakdown(); renderExpModPreview(); renderAcctSection(); }
+    renderFactorChain();
+  }
+
+  document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => goTab(b.dataset.tab));
+  const nb = document.getElementById("nextTab");
+  if (nb) nb.onclick = () => goTab(TABS[TABS.findIndex(t => t.k === S.tab) + 1].k);
+  const pb = document.getElementById("prevTab");
+  if (pb) pb.onclick = () => goTab(TABS[TABS.findIndex(t => t.k === S.tab) - 1].k);
+
+  // Fields that aren't .F-bound still have to survive a tab switch.
+  const nm = document.getElementById("insName");
+  if (nm) nm.oninput = () => { S.insName = nm.value; saveQuoteState(); };
+  const ef = document.getElementById("eff");
+  if (ef) ef.onchange = () => { S.eff = ef.value; saveQuoteState(); };
+  const uw = document.getElementById("underwriter");
+  if (uw) uw.oninput = () => { S.underwriter = uw.value; saveQuoteState(); };
+  const uwm = document.getElementById("underwriterManager");
+  if (uwm) uwm.oninput = () => { S.underwriterManager = uwm.value; saveQuoteState(); };
+
+  if (S.tab === "premium" && !S.res) {
+    document.getElementById("premiumPane").innerHTML = `
+      <div class="vx-card vx-anim"><div class="vx-empty"><i class="fa-solid fa-calculator"></i>
+        Nothing calculated yet — press <b>Calculate Premium</b> to rate this risk and see every factor that was applied.</div></div>`;
+  }
+  /* A result goes stale the moment any answer changes. Landing on Premium (or
+     Rating Factors) with a stale result used to show the PREVIOUS
+     calculation — so ticking a coverage and switching tabs looked like the
+     new coverage simply wasn't rated. Re-rate instead of showing a figure
+     that no longer matches the inputs. */
+  if (S.dirty && (S.tab === "premium" || S.tab === "factors")) {
+    S.dirty = false;
+    if (S.res) calc();
+  }
+  saveQuoteState();
+  if (S.res) paint();
+}
+
+const ACCT_FACTOR_KEYS = new Set(["yearsInBusiness","carrierSafetyRating","fmcsaAlerts",
+  "oosVehiclesBand","oosDriversBand","lossFreqBand","iccFiling","policyType","renewalEligible",
+  "driverCriteria1Year","broadenedPollution","defenseAddback"]);
+const EXPMOD_KEYS = new Set(["priorClaims","priorIncurredLosses","experienceMonths","state","liabLimit","garageZip"]);
+
+function bind() {
+  /* Any answer changing invalidates the last calculation. Registered once on
+     the body container (which survives re-renders) rather than on each
+     control, so no handler can be added later and forget to do it. */
+  const bodyEl = document.getElementById("vxBody");
+  if (bodyEl && !bodyEl.__dirtyHooked) {
+    bodyEl.__dirtyHooked = true;
+    bodyEl.addEventListener("change", () => { S.dirty = true; }, true);
+    bodyEl.addEventListener("input", () => { S.dirty = true; }, true);
+  }
+  document.querySelectorAll(".F").forEach(e => e.onchange = () => {
+    S.v[e.dataset.k] = e.type === "checkbox" ? e.checked : (e.type === "number" ? +e.value : e.value);
+    if (e.dataset.k === "state") counties();
+    // The renewal-discount question only applies once Policy Type is Renewal
+    if (e.dataset.k === "policyType") {
+      const w = document.getElementById("renewalEligWrap");
+      if (w) w.style.display = e.value === "Renewal" ? "" : "none";
+      if (e.value !== "Renewal") S.v.renewalEligible = "no";
+    }
+    // Re-render so the excluded-commodity warning banner shows/hides
+    if (e.dataset.k === "cargoCommodity") render();
+    if (ACCT_FACTOR_KEYS.has(e.dataset.k)) renderAcctBreakdown();
+    if (EXPMOD_KEYS.has(e.dataset.k)) renderExpModPreview();
+    vxAutoSave();
+  });
+  // primary coverage toggle — reveals / hides its child coverages
+  document.querySelectorAll(".PCOV").forEach(e => e.onchange = () => {
+    const pid = +e.dataset.p;
+    S.v.cov[pid].on = e.checked;
+    if (!e.checked) S.v.cov[pid].kids = [];
+    syncCob(); vxAutoSave();
+    // Full re-render — sections gated on coverage selection (Garagekeepers'
+    // location schedule, Cargo's limit/commodity) only appear this way.
+    // Toggling classes/display in place used to leave them stuck hidden
+    // until something else happened to trigger a render.
+    render();
+  });
+  // child coverage toggle
+  document.querySelectorAll(".KCOV").forEach(e => e.onchange = () => {
+    const pid = +e.dataset.p;
+    S.v.cov[pid].kids = [...document.querySelectorAll(`.KCOV[data-p="${pid}"]:checked`)].map(x => +x.dataset.k);
+    syncCob(); vxAutoSave();
+    // Re-render so each class's factor and premium share update with the
+    // selection — the share is a weighting across the CHOSEN classes, so
+    // ticking one changes every other row's number too.
+    if (S.tab === "cov") render();
+  });
+  syncCob();
+  // vehicle schedule rows
+  document.querySelectorAll(".V").forEach(e => e.onchange = () => {
+    const r = S.v.vehicles[+e.dataset.i];
+    r[e.dataset.f] = e.type === "checkbox" ? e.checked
+      : (e.type === "number" ? +e.value : e.value);
+    // Stated Value is DERIVED from Model Year in the real system (see
+    // truckStatedValueFor / D.truckStatedValueByAge) — re-derive it whenever
+    // the year changes, unless the underwriter has already typed their own
+    // value, in which case that override sticks even across a year edit.
+    if (e.dataset.f === "year" && !r._valueOverridden) {
+      r.value = VX.truckStatedValueFor(r.year, "powerUnit");
+      render();
+    }
+    if (e.dataset.f === "value") r._valueOverridden = true;
+    // units changes the fleet count; VIN and class feed the schedule validation
+    if (e.dataset.f === "units" || e.dataset.f === "vin" || e.dataset.f === "primaryClass") render();
+    if (e.dataset.f === "garageZip") renderExpModPreview();
+    vxAutoSave();
+  });
+  // trailer schedule rows — a trailer is its own titled unit
+  document.querySelectorAll(".T").forEach(e => e.onchange = () => {
+    const t = S.v.trailers[+e.dataset.i];
+    t[e.dataset.f] = e.type === "number" ? +e.value : e.value;
+    if (e.dataset.f === "vin") t.vin = String(t.vin || "").toUpperCase();
+    // Same real derivation as the power unit above, keyed off the trailer's
+    // own type -> valueBucket (Dry Van / Reefer / Flatbed carry different
+    // real depreciation curves).
+    if ((e.dataset.f === "year" || e.dataset.f === "type") && !t._valueOverridden) {
+      const bucket = (VX.trailerTypes.find(x => x.type === t.type) || {}).valueBucket;
+      if (bucket) t.value = VX.truckStatedValueFor(t.year, bucket);
+    }
+    if (e.dataset.f === "value") t._valueOverridden = true;
+    syncTrailers();
+    render();
+    vxAutoSave();
+  });
+  // driver schedule rows
+  document.querySelectorAll(".D").forEach(e => e.onchange = () => {
+    const d = S.v.drivers[+e.dataset.i];
+    d[e.dataset.f] = e.type === "number" ? +e.value : e.value;
+    if (e.dataset.f === "violations") render();
+    // Driver Licence States is one of the eight account-factor drivers
+    if (e.dataset.f === "licState") renderAcctBreakdown();
+    vxAutoSave();
+  });
+  // Garagekeepers location schedule
+  document.querySelectorAll(".K").forEach(e => e.onchange = () => {
+    const row = S.v.gkl[+e.dataset.i];
+    row[e.dataset.f] = e.dataset.f === "limit" ? +e.value : e.value;
+    // changing state can invalidate the selected limit (limits vary by state)
+    if (e.dataset.f === "state") render();
+    vxAutoSave();
+  });
+  // Insured locations schedule (GL / GL Package / Property / MPL)
+  document.querySelectorAll(".LOC").forEach(e => e.onchange = () => {
+    S.v.locations[+e.dataset.i][e.dataset.f] = e.value;
+    vxAutoSave();
+  });
+  // GL class codes schedule
+  document.querySelectorAll(".GCC").forEach(e => e.onchange = () => {
+    const row = S.v.glClassCodes[+e.dataset.i];
+    row[e.dataset.f] = e.dataset.f === "exposureAmount" ? +e.value : e.value;
+    syncGlFromSchedule();
+    render();
+  });
+  // Commodities Hauled schedule (Cargo)
+  document.querySelectorAll(".CGC").forEach(e => e.onchange = () => {
+    const code = e.dataset.code;
+    if (e.checked) {
+      if (!S.v.cargoCommodities.some(c => c.code === code)) S.v.cargoCommodities.push({ code, maxValue: 15000, avgValue: 10000, loadPct: 0 });
+    } else {
+      S.v.cargoCommodities = S.v.cargoCommodities.filter(c => c.code !== code);
+    }
+    render();
+  });
+  document.querySelectorAll(".CGCF").forEach(e => e.onchange = () => {
+    const row = S.v.cargoCommodities.find(c => c.code === e.dataset.code);
+    if (row) row[e.dataset.f] = +e.value;
+    vxAutoSave();
+  });
+  // WC exposures schedule
+  document.querySelectorAll(".WCX").forEach(e => e.onchange = () => {
+    const row = S.v.wcExposures[+e.dataset.i];
+    row[e.dataset.f] = e.dataset.f === "payroll" ? +e.value : e.value;
+    render();
+  });
+  const cb = document.getElementById("calcBtn");
+  if (cb) cb.onclick = calc;
+}
+
+/* Translate the coverage tree selection into the flat keys the engine expects,
+   and keep a structured copy for the premium breakdown rollup. */
+function syncCob() {
+  if (!S.v.cov) return;
+  const sel = [];
+  Object.entries(S.v.cov).forEach(([pid, st]) => {
+    if (!st.on) return;
+    const p = VX.cob.find(c => c.id === +pid);
+    if (!p) return;
+    sel.push({ id: p.id, name: p.name, kids: st.kids.map(k => VX.cob.find(c => c.id === k)).filter(Boolean) });
+  });
+  S.v.selectedCoverages = sel;
+  // Trucking engine keys off these three primary names
+  S.v.cob = sel.map(s => s.name === "Motor Truck Cargo" ? "Cargo" : s.name);
+}
+
+function counties() {
+  const st = S.v.state || "TX";
+  const list = VX.counties.filter(c => c.state === st);
+  const sel = document.getElementById("county");
+  if (!sel) { note(); return; }   // county select only exists on the Insured tab
+  sel.innerHTML = list.length
+    ? list.map(c => `<option value="${c.name}" data-tax="${c.taxRate}">${c.name}${c.taxRate ? " (+" + c.taxRate.toFixed(2) + "%)" : ""}</option>`).join("")
+    : `<option value="">No counties configured</option>`;
+  if (S.county && list.some(c => c.name === S.county)) sel.value = S.county;
+  sel.onchange = () => { S.county = sel.value; saveQuoteState(); note(); };
+  note();
+}
+function note() {
+  // Read from VX.taxes, not VX.states — VX.taxes is what ENGINE.rate() actually
+  // charges (engine.js), so this preview can never disagree with the real total.
+  const tx = VX.taxes.find(t => t.state === (S.v.state || "TX"));
+  const stTax = tx ? tx.surplusTax : 2;
+  const o = document.getElementById("county").selectedOptions[0];
+  const ct = o ? +o.dataset.tax || 0 : 0;
+  // The engine looks the rate up from the county NAME, so that is what the
+  // quote carries; the percentage below is only for this preview line.
+  S.v.county = (o && o.value) || null;
+  const tn = document.getElementById("taxNote");
+  if (!tn) return;
+  tn.innerHTML = `<div class="vx-ai" style="padding:9px 12px;font-size:12.3px">
+    <b>Tax for this location:</b> ${stTax.toFixed(2)}% state
+    ${ct ? `+ <b style="color:var(--warn)">${ct.toFixed(2)}% county</b>` : "+ 0.00% county (this county charges no local tax)"}
+    = <b>${(stTax + ct).toFixed(2)}% total</b></div>`;
+}
+
+async function calc() {
+  /* The Calculate button only exists on the tabs that show it — the Rating
+     Factors tab rates on demand to resolve its factor chain, and used to
+     throw here before the calculation ever ran. */
+  const b = document.getElementById("calcBtn");
+  if (b) { b.disabled = true; b.innerHTML = '<span class="vx-spin" style="border-top-color:var(--color-on-brand);vertical-align:-2px"></span> Calculating...'; }
+  await new Promise(r => setTimeout(r, 520));
+  try {
+    ensureQuoteDefaults();
+    /* County tax used to be layered on here, after the engine returned. That
+       made it a property of this screen rather than of the quote, so the
+       Quote JSON page — running the identical ENGINE.rate() call — produced a
+       total with no local tax in it. The engine charges it now; this just
+       tells it which county, the same way it is told which state. */
+    S.v.county = S.county || null;
+    S.res = ENGINE.rate(S.lob, S.v);
+    S.elig = evaluateEligibility(S.lob, S.v);
+    vxToast("Premium calculated", LOBS.find(l => l.k === S.lob).n + " — " + vxMoney(S.res.finalPremium), "ok");
+  } catch (e) { vxToast("Rating error", e.message, "err"); }
+  if (b) { b.disabled = false; b.innerHTML = '<i class="fa-solid fa-bolt me-1"></i>Recalculate Premium'; }
+  S.dirty = false;   // result now matches the inputs again
+  saveQuoteState();
+  paint();
+  // Rating Factors reads its chain off the result, so refresh it once rated.
+  if (S.tab === "factors") renderFactorChain();
+}
+
+/* Child coverages included under a primary group, with their share of the
+   group premium — mirrors how premium rolls up per parent_cob_id. */
+/* Credits the quote did NOT receive, and why.
+
+   A credit that was never applied is invisible on a premium breakdown, which
+   makes two very different situations look identical: "we checked and this
+   account does not qualify" and "nobody asked the question". The second is
+   worth an underwriter's time — it is a credit the insured may well be
+   entitled to, sitting behind one unanswered field on the submission. So the
+   undetermined ones are listed first and counted in the summary line. */
+function creditsNotAppliedRow(r) {
+  const skipped = r.creditsSkipped || [];
+  if (!skipped.length) return "";
+  const undet = skipped.filter(s => s.undetermined);
+  const rest = skipped.filter(s => !s.undetermined);
+  const rows = [...undet, ...rest].map(s => `<tr>
+      <td style="padding-inline-start:30px;color:var(--text-mute)">
+        <i class="fa-solid ${s.undetermined ? "fa-circle-question" : "fa-circle-minus"}"
+           style="font-size:9px;margin-inline-end:6px;color:var(--${s.undetermined ? "warn" : "text-mute"})" aria-hidden="true"></i>${s.name}</td>
+      <td style="text-align:right;color:var(--text-mute);font-size:11.5px">${s.reason}</td></tr>`).join("");
+  return `<tr class="vx-exp" data-x="nocred" style="cursor:pointer"><td>
+      <i class="fa-solid fa-chevron-right me-2" style="font-size:9px;transition:.2s" id="chevnocred" aria-hidden="true"></i>
+      Credits &amp; debits not applied
+      <span class="vx-b gray" style="margin-inline-start:6px">${skipped.length}</span>
+      ${undet.length ? `<span class="vx-b amber" style="margin-inline-start:4px">${undet.length} undetermined</span>` : ""}</td>
+      <td style="text-align:right;color:var(--text-mute)">—</td></tr>
+    <tr class="vx-exp-body" id="expnocred"><td colspan="2" style="padding:0">
+      <table class="vx-t" style="margin:0">${rows}</table></td></tr>`;
+}
+
+function childRows(g, r) {
+  const sel = (S.v.selectedCoverages || []).find(s =>
+    s.name === g.name || (s.name === "Motor Truck Cargo" && g.name === "Cargo") ||
+    g.name.startsWith(s.name) || s.name.startsWith(g.name));
+  if (!sel || !sel.kids.length) return "";
+  const w = sel.kids.reduce((a, k) => a + (k.factor || 0.1), 0) || 1;
+  return `<tr><td colspan="2" style="padding:6px 12px 3px 32px;font-size:10.5px;font-weight:700;
+    text-transform:uppercase;letter-spacing:.04em;color:var(--text-mute)">Child coverages included</td></tr>`
+    + sel.kids.map(k => `<tr>
+      <td style="padding-left:42px;font-size:12.1px">↳ ${k.name}
+        ${k.mandatory ? '<span class="vx-b green" style="margin-left:5px">req</span>' : ""}</td>
+      <td style="text-align:right;font-size:12.1px">${vxMoney(g.subtotal * (k.factor || 0.1) / w)}</td></tr>`).join("")
+    + `<tr><td colspan="2" style="border-bottom:1px solid var(--border)"></td></tr>`;
+}
+
+const fmtF = (v, k) => k === "money" ? vxMoney(v) : k === "x" ? Number(v).toFixed(3) + "×" : vxNum(v);
+
+/* Which coverages just now got rated by whatever's saved and Active in
+   Formula Builder, versus the platform's built-in default calculation.
+   Directly answers "did my Formula Builder edit actually change anything" —
+   until this existed, that question had no visible answer anywhere. */
+function ratedByBadge(rb) {
+  if (!rb) return "";
+  if (rb.mode === "formula") return `<span class="vx-b blue ms-2" style="font-size:9px" title="Attached ${rb.version || ""} · updated ${rb.updated}"><i class="fa-solid fa-wand-magic-sparkles me-1"></i>Formula Builder — ${rb.name}</span>`;
+  if (rb.error) return `<span class="vx-b amber ms-2" style="font-size:9px" title="Its saved formula failed to evaluate: ${rb.error} — fell back automatically so the quote still completed"><i class="fa-solid fa-triangle-exclamation me-1"></i>Default engine (formula error)</span>`;
+  return `<span class="vx-b gray ms-2" style="font-size:9px">Default engine</span>`;
+}
+
+/* A factor is almost never a constant — it's a row selected out of a rate
+   table by one of the insured's own answers. These renderers show that whole
+   chain (default → what was entered → which row matched → what applied →
+   what it did to premium) instead of a bare number that looks fixed. */
+function impChip(f) {
+  if (!f.measurable) return "";
+  if (f.atDefault) return `<span class="fimp flat" title="Sitting on this table's default row — it moved nothing">at default</span>`;
+  const up = f.impact > 0;
+  return `<span class="fimp ${up ? "up" : "down"}">${up ? "+" : "−"}${vxMoney(Math.abs(f.impact))}</span>`;
+}
+
+function factorDetail(f) {
+  const steps = [
+    { k: "Default", v: f.base == null ? "<span style='color:var(--text-mute)'>no neutral row</span>" : fmtF(f.base, f.kind) },
+    ...(f.driver ? [{ k: "Insured input", v: `<span style="font-weight:500;color:var(--text-dim);font-size:10.5px">${f.driver}</span><br>${f.input || "—"}` }] : []),
+    ...(f.matched ? [{ k: "Matched rule", v: f.matched }] : []),
+    { k: "Applied factor", v: fmtF(f.value, f.kind), cls: "applied" },
+    ...(f.measurable ? [{ k: "Premium impact", cls: f.atDefault ? "" : (f.impact > 0 ? "up" : "down"),
+      v: f.atDefault ? "<span style='color:var(--text-mute)'>no change</span>"
+        : `${f.impact > 0 ? "+" : "−"}${vxMoney(Math.abs(f.impact))}<div style="font-size:10px;font-weight:500;opacity:.8">${f.pct > 0 ? "+" : ""}${f.pct.toFixed(1)}% vs default</div>` }] : []),
+  ];
+  const optRows = (f.options || []).length ? `
+    <div style="font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--text-mute);margin:2px 0 4px">
+      What other answers would apply</div>
+    <div style="max-height:168px;overflow-y:auto">${f.options.map(o => `
+      <div class="fopt ${o.active ? "on" : ""}">
+        <span>${o.active ? '<i class="fa-solid fa-check me-1" style="font-size:9px"></i>' : ""}${o.label}</span>
+        <span style="font-variant-numeric:tabular-nums">${typeof o.value === "number" ? (Math.abs(o.value) < 10 ? o.value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "") : vxNum(o.value)) : o.value}</span>
+      </div>`).join("")}</div>` : "";
+  return `<div class="fchain">${steps.map(s => `<div class="fstep ${s.cls || ""}"><span class="k">${s.k}</span><div class="v">${s.v}</div></div>`).join("")}</div>
+    ${optRows}
+    ${f.note ? `<div style="font-size:11.3px;color:var(--text-dim);margin-top:7px;line-height:1.5"><i class="fa-solid fa-circle-info me-1" style="color:var(--accent)"></i>${f.note}</div>` : ""}`;
+}
+
+function factorRow(f, gi, fi) {
+  const id = `f${gi}_${fi}`;
+  const hasDetail = !!(f.driver || (f.options || []).length || f.note || f.table);
+  const sub = f.driver
+    ? `${f.driver}: <b style="color:var(--text-dim)">${f.input || "—"}</b>${f.matched ? ` <i class="fa-solid fa-arrow-right-long" style="font-size:8px;opacity:.5"></i> ${f.matched}` : ""}`
+    : (f.matched || "");
+  const chip = impChip(f);
+  return `<tr class="${hasDetail ? "ftrow" : ""}" ${hasDetail ? `data-ft="${id}"` : ""}>
+      <td style="padding-left:30px;font-size:12.1px">
+        ${hasDetail ? `<i class="fa-solid fa-chevron-right me-2" style="font-size:8px;color:var(--text-mute);transition:.2s" id="chf${id}"></i>` : `<span style="display:inline-block;width:16px"></span>`}
+        <span>${f.label}</span>
+        ${f.varies ? '<span class="vx-b amber ms-1" style="font-size:9px">varies by unit</span>' : ""}
+        ${sub ? `<div style="padding-left:16px;font-size:10.6px;color:var(--text-mute);margin-top:2px;line-height:1.4">${sub}</div>` : ""}
+      </td>
+      <td style="text-align:right;font-size:12.1px;white-space:nowrap;vertical-align:top">
+        <b>${fmtF(f.value, f.kind)}</b>${chip ? `<div style="margin-top:3px">${chip}</div>` : ""}
+      </td></tr>
+    ${hasDetail ? `<tr class="vx-exp-body" id="expf${id}"><td colspan="2" style="padding:10px 14px 13px 46px;background:var(--surface-2)">${factorDetail(f)}</td></tr>` : ""}`;
+}
+
+/* Audit view: every factor across every coverage, ranked by what it actually
+   did to the premium. Answers "why is my premium this number?" in one screen. */
+function tracePanel(r) {
+  const all = ENGINE.trace(r).filter(t => t.measurable && !t.atDefault);
+  if (!all.length) return "";
+  const moved = all.slice().sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact));
+  const max = Math.abs(moved[0].impact) || 1;
+  const ups = moved.filter(t => t.impact > 0).reduce((a, t) => a + t.impact, 0);
+  const downs = moved.filter(t => t.impact < 0).reduce((a, t) => a + t.impact, 0);
+  return `
+    <div class="vx-tw"><table class="vx-t">
+        <thead><tr><th>Factor</th><th>Driven by</th><th style="text-align:right">Default → Applied</th><th style="text-align:right">Impact</th></tr></thead>
+        <tbody>${moved.map(t => `<tr>
+          <td><b style="font-size:12px">${t.label}</b>
+            <div style="font-size:10.4px;color:var(--text-mute)">${t.group}</div></td>
+          <td style="font-size:11.4px">${t.driver ? `${t.driver}<div style="font-size:10.6px;color:var(--text-mute)">${t.input || ""}</div>` : '<span style="color:var(--text-mute)">program constant</span>'}</td>
+          <td style="text-align:right;font-size:11.6px;white-space:nowrap;font-variant-numeric:tabular-nums">
+            <span style="color:var(--text-mute)">${fmtF(t.neutral, t.kind)}</span>
+            <i class="fa-solid fa-arrow-right-long mx-1" style="font-size:8px;opacity:.5"></i>
+            <b>${fmtF(t.value, t.kind)}</b></td>
+          <td style="text-align:right;white-space:nowrap">
+            <div class="d-flex align-items-center justify-content-end gap-2">
+              <div class="fbar"><i style="width:${Math.round(Math.abs(t.impact) / max * 100)}%;background:${t.impact > 0 ? "var(--bad)" : "var(--good)"}"></i></div>
+              <span style="font-size:11.5px;font-weight:700;color:${t.impact > 0 ? "var(--bad)" : "var(--good)"}">${t.impact > 0 ? "+" : "−"}${vxMoney(Math.abs(t.impact))}</span>
+            </div></td></tr>`).join("")}</tbody>
+      </table></div>`;
+}
+
+/* The movers table is reference material, not something you read on the way
+   past — it is long, it repeats what the factor chain already says, and it
+   pushed the premium summary down the page. The headline numbers stay inline
+   as a one-line strip; the table itself opens on demand. */
+function moversStrip(r) {
+  const all = ENGINE.trace(r).filter(t => t.measurable && !t.atDefault);
+  if (!all.length) return "";
+  const ups = all.filter(t => t.impact > 0).reduce((a, t) => a + t.impact, 0);
+  const downs = all.filter(t => t.impact < 0).reduce((a, t) => a + t.impact, 0);
+  return `
+    <div class="vx-card vx-anim vx-anim-d2" style="padding:12px 16px">
+      <div class="d-flex align-items-center gap-2 flex-wrap" style="font-size:11.8px">
+        <b style="font-size:13px">What moved this premium</b>
+        <span class="fimp up">+${vxMoney(ups)} added</span>
+        <span class="fimp down">−${vxMoney(Math.abs(downs))} saved</span>
+        <span style="color:var(--text-mute)">${all.length} factors off default</span>
+        <button class="btn btn-outline-secondary btn-sm ms-auto" onclick="showMovers()">
+          <i class="fa-solid fa-list-ol me-1"></i>See all ${all.length}</button>
+      </div>
+    </div>`;
+}
+
+function showMovers() {
+  const r = S.res;
+  if (!r) return;
+  const all = ENGINE.trace(r).filter(t => t.measurable && !t.atDefault);
+  const ups = all.filter(t => t.impact > 0).reduce((a, t) => a + t.impact, 0);
+  const downs = all.filter(t => t.impact < 0).reduce((a, t) => a + t.impact, 0);
+  vxModal("What moved this premium", `
+    <div class="sub" style="margin-top:-6px">Every factor that landed off its default row, ranked by dollar
+      impact. Change the matching answer on the earlier tabs and these move.</div>
+    <div class="d-flex gap-2 mb-3" style="font-size:11.8px">
+      <span class="fimp up">+${vxMoney(ups)} added</span>
+      <span class="fimp down">−${vxMoney(Math.abs(downs))} saved</span>
+      <span style="color:var(--text-mute);align-self:center">${all.length} factors off default</span>
+    </div>
+    ${tracePanel(r)}`,
+    [{ t: "Close", c: "secondary" }], "modal-lg");
+}
+
+function eligBanner() {
+  const el = S.elig;
+  if (!el || (!el.declines.length && !el.refers.length)) return "";
+  const line = (e, icon) => `<div style="margin-top:4px"><i class="fa-solid ${icon} me-1"></i><b>${e.rule.name}</b> — ${e.reason}</div>`;
+  return `
+    ${el.declines.length ? `<div class="vx-card vx-anim mb-2" style="border:1px solid var(--bad);background:rgba(210,69,69,.08);padding:12px 14px;font-size:12.3px;line-height:1.5">
+      <span class="vx-b red"><i class="fa-solid fa-ban me-1"></i>Ineligible — cannot quote</span>
+      ${el.declines.map(e => line(e, "fa-circle-xmark")).join("")}
+    </div>` : ""}
+    ${el.refers.length ? `<div class="vx-card vx-anim mb-2" style="border:1px solid var(--warn);background:rgba(198,137,15,.08);padding:12px 14px;font-size:12.3px;line-height:1.5">
+      <span class="vx-b amber"><i class="fa-solid fa-triangle-exclamation me-1"></i>Refers to underwriter</span>
+      ${el.refers.map(e => line(e, "fa-flag")).join("")}
+    </div>` : ""}`;
+}
+
+/* ==========================================================================
+   Premium Calculation tab — the full, transparent factor-by-factor build-up.
+   Every column comes from the trace records engine.js already emits, so this
+   is the real calculation, not a restatement of it:
+     Factor        f.label
+     Input value   f.input        (what the insured actually answered)
+     Matched rule  f.matched      (the table row that answer selected)
+     Applied       f.value        (the factor actually used)
+     Default       f.base         (the neutral/default value)
+     Adjustment    value vs base  (what this factor did to the premium)
+   Where applied differs from default, applied is emphasised and the default
+   shown greyed alongside — never the default on its own.
+   ========================================================================== */
+/* ==========================================================================
+   Trucking Premium Estimate summary — Premium Breakdown / Loss Ratio & Rates /
+   Vehicle Type / Driver Info / a tabbed Account-Auto Liability-Cargo-
+   Commodity factor view. Every figure here is read off engine.js's already-
+   computed trucking() result (r.groups / r.vehicleTypeRollup /
+   r.driverStateDistribution / r.cargoBreakdown / r.accountFactorLines) — no
+   new rating math, just a compact re-presentation alongside the full
+   transparent factor table below (which stays; this doesn't replace it). */
+/* Commercial Trucking's real formula (and the rich Premium Breakdown / Loss
+   Ratio / Vehicle Type / Driver Info summary built specifically on top of
+   its output) was removed at the user's explicit request, alongside its
+   factor registry and saved formulas — see data.js/engine.js. Those rollups
+   (vehicleTypeRollup, driverStateDistribution, lossRatio3yr/5yr,
+   cargoBreakdown) are not computed by either new candidate model, so this
+   summary is rebuilt around what the two models actually produce: a direct
+   side-by-side comparison. r.modelA / r.modelB are the two full results
+   (see engine.js's trucking()); r itself mirrors Model A for callers that
+   read the plain shape. */
+function truckPremiumSummary(r) {
+  if (r.lob !== "Commercial Trucking") return "";
+  const money = v => vxMoney(v);
+  const al = r.groups.find(g => g.name === "Auto Liability");
+  const cargo = r.groups.find(g => g.name === "Cargo");
+  const brokerFee = (r.feeLines || []).find(f => f.name === "Broker Fee");
+  const advancePremium = r.groups.reduce((s, g) => s + g.subtotal, 0);
+  const stampPct = (r.taxDetail && r.taxDetail.stampingFee) || 0;
+  const stampAmt = Math.round((advancePremium + r.tax) * stampPct / 100);
+  const costOfPolicy = r.finalPremium + stampAmt;
+  const pctOrNA = ratio => (r.priorClaims || r.priorIncurred) ? (ratio * 100).toFixed(1) + "%" : "N/A";
+  const vt = r.vehicleTypeRollup || [];
+  const ds = r.driverStateDistribution || {};
+
+  return `
+  <div class="row g-3 mb-3">
+    <div class="col-lg-6">
+      <div class="vx-card vx-anim">
+        <h2 style="font-size:14px;margin-bottom:8px">Premium Breakdown</h2>
+        <table class="vx-t pt" style="margin:0">
+          <tbody>
+            ${r.groups.map(g => `<tr><td>Total ${g.name} Premium</td><td class="pt-num">${money(g.subtotal)}</td></tr>`).join("")}
+            <tr class="pt-total"><td><b>Estimated Advance Premium</b></td><td class="pt-num"><b>${money(advancePremium)}</b></td></tr>
+            <tr><td class="pt-mute">Broker Service Fee</td><td class="pt-num pt-mute">${money(brokerFee ? brokerFee.amt : 0)}</td></tr>
+            <tr><td class="pt-mute">Surplus Lines Tax</td><td class="pt-num pt-mute">${money(r.tax)}</td></tr>
+            <tr><td class="pt-mute">Stamping Fee${stampPct ? ` (${stampPct}%)` : ""}</td><td class="pt-num pt-mute">${money(stampAmt)}</td></tr>
+            <tr class="pt-final"><td><b>Cost Of Policy</b></td><td class="pt-num"><b style="font-size:15px">${money(costOfPolicy)}</b></td></tr>
+          </tbody>
+        </table>
+        ${stampPct ? `<div style="font-size:10.3px;color:var(--text-mute);margin-top:8px">Stamping Fee is the real per-state filed rate (State Taxes) added here for the estimate — the engine's own Final Premium (right rail) does not yet fold it in.</div>` : ""}
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="vx-card vx-anim">
+        <h2 style="font-size:14px;margin-bottom:8px">Loss Ratio &amp; Rates</h2>
+        <table class="vx-t pt" style="margin:0">
+          <thead><tr><th></th><th class="pt-num">AL</th><th class="pt-num">Cargo</th></tr></thead>
+          <tbody>
+            <tr><td>3-Year Loss Ratio</td><td class="pt-num">${pctOrNA(r.lossRatio3yr)}</td><td class="pt-num">N/A</td></tr>
+            <tr><td>5-Year Loss Ratio</td><td class="pt-num">${pctOrNA(r.lossRatio5yr)}</td><td class="pt-num">N/A</td></tr>
+            <tr><td>Rate %</td><td class="pt-num">N/A</td><td class="pt-num">${cargo && r.units ? money(Math.round(cargo.subtotal / r.units)) + " PPU" : "N/A"}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-lg-6">
+      <div class="vx-card vx-anim">
+        <h2 style="font-size:14px;margin-bottom:8px"><i class="fa-solid fa-truck me-1"></i>Vehicle Type</h2>
+        <table class="vx-t pt" style="margin:0">
+          <thead><tr><th>Vehicle Type</th><th class="pt-num">Units</th><th class="pt-num">PPU</th></tr></thead>
+          <tbody>${vt.map(v => `<tr><td>${v.type}</td><td class="pt-num">${v.units}</td><td class="pt-num">${v.units && v.premium ? money(v.ppu) : "N/A"}</td></tr>`).join("")}
+            <tr class="pt-total"><td><b>Total Units</b></td><td class="pt-num"><b>${r.units}</b></td><td></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="vx-card vx-anim">
+        <h2 style="font-size:14px;margin-bottom:8px"><i class="fa-solid fa-users me-1"></i>Driver Info</h2>
+        <table class="vx-t pt" style="margin:0">
+          <tbody>
+            <tr><td>Risk State (${r.state})</td><td class="pt-num">${ds.riskState || 0}</td></tr>
+            <tr><td>New York</td><td class="pt-num">${ds.ny || 0}</td></tr>
+            <tr><td>Florida</td><td class="pt-num">${ds.fl || 0}</td></tr>
+            <tr><td>Other States</td><td class="pt-num">${ds.other || 0}</td></tr>
+            <tr><td>Excluded Drivers</td><td class="pt-num">${ds.excluded || 0}</td></tr>
+            <tr class="pt-total"><td>Average Driver Factor</td><td class="pt-num">${r.driverFactorAvg != null ? r.driverFactorAvg.toFixed(3) : "—"}</td></tr>
+            <tr class="pt-total"><td>Applied Driver Factor</td><td class="pt-num">${(+r.driverFactorApplied || 1).toFixed(3)}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  ${candidateModelComparison(r)}
+
+  ${truckFactorTabs(r)}`;
+}
+
+/* Two candidate rating models (Model A / Model B — see engine.js), computed
+   alongside the real formula above purely for a side-by-side rate-
+   indication comparison. Not filed rates, not what this policy is actually
+   charged (the real breakdown above that IS). Only rendered when both are
+   present on the result. */
+function candidateModelComparison(r) {
+  const a = r.modelA, b = r.modelB;
+  if (!a || !b) return "";
+  const money = v => vxMoney(v);
+  const diffPct = r.modelDiffPct;
+  const higher = b.finalPremium > a.finalPremium ? "B" : "A";
+
+  const modelCard = (m, label, color) => `
+    <div class="col-lg-6">
+      <div class="vx-card vx-anim">
+        <h2 style="font-size:14px;margin-bottom:2px"><span class="vx-b" style="background:${color}22;color:${color}">${label}</span></h2>
+        <div class="sub" style="margin-top:2px">${m.formula}</div>
+        <table class="vx-t pt" style="margin-top:8px">
+          <tbody>
+            <tr><td>Coverage Premium</td><td class="pt-num">${money(m.coveragePremium)}</td></tr>
+            ${m.accountFactor !== 1 ? `<tr><td>${m.acctLabel} (${m.accountFactor.toFixed(2)}×)</td><td class="pt-num">${money(m.afterAccount - m.coveragePremium)}</td></tr>` : ""}
+            <tr><td class="pt-mute">Fees</td><td class="pt-num pt-mute">${money(m.fees)}</td></tr>
+            <tr><td class="pt-mute">Surplus Lines Tax</td><td class="pt-num pt-mute">${money(m.tax)}</td></tr>
+            ${m.countyTax ? `<tr><td class="pt-mute">County Tax</td><td class="pt-num pt-mute">${money(m.countyTax)}</td></tr>` : ""}
+            <tr class="pt-final"><td><b>Final Premium</b></td><td class="pt-num"><b style="font-size:15px">${money(m.finalPremium)}</b></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+
+  return `
+  <h2 style="font-size:14px;margin:20px 0 10px"><i class="fa-solid fa-flask me-2" style="color:var(--primary)"></i>Candidate Model Comparison <span class="vx-b gray" style="font-size:9px">not filed</span></h2>
+  <div class="vx-ai mb-3" style="padding:11px 15px">
+    <i class="fa-solid fa-circle-info me-1"></i>
+    Two candidate rating models, computed alongside the real formula above purely for a rate-indication comparison — neither is a filed rate, and neither is what this policy actually charges (the real breakdown above that is).
+    Model ${higher} rates <b>${Math.abs(diffPct).toFixed(1)}%</b> ${higher === "B" ? "higher" : "lower than Model B"} than Model ${higher === "B" ? "A" : "B"} for this exact risk.
+  </div>
+  <div class="row g-3 mb-3">
+    ${modelCard(a, "Model A — Classification (Manual) Rating", "var(--cat-1)")}
+    ${modelCard(b, "Model B — Exposure-Based (Mileage) Rating", "var(--cat-3)")}
+  </div>`;
+}
+
+/* Tabs come from the rated result, not a fixed list: "Account", then one tab
+   per coverage class actually on this quote. Each coverage tab shows a row per
+   scheduled unit where that coverage rates per unit, because a fleet quote is
+   priced unit by unit and a single blended row hides which truck is expensive. */
+function factorTabNames(r) {
+  const names = [];
+  if (r.accountFactorLines && r.accountFactorLines.length) names.push("Account");
+  (r.groups || []).forEach(g => { if (!names.includes(g.name)) names.push(g.name); });
+  // Model A / Model B's own tabs, alongside the real coverage tabs above —
+  // additional, not a replacement (see candidateModelComparison()). Their
+  // group names already read "Model A — ..." / "Model B — ...".
+  if (r.modelA && r.modelB) {
+    (r.modelA.groups || []).forEach(g => { if (!names.includes(g.name)) names.push(g.name); });
+    (r.modelB.groups || []).forEach(g => { if (!names.includes(g.name)) names.push(g.name); });
+  }
+  return names.length ? names : ["Account"];
+}
+
+function truckFactorTabs(r) {
+  const TABS_F = factorTabNames(r);
+  if (!S.truckFactorTab || !TABS_F.includes(S.truckFactorTab)) S.truckFactorTab = TABS_F[0];
+  const cur = S.truckFactorTab;
+  const money = v => vxMoney(v);
+  const f2 = v => (v == null || isNaN(+v)) ? "\u2014" : (+v).toFixed(2);
+  const f3 = v => (v == null || isNaN(+v)) ? "\u2014" : (+v).toFixed(3);
+
+  // One table per coverage \u2014 Liability and Physical Damage each compute a
+  // separately-clamped Account-Level Factor now (see engine.js); shown as
+  // two tables rather than one so it's visible they can genuinely differ.
+  const acctTable = (title, lines, value) => `<div class="sub" style="margin-top:10px">${title}</div>
+      <div class="vx-tw"><table class="vx-t pt" style="min-width:900px">
+      <thead><tr>${lines.map(([n]) => `<th>${n}</th>`).join("")}<th>Account-Level Factor</th></tr></thead>
+      <tbody><tr>${lines.map(([, v]) => `<td class="pt-num">${f2(v)}</td>`).join("")}<td class="pt-num"><b>${f3(value)}\u00d7</b></td></tr></tbody>
+      </table></div>`;
+  const acctPanel = () => {
+    const liabLines = r.accountFactorLines || [];
+    const pdLines = r.pdAccountFactorLines || [];
+    if (!liabLines.length && !pdLines.length) return `<div class="vx-empty" style="padding:20px"><i class="fa-solid fa-sliders"></i>No account-level factor applies to this line of business.</div>`;
+    return `<div class="sub">One policy-level credit/debit set per coverage, applied to every unit.</div>
+      ${liabLines.length ? acctTable("Auto Liability \u2014 Account-Level Factor", liabLines, r.accountFactor) : ""}
+      ${pdLines.length ? acctTable("Physical Damage \u2014 Account-Level Factor", pdLines, r.pdAccountFactor) : ""}`;
+  };
+
+  /* Per-unit liability table. */
+  const liabPanel = () => {
+    const pv = (r.perVehicle || []).filter(v => v.covLiab !== false);
+    if (!pv.length) return groupPanel("Auto Liability");
+    return `<div class="sub">${pv.length} unit${pv.length === 1 ? "" : "s"} \u2014 each rated on its own class, age and value, then summed.</div>
+      <div class="vx-tw"><table class="vx-t pt" style="min-width:1040px">
+      <thead><tr><th>#</th><th>Class</th><th>Model Yr</th><th class="pt-num">Value</th><th class="pt-num">Primary</th><th class="pt-num">Age</th>
+        <th class="pt-num">Fleet</th><th class="pt-num">OCN</th><th class="pt-num">Secondary</th><th class="pt-num">Miles</th><th class="pt-num">Liability Premium</th></tr></thead>
+      <tbody>${pv.map(v => `<tr><td>${v.n}</td><td>${v.primDesc}</td><td>${v.year}</td><td class="pt-num">${money(v.value)}</td>
+        <td class="pt-num">${f2(v.primFactor)}</td><td class="pt-num">${f2(v.ageFactor)}</td><td class="pt-num">${f3(v.fleetFactor)}</td>
+        <td class="pt-num">${f2(v.ocnFactor)}</td><td class="pt-num">${f2(v.secondaryFactor)}</td><td class="pt-num">${f2(v.milesFactor)}</td>
+        <td class="pt-num">${money(v.liab)}</td></tr>`).join("")}</tbody>
+      <tfoot><tr class="pt-total"><td colspan="10">Total</td>
+        <td class="pt-num">${money(pv.reduce((a, v) => a + (+v.liab || 0), 0))}</td></tr></tfoot>
+      </table></div>`;
+  };
+
+  /* Per-unit physical damage. Different drivers from liability — stated value
+     and trailer attachment matter here, vehicle class much less. */
+  const apdPanel = () => {
+    const pv = (r.perVehicle || []).filter(v => v.covApd !== false && (+v.apd || 0) > 0);
+    if (!pv.length) return groupPanel("Physical Damage");
+    return `<div class="sub">${pv.length} unit${pv.length === 1 ? "" : "s"} \u2014 rated on stated value and trailer attachment.</div>
+      <div class="vx-tw"><table class="vx-t pt" style="min-width:940px">
+      <thead><tr><th>#</th><th>Class</th><th>Model Yr</th><th class="pt-num">Stated Value</th><th class="pt-num">TIV</th>
+        <th class="pt-num">Trailer</th><th class="pt-num">Miles</th><th>Radius</th><th class="pt-num">Phys. Damage Premium</th></tr></thead>
+      <tbody>${pv.map(v => `<tr><td>${v.n}</td><td>${v.primDesc}</td><td>${v.year}</td>
+        <td class="pt-num">${money(v.value)}</td><td class="pt-num">${money(v.tiv)}</td>
+        <td class="pt-num">${f3(v.trailerFactor)}</td><td class="pt-num">${f2(v.milesFactor)}</td>
+        <td>${v.radiusLabel || "\u2014"}</td><td class="pt-num">${money(v.apd)}</td></tr>`).join("")}</tbody>
+      <tfoot><tr class="pt-total"><td colspan="8">Total</td>
+        <td class="pt-num">${money(pv.reduce((a, v) => a + (+v.apd || 0), 0))}</td></tr></tfoot>
+      </table></div>`;
+  };
+
+  const cargoPanel = () => {
+    const cb = r.cargoBreakdown;
+    if (!cb) return groupPanel("Cargo");
+    return `<div class="sub">Cargo rates off the single highest classification factor among the commodities carried.</div>
+      <div class="vx-tw"><table class="vx-t pt" style="min-width:900px">
+      <thead><tr><th>Commodity</th><th class="pt-num">Base Rate</th><th class="pt-num">Load Factor</th><th class="pt-num">Refer Basic Load</th>
+        <th class="pt-num">Classification Factor</th><th class="pt-num">Hazardous Mod</th><th class="pt-num">Total Basic Charge</th></tr></thead>
+      <tbody>${cb.rows.map(row => `<tr>
+        <td>${row.commodity.label}${row.excluded ? ' <span class="vx-b red" style="font-size:9px">excluded</span>' : ""}</td>
+        <td class="pt-num">${money(cb.baseRate)}</td><td class="pt-num">${cb.loadFactor}</td><td class="pt-num">0</td>
+        <td class="pt-num">${row.clsFactor}</td><td class="pt-num">${row.hazFactor}</td><td class="pt-num">${money(row.totalBasicCharge)}</td>
+      </tr>`).join("")}</tbody>
+      <tfoot><tr class="pt-total"><td colspan="6">Loss Cost Factor</td><td class="pt-num">${cb.lossCostFactor}</td></tr></tfoot>
+      </table></div>
+      <h3 style="font-size:12px;font-weight:600;margin:16px 0 6px">Commodity detail</h3>
+      <div class="vx-tw"><table class="vx-t pt">
+      <thead><tr><th>#</th><th>Commodity ID</th><th>Commodity</th><th class="pt-num">Load %</th><th class="pt-num">Classification Factor</th><th class="pt-num">Factor</th></tr></thead>
+      <tbody>${cb.rows.map((row, i) => `<tr>
+        <td>${i + 1}</td><td>${row.commodity.classificationNumber}</td><td>${row.commodity.label}</td>
+        <td class="pt-num">${row.loadPct}</td><td class="pt-num">${row.excluded ? "\u2014" : row.clsFactor}</td>
+        <td class="pt-num">${row.excluded ? "\u2014" : (row.clsFactor * row.hazFactor).toFixed(3)}</td>
+      </tr>`).join("")}</tbody></table></div>`;
+  };
+
+  /* Fallback for any coverage that does not rate per unit — renders that
+     group's own factor chain, so every LOB gets a real tab rather than a
+     blank one. */
+  function groupPanel(name) {
+    let g = (r.groups || []).find(x => x.name === name);
+    if (!g && name.startsWith("Model A — ") && r.modelA) g = (r.modelA.groups || []).find(x => x.name === name);
+    if (!g && name.startsWith("Model B — ") && r.modelB) g = (r.modelB.groups || []).find(x => x.name === name);
+    if (!g) return `<div class="vx-empty" style="padding:20px"><i class="fa-solid fa-shield-halved"></i>${name} is not selected on this quote.</div>`;
+    const isCandidate = name.startsWith("Model A \u2014 ") || name.startsWith("Model B \u2014 ");
+    const fs = g.factors || [];
+    if (!fs.length) return `<div class="vx-empty" style="padding:20px"><i class="fa-solid fa-shield-halved"></i>${name} carries no itemised factors \u2014 subtotal ${money(g.subtotal)}.</div>`;
+    return `${isCandidate ? `<div class="vx-ai" style="padding:9px 12px;font-size:12.3px;margin-bottom:10px"><i class="fa-solid fa-flask"></i> Candidate model \u2014 not a filed rate. Shown for comparison only.</div>` : ""}<div class="sub">${fs.length} factor${fs.length === 1 ? "" : "s"} applied \u2014 subtotal ${money(g.subtotal)}.</div>
+      <div class="vx-tw"><table class="vx-t pt" style="min-width:820px">
+      <thead><tr><th>Factor</th><th>Driven by</th><th>Matched</th><th class="pt-num">Applied</th><th class="pt-num">Base</th></tr></thead>
+      <tbody>${fs.map(x => `<tr>
+        <td class="pt-f">${x.label}${x.varies ? ' <span class="vx-b amber" style="font-size:9px">per unit</span>' : ""}</td>
+        <td>${x.input ?? '<span class="pt-mute">\u2014</span>'}</td>
+        <td>${x.matched || '<span class="pt-mute">\u2014</span>'}</td>
+        <td class="pt-num"><b>${fmtF(x.value, x.kind)}</b></td>
+        <td class="pt-num pt-mute">${x.base != null ? fmtF(x.base, x.kind) : "\u2014"}</td></tr>`).join("")}</tbody>
+      </table></div>`;
+  }
+
+  const panelFor = name => {
+    if (name === "Account") return acctPanel();
+    if (name === "Auto Liability") return liabPanel();
+    if (name === "Physical Damage") return apdPanel();
+    if (name === "Cargo") return cargoPanel();
+    return groupPanel(name);
+  };
+
+  return `<div class="vx-card vx-anim">
+    <ul class="nav nav-tabs" style="border-bottom:1px solid var(--border)">
+      ${TABS_F.map(t => `<li class="nav-item"><a class="nav-link ${t === cur ? "active" : ""}" href="#" data-truck-tab="${t}" style="font-size:12.3px">${t}</a></li>`).join("")}
+    </ul>
+    <div style="padding-top:12px">${panelFor(cur)}</div>
+  </div>`;
+}
+
+function premiumTable(r) {
+  const money = v => vxMoney(v);
+  const rows = [];
+  r.groups.forEach(g => {
+    rows.push(`<tr class="pt-grp"><td colspan="6"><i class="fa-solid ${g.icon} me-2" style="color:${g.color}"></i><b>${g.name}</b>
+      ${ratedByBadge(g.ratedBy)}</td><td style="text-align:right"><b>${money(g.subtotal)}</b></td></tr>`);
+    (g.factors || []).forEach(f => {
+      const base = f.base, val = f.value;
+      const differs = base != null && typeof val === "number" && Math.abs(val - base) > 1e-9;
+      const adj = (base != null && typeof val === "number" && base !== 0 && f.kind === "x")
+        ? ((val / base - 1) * 100) : null;
+      rows.push(`<tr>
+        <td class="pt-f">${f.label}${f.varies ? ' <span class="vx-b amber" style="font-size:9px">per unit</span>' : ""}</td>
+        <td>${f.driver ? `<span title="${f.driver}">${f.input ?? "—"}</span>` : '<span class="pt-mute">—</span>'}</td>
+        <td>${f.matched || '<span class="pt-mute">—</span>'}</td>
+        <td class="pt-num"><b${differs ? ' class="pt-applied"' : ""}>${fmtF(val, f.kind)}</b></td>
+        <td class="pt-num ${differs ? "pt-mute" : ""}">${base != null ? fmtF(base, f.kind) : '<span class="pt-mute">—</span>'}</td>
+        <td class="pt-num">${adj == null ? '<span class="pt-mute">—</span>'
+          : `<span style="color:${adj > 0 ? "var(--bad)" : adj < 0 ? "var(--good)" : "var(--text-mute)"}">${adj > 0 ? "+" : ""}${adj.toFixed(1)}%</span>`}</td>
+        <td class="pt-num">${f.kind === "money" ? money(val) : '<span class="pt-mute">—</span>'}</td>
+      </tr>`);
+    });
+  });
+
+  const line = (lbl, val, cls) => `<tr class="pt-total ${cls || ""}"><td colspan="6">${lbl}</td><td class="pt-num">${val}</td></tr>`;
+  return `
+    <div class="vx-card vx-anim">
+      <div class="vx-card-head"><div>
+        <h2>How this premium was calculated</h2>
+        <div class="sub">Every rating factor applied to this risk, the answer that selected it, and what it did to the premium.</div>
+      </div></div>
+      <div class="vx-tw"><table class="vx-t pt">
+        <thead><tr>
+          <th>Rating factor</th><th>Input value</th><th>Matched rule</th>
+          <th class="pt-num">Applied</th><th class="pt-num">Default</th><th class="pt-num">Adjustment</th><th class="pt-num">Premium</th>
+        </tr></thead>
+        <tbody>
+          ${rows.join("")}
+          ${line("<b>Coverage Premium</b>", "<b>" + money(r.coveragePremium) + "</b>")}
+          ${(r.discounts || []).map(d => line("− " + d.name, `<span style="color:var(--good)">${money(d.amt)}</span>`)).join("")}
+          ${(r.surcharges || []).map(x => line("+ " + x.name, `<span style="color:var(--bad)">+${money(x.amt)}</span>`)).join("")}
+          ${r.driverFactor && r.driverFactor !== 1 ? line(`Driver Factor (worst-rated driver) — ${r.driverFactor.toFixed(3)}×`, money(r.afterDriver)) : ""}
+          ${line("Fees", "+" + money(r.fees))}
+          ${line(`State Tax (${(r.taxPct * 100).toFixed(2)}%)`, "+" + money(r.tax))}
+          ${r.countyTax ? line(`County Tax (${r.countyRate.toFixed(2)}%)`, "+" + money(r.countyTax)) : ""}
+          ${line("<b>Final Premium</b>", `<b style="font-size:15px">${money(r.finalPremium)}</b>`, "pt-final")}
+        </tbody>
+      </table></div>
+      <div style="font-size:11.5px;color:var(--text-mute);margin-top:10px">
+        <i class="fa-solid fa-circle-info me-1"></i><b>Applied</b> is the value used for this risk;
+        <b>Default</b> is the neutral value the factor would take with no matching answer. Where they differ, the applied
+        value is highlighted. Open any coverage in the panel on the right to drill into a factor's source table.
+      </div>
+    </div>`;
+}
+
+function paint() {
+  const r = S.res, ex = ENGINE.explain(r);
+  const fmt = fmtF;
+  // The county select only exists on the Insured tab; fall back to the saved
+  // value so painting from any other tab still labels county tax correctly.
+  const countyEl = document.getElementById("county");
+  const county = countyEl ? countyEl.value : (S.county || "");
+  const declined = S.elig && S.elig.declines.length;
+
+  // Premium Calculation tab: full transparent build-up.
+  const pane = document.getElementById("premiumPane");
+  if (pane) {
+    pane.innerHTML = eligBanner() + truckPremiumSummary(r) + premiumTable(r);
+    pane.querySelectorAll("[data-truck-tab]").forEach(a => a.onclick = e => {
+      e.preventDefault(); S.truckFactorTab = a.dataset.truckTab; paint();
+    });
+  }
+
+  document.getElementById("side").innerHTML = `
+    ${eligBanner()}
+    <div class="vx-card vx-anim" style="text-align:center;background:linear-gradient(155deg,var(--primary-soft),rgba(14,165,183,.05))">
+      <div style="font-size:11px;color:var(--text-mute);font-weight:650;text-transform:uppercase;letter-spacing:.04em">Annual Premium</div>
+      <div style="font-size:34px;font-weight:800;margin:5px 0;letter-spacing:-.02em">${vxMoney(r.finalPremium)}</div>
+      <div style="font-size:12px;color:var(--text-dim)">${r.lob} · ${r.state}${county ? " · " + county : ""}</div>
+      ${r.minApplied ? '<div class="vx-b amber mt-2">Minimum premium applied</div>' : ""}
+      <div class="d-flex gap-2 mt-3"><button class="btn btn-primary btn-sm w-100" onclick="issue()" ${declined ? "disabled title=\"Resolve the decline above first\"" : ""}><i class="fa-solid fa-file-lines me-1"></i>Generate Quote</button></div>
+    </div>
+
+    ${S.tab === "factors" ? "" : `
+    <div class="vx-card vx-anim vx-anim-d1">
+      <h2>How this premium was built</h2><div class="sub">Click a coverage to see its factors</div>
+      <div class="vx-tw"><table class="vx-t"><tbody>
+        ${r.groups.map((g, i) => `
+          <tr class="vx-exp" data-x="${i}" style="cursor:pointer">
+            <td><i class="fa-solid fa-chevron-right me-2" style="font-size:9px;transition:.2s" id="chev${i}"></i>
+              <i class="fa-solid ${g.icon} me-1" style="color:${g.color}"></i><b>${g.name}</b>
+              ${ratedByBadge(g.ratedBy)}</td>
+            <td style="text-align:right"><b>${vxMoney(g.subtotal)}</b></td></tr>
+          <tr class="vx-exp-body" id="exp${i}"><td colspan="2" style="padding:0">
+            <table class="vx-t" style="margin:0">
+              ${childRows(g, r)}
+              <tr><td colspan="2" style="padding:5px 12px 4px 30px;font-size:9.5px;font-weight:800;letter-spacing:.05em;
+                text-transform:uppercase;color:var(--text-mute)">Factor chain — click any row to see where its value came from</td></tr>
+              ${g.factors.map((f, fi) => factorRow(f, i, fi)).join("")}
+            </table></td></tr>`).join("")}
+        <tr><td><b>Coverage Premium</b></td><td style="text-align:right"><b>${vxMoney(r.coveragePremium)}</b></td></tr>
+        ${r.discounts.map(d => `<tr><td style="color:var(--good)">− ${d.name}${d.why ? ` <span class="hintdot" title="${d.why}">Why</span>` : ""}</td><td style="text-align:right;color:var(--good)">${vxMoney(d.amt)}</td></tr>`).join("")}
+        ${r.surcharges.map(s => `<tr><td style="color:var(--bad)">+ ${s.name}${s.why ? ` <span class="hintdot" title="${s.why}">Why</span>` : ""}</td><td style="text-align:right;color:var(--bad)">+${vxMoney(s.amt)}</td></tr>`).join("")}
+        ${creditsNotAppliedRow(r)}
+        ${r.driverFactor && r.driverFactor !== 1 ? `<tr><td>Driver Factor (worst-rated driver)</td>
+          <td style="text-align:right">${r.driverFactor.toFixed(3)}×</td></tr>
+        <tr><td>After Driver Factor</td><td style="text-align:right">${vxMoney(r.afterDriver)}</td></tr>` : ""}
+        <tr class="vx-exp" data-x="fees" style="cursor:pointer"><td>
+          <i class="fa-solid fa-chevron-right me-2" style="font-size:9px;transition:.2s" id="chevfees"></i>Fees</td>
+          <td style="text-align:right">+${vxMoney(r.fees)}</td></tr>
+        <tr class="vx-exp-body" id="expfees"><td colspan="2" style="padding:0"><table class="vx-t" style="margin:0">
+          ${(r.feeLines || []).map(f => `<tr>
+            <td style="padding-left:32px;font-size:12.1px;color:var(--text-dim)">${f.name}
+              ${f.valueType === "Percent"
+                ? `<span style="color:var(--text-mute)">— ${f.pct}% of ${f.percentOf} (${vxMoney(f.base)})</span>
+                   ${f.capped ? `<span class="vx-b amber" style="margin-left:5px">${f.capped} ${vxMoney(f.capped === "min" ? f.minFee : f.maxFee)} applied</span>` : ""}`
+                : `<span style="color:var(--text-mute)">— ${vxMoney(f.unit)} × ${f.qty} (${f.chargeType})</span>`}
+              ${f.taxable ? '<span class="vx-b gray" style="margin-left:5px">taxable</span>' : ""}</td>
+            <td style="text-align:right;font-size:12.1px">${vxMoney(f.amt)}</td></tr>`).join("")}
+        </table></td></tr>
+        <tr><td>State Tax (${(r.taxPct*100).toFixed(2)}%)</td><td style="text-align:right">+${vxMoney(r.tax)}</td></tr>
+        ${r.countyTax ? `<tr><td>County Tax — ${r.countyName} (${r.countyRate.toFixed(2)}%)</td>
+          <td style="text-align:right">+${vxMoney(r.countyTax)}</td></tr>` : ""}
+        ${r.countyUnknown ? `<tr><td colspan="2" style="color:var(--warn);font-size:11.8px">
+          <i class="fa-solid fa-triangle-exclamation" style="margin-inline-end:6px" aria-hidden="true"></i>
+          ${r.countyRequested} is not configured for ${r.state} — no local tax was charged.
+          Add it under Geography &rsaquo; Counties before binding.</td></tr>` : ""}
+        <tr style="background:var(--primary-soft)"><td><b>Total</b></td><td style="text-align:right"><b>${vxMoney(r.finalPremium)}</b></td></tr>
+      </tbody></table></div>
+    </div>`}
+
+    ${r.perVehicle ? `<div class="vx-card vx-anim vx-anim-d2">
+      <h2>Premium by Vehicle</h2><div class="sub">${r.perVehicle.length} units — each rated separately, then summed</div>
+      <div class="vx-tw"><table class="vx-t">
+        <thead><tr><th>#</th><th>Unit</th><th>Trailer</th><th>Liability</th><th>Phys Dam</th><th>Total</th></tr></thead>
+        <tbody>${r.perVehicle.map(v => `<tr>
+          <td><b>${v.n}</b></td>
+          <td style="font-size:12.1px">${v.desc}<div style="color:var(--text-mute);font-size:11px">${v.primaryClass} · ${v.year} · ${vxMoney(v.value)}</div></td>
+          <td style="font-size:12.1px">${v.trailer.startsWith("None") ? '<span style="color:var(--text-mute)">—</span>'
+            : v.trailer + `<div style="color:var(--text-mute);font-size:11px">${vxMoney(v.trailerValue)} · ${v.trailerFactor.toFixed(2)}×</div>`}</td>
+          <td>${vxMoney(v.liab)}</td><td>${vxMoney(v.apd)}</td><td><b>${vxMoney(v.total)}</b></td></tr>`).join("")}
+        </tbody></table></div></div>` : ""}
+
+    ${r.perDriver ? `<div class="vx-card vx-anim vx-anim-d2">
+      <h2>Drivers</h2><div class="sub">Worst-rated driver sets the policy driver factor (${r.driverFactor.toFixed(3)}×)</div>
+      <div class="vx-tw"><table class="vx-t">
+        <thead><tr><th>Driver</th><th>Age</th><th>CDL</th><th>Viol.</th><th>Class</th><th>Net Factor</th></tr></thead>
+        <tbody>${r.perDriver.map((d, k) => `<tr ${k === 0 ? 'style="background:var(--primary-soft)"' : ""}>
+          <td style="font-size:12.1px">${d.name}${k === 0 ? ' <span class="vx-b blue">rating driver</span>' : ""}</td>
+          <td>${d.age}</td><td>${d.cdlYears}y</td>
+          <td>${d.violations > 0 ? `<span class="vx-b amber">${d.violations}</span>` : "0"}</td>
+          <td style="font-size:11.8px">${d.cls}</td>
+          <td><b>${(d.classFactor ?? 1).toFixed(3)}×</b></td></tr>`).join("")}
+        </tbody></table></div>
+      ${r.surchargedDrivers ? `<div style="font-size:11.8px;color:var(--text-dim);margin-top:8px">
+        <i class="fa-solid fa-circle-info me-1"></i>${r.surchargedDrivers} driver${r.surchargedDrivers > 1 ? "s" : ""}
+        with violations incurred the Driver Surcharge Fee.</div>` : ""}</div>` : ""}
+
+    ${moversStrip(r)}
+
+    <div class="vx-card vx-anim vx-anim-d2">
+      <h2><i class="fa-solid fa-wand-magic-sparkles me-2" style="color:var(--purple)"></i>Why this price?</h2>
+      <div class="vx-ai">
+        <p style="margin:0 0 8px">${ex.summary}</p>
+        <b style="font-size:11.5px">Biggest drivers</b>
+        <ul style="margin:5px 0 8px;padding-left:17px;font-size:12.3px">${ex.drivers.map(d => `<li>${d}</li>`).join("")}</ul>
+        <b style="font-size:11.5px">Taxes &amp; fees</b>
+        <p style="margin:4px 0 0;font-size:12.3px">${ex.taxes}${r.countyTax ? ` A county tax of ${r.countyRate.toFixed(2)}% for ${r.countyName} added ${vxMoney(r.countyTax)}.` : ""}</p>
+        ${ex.warnings.length ? `<div class="mt-2"><span class="vx-b amber">Note</span> <span style="font-size:12.3px">${ex.warnings.join(" ")}</span></div>` : ""}
+      </div>
+    </div>`;
+
+  document.querySelectorAll(".vx-exp").forEach(el => el.onclick = () => {
+    const x = el.dataset.x, body = document.getElementById("exp" + x), ch = document.getElementById("chev" + x);
+    body.classList.toggle("on");
+    if (ch) ch.style.transform = body.classList.contains("on") ? "rotate(90deg)" : "";
+  });
+  // per-factor provenance drill-down (stop propagation so it doesn't collapse the parent coverage)
+  document.querySelectorAll(".ftrow").forEach(el => el.onclick = e => {
+    e.stopPropagation();
+    const id = el.dataset.ft, body = document.getElementById("expf" + id), ch = document.getElementById("chf" + id);
+    body.classList.toggle("on");
+    if (ch) ch.style.transform = body.classList.contains("on") ? "rotate(90deg)" : "";
+  });
+}
+
+/* The issued quote keeps the full factor chain, not just a total — every
+   coverage's factors, the account-level breakdown, and what moved the
+   premium — reusing the same trace data the live screen shows, so nothing
+   in the "generated" quote can drift from what was actually calculated. */
+function issue() {
+  if (S.elig && S.elig.declines.length) {
+    vxToast("Cannot generate quote", S.elig.declines.length + " eligibility rule(s) decline this risk — resolve them first.", "err");
+    return;
+  }
+  const r = S.res;
+  const acctChip = (n, v) => v === 0 ? "" : `<span class="fimp ${v > 0 ? "up" : "down"}" style="margin:2px 4px 2px 0">${n} ${v > 0 ? "+" : ""}${(v * 100).toFixed(0)}%</span>`;
+  const acctLines = r.accountFactorLines || [];
+
+  vxModal("Quote Generated", `
+    <div style="text-align:center;padding:4px 0 14px;border-bottom:1px solid var(--border);margin-bottom:14px">
+      <div style="width:48px;height:48px;border-radius:13px;background:rgba(18,160,106,.13);color:var(--good);display:grid;place-items:center;margin:0 auto 10px;font-size:20px"><i class="fa-solid fa-file-circle-check"></i></div>
+      <h4 style="font-size:16px;margin:0 0 3px">Q-2026-${10500 + Math.floor(Math.random() * 400)}</h4>
+      <div style="color:var(--text-dim);font-size:13px">${S.insName || "Lonestar Freight LLC"} · ${r.lob} · ${r.state}</div>
+      <div style="font-size:25px;font-weight:800;margin-top:9px">${vxMoney(r.finalPremium)}</div>
+      ${r.minApplied ? '<div class="vx-b amber mt-1">Minimum premium applied</div>' : ""}
+    </div>
+
+    <h6 style="font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--text-mute);margin-bottom:7px">Coverage Breakdown</h6>
+    <div class="vx-tw mb-3"><table class="vx-t" style="margin:0">
+      ${r.groups.map(g => `<tr><td><i class="fa-solid ${g.icon} me-1" style="color:${g.color}"></i>${g.name}</td>
+        <td style="text-align:right"><b>${vxMoney(g.subtotal)}</b></td></tr>`).join("")}
+      <tr><td>Coverage Premium</td><td style="text-align:right">${vxMoney(r.coveragePremium)}</td></tr>
+      <tr><td>Fees + Tax${r.countyTax ? " + County" : ""}</td><td style="text-align:right">+${vxMoney(r.fees + r.tax + (r.countyTax || 0))}</td></tr>
+      <tr style="background:var(--primary-soft)"><td><b>Total</b></td><td style="text-align:right"><b>${vxMoney(r.finalPremium)}</b></td></tr>
+    </table></div>
+
+    ${acctLines.length ? `
+    <h6 style="font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--text-mute);margin-bottom:7px">Account-Level Factor — ${(r.accountFactor || 1).toFixed(3)}×</h6>
+    <div class="mb-3" style="font-size:11.5px;line-height:2.1">${acctLines.map(([n, v]) => acctChip(n, v)).join("") || '<span style="color:var(--text-mute)">All eight underwriting answers are neutral.</span>'}</div>` : ""}
+
+    <h6 style="font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--text-mute);margin-bottom:2px">What Moved This Premium</h6>
+    <div style="max-height:280px;overflow-y:auto">${tracePanel(r)}</div>
+  `,
+    [{ t: "Close", c: "secondary" }, { t: "Download PDF", c: "primary", fn: () => vxToast("PDF generated", "Quote document ready", "ok") }], "modal-lg");
+}
+
+restoreQuoteState();
+render();
+if (S.res) paint();
+</script>
+</body>
+</html>

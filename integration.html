@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Integration Guide — Administration | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+<style>
+.ig-h{font-size:14px;font-weight:600;margin:0 0 4px;display:flex;align-items:center;gap:8px}
+.ig-step{display:flex;gap:14px;padding:14px 0;border-bottom:1px solid var(--border)}
+.ig-step:last-child{border-bottom:none}
+.ig-n{width:26px;height:26px;border-radius:50%;flex:none;display:grid;place-items:center;
+  background:var(--primary-soft);color:var(--primary);font-size:12px;font-weight:600}
+.ig-flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:10px}
+.ig-box{flex:1 1 165px;border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;background:var(--surface)}
+.ig-box.core{border-color:var(--primary);background:var(--primary-soft)}
+.ig-box b{display:block;font-size:12.6px;margin-bottom:3px}
+.ig-box span{font-size:11.2px;color:var(--text-dim);line-height:1.5}
+.ig-arrow{align-self:center;color:var(--text-mute);font-size:12px}
+pre.ig-code{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;
+  font-size:11.8px;line-height:1.65;overflow-x:auto;margin:0;font-family:ui-monospace,Consolas,monospace;color:var(--text)}
+.ig-tag{font-family:ui-monospace,Consolas,monospace;font-size:11px;background:var(--surface-3);
+  padding:1px 6px;border-radius:4px;color:var(--text-dim)}
+.ig-tag.bad{background:rgba(224,92,92,.12);color:var(--bad)}
+.ig-box.blocked{border-color:var(--bad);background:rgba(224,92,92,.06);opacity:.85}
+.ig-arrow.no{color:var(--bad)}
+/* Sequence table — the numbered CRM -> UW -> Rating exchange */
+.ig-seq{width:100%;border-collapse:collapse;font-size:12.4px}
+.ig-seq th{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-mute);
+  font-weight:700;text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+.ig-seq td{padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.55}
+.ig-seq tr:last-child td{border-bottom:none}
+.ig-seq .st{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--primary);
+  font-weight:600;white-space:nowrap}
+.ig-actor{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+  padding:2px 7px;border-radius:4px;white-space:nowrap}
+.ig-actor.crm{background:rgba(74,144,217,.14);color:var(--accent)}
+.ig-actor.uw{background:var(--primary-soft);color:var(--primary)}
+.ig-actor.eng{background:rgba(139,92,246,.14);color:var(--purple)}
+.ig-actor.pol{background:rgba(34,176,125,.14);color:var(--good)}
+.ig-rule{border-left:3px solid var(--bad);background:rgba(224,92,92,.07);border-radius:0 8px 8px 0;
+  padding:12px 15px;margin:14px 0;font-size:12.6px;line-height:1.6}
+.ig-rule b{color:var(--bad)}
+</style>
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/rate-data-full.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/app-types.js"></script>
+<!-- engine + eligibility are loaded so the figures quoted below are read from
+     the running module rather than hand-typed into the prose -->
+<script src="assets/js/engine.js"></script>
+<script src="assets/js/eligibility.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script>
+vxShell("Integration Guide",
+  "How other systems reach rating \u2014 and why none of them reach it directly. || Rating is an internal calculation service. Underwriting is its only caller.",
+  [{ l: "Administration" }, { l: "Integration Guide" }]);
+
+const E = (typeof ENGINE !== "undefined") ? ENGINE : null;
+const lobCodes = E ? Object.keys(E.LOBS) : [];
+
+/* Everything quoted below is read from the running module rather than typed,
+   so the guide cannot drift from the code it documents. */
+const containers = Object.entries(COSMOS_MODEL.containers);
+const appTypes = Object.entries(VX_APP_TYPES);
+
+document.getElementById("vxBody").innerHTML = `
+
+<div class="vx-exp2 vx-anim" id="igTop" style="border-left-color:var(--bad);background:rgba(224,92,92,.06)">
+  <div class="hd"><i class="fa-solid fa-shield-halved" style="color:var(--bad);font-size:11.5px"></i>
+    <b>Rating is not user-facing</b>
+    <span>No CRM, portal, broker or end user calls the rating engine. Underwriting is the only caller.</span>
+    <button type="button" class="tog" onclick="vxExpToggle('igTop')">Why?</button></div>
+  <div class="bd">
+    <p>The engine answers exactly one question \u2014 <em>what does this risk cost under this version?</em> \u2014 and it
+    answers it for any risk it is handed. It has no concept of who is asking, no authority limit, no view of whether
+    the carrier should write the business, and no ability to refuse. Those are underwriting decisions, and they live
+    in the underwriting service.</p>
+    <p>Exposing rating directly would mean a distribution system could obtain a bindable-looking price for a risk that
+    is ineligible, outside appetite, or beyond the requesting user's authority \u2014 with nothing in the call path able
+    to stop it. Every guarantee this platform makes about eligibility, authority and referral is enforced above rating,
+    not inside it.</p>
+  </div>
+</div>
+
+<div class="vx-card vx-anim">
+  <h2>Where rating sits</h2>
+  <div class="sub">A <b>stateless calculation service</b> on an internal segment. It owns rate tables, factors,
+    formulas and versions \u2014 not the insured, the policy, the invoice or the claim.</div>
+
+  <div class="ig-flow">
+    <div class="ig-box"><b><i class="fa-solid fa-address-card me-1" style="color:var(--accent)"></i>CRM / Portal</b>
+      <span>Captures the submission. Broker and agent facing. <b>Never calls rating.</b></span></div>
+    <i class="fa-solid fa-arrow-right ig-arrow"></i>
+    <div class="ig-box core"><b><i class="fa-solid fa-user-tie me-1"></i>Underwriting</b>
+      <span>Screens, prices, applies authority, refers or releases. The only caller of rating.</span></div>
+    <i class="fa-solid fa-arrow-right ig-arrow"></i>
+    <div class="ig-box" style="border-color:var(--purple);background:rgba(139,92,246,.06)">
+      <b><i class="fa-solid fa-calculator me-1" style="color:var(--purple)"></i>Rating Engine</b>
+      <span>Resolves version \u2192 applies factors \u2192 returns premium + trace. Internal only.</span></div>
+  </div>
+
+  <div class="ig-flow mt-2">
+    <div class="ig-box"><b>Policy Admin</b><span>Binds the released quote. Stores premium, version and trace.</span></div>
+    <div class="ig-box"><b>Billing</b><span>Invoices off the bound premium, taxes and fees.</span></div>
+    <div class="ig-box"><b>Document Gen</b><span>Renders quote and dec pages from the stored trace.</span></div>
+    <div class="ig-box"><b>Claims</b><span>Feeds incurred losses back as experience.</span></div>
+  </div>
+
+  <div class="ig-rule">
+    <b>Not permitted:</b> CRM \u2192 Rating, portal \u2192 Rating, or any browser-originated call to the engine.
+    The engine has no public route, no user credential and no authority check. A direct call is not
+    a shortcut \u2014 it bypasses every control that makes a price bindable.
+  </div>
+</div>
+
+<div class="vx-card vx-anim">
+  <h2>Two meanings of &ldquo;underwriter&rdquo;</h2>
+  <div class="sub">Developers and business stakeholders use the same word for different things. The distinction
+    matters when reading the sequence below.</div>
+  <div class="row g-3">
+    <div class="col-md-6">
+      <div style="border:1px solid var(--border);border-radius:var(--radius);padding:13px 15px;height:100%">
+        <div class="ig-h"><i class="fa-solid fa-server" style="color:var(--primary)"></i>The underwriting service</div>
+        <div style="font-size:12.3px;color:var(--text-dim);line-height:1.6">
+          A system component. Receives submissions, calls eligibility, calls rating, evaluates authority,
+          routes referrals, releases quotes. <b>This is the technical caller</b> \u2014 every arrow into rating
+          in this document originates here.</div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div style="border:1px solid var(--border);border-radius:var(--radius);padding:13px 15px;height:100%">
+        <div class="ig-h"><i class="fa-solid fa-user-tie" style="color:var(--primary)"></i>The underwriter</div>
+        <div style="font-size:12.3px;color:var(--text-dim);line-height:1.6">
+          A person, holding an authority limit and appetite judgment. Acts <b>through</b> the service:
+          reviews referrals, applies schedule credits within authority, accepts or declines.
+          A human never calls the engine either \u2014 their workbench does.</div>
+      </div>
+    </div>
+  </div>
+  <div style="font-size:12.2px;color:var(--text-dim);line-height:1.6;margin-top:12px">
+    Where this guide says <span class="ig-actor uw">UW</span> it means the service. Where a decision requires
+    a person, the step says so explicitly.
+  </div>
+</div>
+
+<div class="vx-card vx-anim">
+  <h2>Data flow: CRM \u2192 Underwriting \u2192 Rating</h2>
+  <div class="sub">The full sequence for a new-business indication. Steps 4\u20136 are the only ones that touch
+    the engine, and all three are server-to-server on the internal segment.</div>
+  <div class="vx-tw"><table class="ig-seq">
+    <thead><tr><th style="width:34px">#</th><th style="width:190px">Actor \u2192 Actor</th><th>Exchange</th></tr></thead>
+    <tbody>
+      <tr><td class="st">1</td>
+        <td><span class="ig-actor crm">CRM</span> \u2192 <span class="ig-actor uw">UW</span></td>
+        <td><b>Submit.</b> <span class="ig-tag">POST /submissions</span> with insured, broker, exposure schedule and
+          coverage selections. CRM validates the section set its application type requires \u2014 it does not price.
+          Returns a <span class="ig-tag">submissionId</span> immediately; pricing is asynchronous.</td></tr>
+
+      <tr><td class="st">2</td>
+        <td><span class="ig-actor uw">UW</span> internal</td>
+        <td><b>Normalise &amp; assign.</b> Resolve tenant, product and application type. Assign an underwriter by
+          state, line and authority band. Everything downstream carries
+          <span class="ig-tag">/tenantId</span> \u2014 there is no all-tenant mode.</td></tr>
+
+      <tr><td class="st">3</td>
+        <td><span class="ig-actor uw">UW</span> \u2192 <span class="ig-actor eng">Eligibility</span></td>
+        <td><b>Screen before pricing.</b> <span class="ig-tag">evaluateEligibility(lobCode, input)</span> returns
+          <span class="ig-tag">declines[]</span>, <span class="ig-tag">refers[]</span>,
+          <span class="ig-tag">notEvaluable[]</span>. A decline stops here \u2014 the risk is never priced.
+          This is a separate call by design: rating will happily price business the carrier should not write.</td></tr>
+
+      <tr><td class="st">4</td>
+        <td><span class="ig-actor uw">UW</span> \u2192 <span class="ig-actor eng">Rating</span></td>
+        <td><b>Price.</b> <span class="ig-tag">ENGINE.rate(lobCode, input)</span>, called with a service
+          credential on the internal network. UW supplies the tenant and the transaction context; the engine
+          binds the rating version from the effective date and returns
+          <span class="ig-tag">finalPremium</span> plus the full factor trace.</td></tr>
+
+      <tr><td class="st">5</td>
+        <td><span class="ig-actor eng">Rating</span> \u2192 <span class="ig-actor uw">UW</span></td>
+        <td><b>Immutable result.</b> Premium, coverage groups, adjustments, taxes, and
+          <span class="ig-tag">version</span>. The engine writes nothing except its own calculation record
+          and holds no session. The same call repeated returns the same number.</td></tr>
+
+      <tr><td class="st">6</td>
+        <td><span class="ig-actor uw">UW</span> internal</td>
+        <td><b>Authority check \u2014 the step that makes rating safe to expose onward.</b> Compare
+          <span class="ig-tag">finalPremium</span> against the assigned underwriter's authority limit, licensed
+          states and owned lines. Within authority \u2192 release. Outside \u2192 referral queue. This is enforced by the
+          platform's RBAC/ABAC model, not by convention.</td></tr>
+
+      <tr><td class="st">7</td>
+        <td><span class="ig-actor uw">UW</span> \u2014 person</td>
+        <td><b>Underwriter review</b> (referrals and appetite calls only). May apply a schedule credit or debit
+          within authority, request information, or decline. Any change re-enters at step 4 \u2014 the underwriter
+          adjusts <em>inputs</em>, never the returned premium.</td></tr>
+
+      <tr><td class="st">8</td>
+        <td><span class="ig-actor uw">UW</span> \u2192 <span class="ig-actor crm">CRM</span></td>
+        <td><b>Release a quote, not a rate.</b> <span class="ig-tag">POST /quotes/{id}/released</span> carrying
+          premium, a broker-safe explanation, validity window and status. CRM renders this. It has still never
+          seen the engine, and cannot re-price.</td></tr>
+
+      <tr><td class="st">9</td>
+        <td><span class="ig-actor crm">CRM</span> \u2192 <span class="ig-actor uw">UW</span></td>
+        <td><b>Bind request.</b> References the released quote by id. If the quote has expired or its rating
+          version is no longer valid for the effective date, UW re-rates (step 4) rather than binding a stale
+          number.</td></tr>
+
+      <tr><td class="st">10</td>
+        <td><span class="ig-actor uw">UW</span> \u2192 <span class="ig-actor pol">Policy</span></td>
+        <td><b>Bind.</b> Policy Admin persists premium, <span class="ig-tag">version</span> and the full trace.
+          The trace is cheap now and impossible to reconstruct once versions move on.</td></tr>
+    </tbody>
+  </table></div>
+</div>
+
+<div class="row g-3">
+<div class="col-lg-7">
+
+  <div class="vx-card vx-anim">
+    <h2>The engine contract</h2>
+    <div class="sub">The whole surface \u2014 <code>assets/js/engine.js</code>. Called only by the underwriting
+      service, in the order shown.</div>
+    <pre class="ig-code">// UNDERWRITING SERVICE ONLY \u2014 internal segment, service credential.
+// A call from a browser, CRM or portal is a defect, not an integration.
+
+// 1. Screen the risk before pricing it  (assets/js/eligibility.js)
+const elig = evaluateEligibility(lobCode, input);
+//    -> { declines[], refers[], notEvaluable[] }
+//    A decline must block the bind. A refer routes to an underwriter.
+
+// 2. Price it
+const result = ENGINE.rate(lobCode, input);
+
+// 3. Authority gate \u2014 UW's own step, not the engine's
+if (result.finalPremium > underwriter.authorityLimit) route.toReferral();
+
+// 4. Explain it \u2014 broker-safe summary, or the underwriter's full view
+const why   = ENGINE.explain(result);   // summary, formula, drivers, taxes, version
+const trace = ENGINE.trace(result);     // ${E ? E.trace(E.rate("TRUCK", { state: "TX" })).length : "n"} rows: every factor, its input,
+                                        // matched rule, applied vs default value</pre>
+    <div class="mt-3">
+      <div class="ig-h"><i class="fa-solid fa-right-to-bracket" style="color:var(--primary)"></i>Accepted lines</div>
+      <div style="font-size:12.4px">${lobCodes.map(c => `<span class="vx-b blue me-1">${c}</span>`).join("")}
+        <span style="color:var(--text-dim)">\u2014 <code>lobCode</code> is the short code, not the display name.</span></div>
+    </div>
+    <div class="mt-3">
+      <div class="ig-h"><i class="fa-solid fa-right-from-bracket" style="color:var(--good)"></i>What comes back</div>
+      <div class="vx-tw"><table class="vx-t"><tbody>
+        ${[["finalPremium","The number Billing invoices \u2014 after UW releases it. Minimum premium already applied."],
+           ["coveragePremium","Before discounts, surcharges, fees and tax."],
+           ["groups[]","One entry per coverage, each with its own factor chain and subtotal."],
+           ["discounts[] / surcharges[] / feeLines[]","Named adjustments, itemised for the dec page."],
+           ["taxPct / tax","Surplus-lines tax for the risk state."],
+           ["version","The rating version that produced this number \u2014 store it."],
+           ["minApplied","True when the floor overrode the calculated premium."]]
+          .map(([k, d]) => `<tr><td style="width:170px"><span class="ig-tag">${k}</span></td>
+            <td style="font-size:12.2px;color:var(--text-dim)">${d}</td></tr>`).join("")}
+      </tbody></table></div>
+    </div>
+  </div>
+
+  <div class="vx-card vx-anim">
+    <h2>Rules the underwriting service must respect</h2>
+    <div class="sub">Each is enforced somewhere in this codebase. Breaking one produces a wrong number, not an error.</div>
+
+    <div class="ig-step"><div class="ig-n">1</div><div>
+      <div class="ig-h">Never expose the engine onward</div>
+      <div style="font-size:12.3px;color:var(--text-dim);line-height:1.6">Do not proxy
+        <code>ENGINE.rate()</code> through a public endpoint, and do not return the raw result to a CRM.
+        Release a <b>quote</b> \u2014 a reviewed, authority-checked, time-bounded artifact. A pass-through proxy
+        recreates the exact problem this architecture exists to prevent.</div></div></div>
+
+    <div class="ig-step"><div class="ig-n">2</div><div>
+      <div class="ig-h">Always send the tenant</div>
+      <div style="font-size:12.3px;color:var(--text-dim);line-height:1.6">Every configuration read is partitioned on
+        <span class="ig-tag">/tenantId</span>. A cross-partition read is rejected outright by
+        <code>assertTenant()</code> \u2014 there is no &ldquo;all tenants&rdquo; mode. A call without a tenant is a bug,
+        not a broad query.</div></div></div>
+
+    <div class="ig-step"><div class="ig-n">3</div><div>
+      <div class="ig-h">Store the version with the premium</div>
+      <div style="font-size:12.3px;color:var(--text-dim);line-height:1.6">Rating is <b>not</b> reproducible from inputs
+        alone \u2014 the same inputs rate differently under a later version. Persist
+        <span class="ig-tag">result.version</span> alongside the premium, or a mid-term endorsement will silently
+        re-rate on today's tables instead of the ones the policy was written on.</div></div></div>
+
+    <div class="ig-step"><div class="ig-n">4</div><div>
+      <div class="ig-h">Only a Published version rates business</div>
+      <div style="font-size:12.3px;color:var(--text-dim);line-height:1.6">Draft and Scheduled versions exist and are
+        queryable but must never price a live quote. Expired and Archived are kept so in-force policies can still be
+        explained.</div></div></div>
+
+    <div class="ig-step"><div class="ig-n">5</div><div>
+      <div class="ig-h">Eligibility is a separate call, and a decline is binding</div>
+      <div style="font-size:12.3px;color:var(--text-dim);line-height:1.6">Rating will price a risk the carrier should
+        not write \u2014 screening is deliberately not folded into the premium call, because pricing and appetite are
+        different decisions. Call <code>evaluateEligibility()</code> first and honour it.</div></div></div>
+
+    <div class="ig-step"><div class="ig-n">6</div><div>
+      <div class="ig-h">Authority is checked after rating, before release</div>
+      <div style="font-size:12.3px;color:var(--text-dim);line-height:1.6">The engine returns a premium regardless of
+        who asked. Compare it against the assigned underwriter's limit, licensed states and owned lines before the
+        number leaves the underwriting boundary. See <a href="roles.html">Roles &amp; Permissions</a>.</div></div></div>
+
+    <div class="ig-step"><div class="ig-n">7</div><div>
+      <div class="ig-h">Persist the trace, not just the total</div>
+      <div style="font-size:12.3px;color:var(--text-dim);line-height:1.6">Regulators, brokers and disputes all ask
+        &ldquo;why this number&rdquo;. The trace is cheap to store at bind and impossible to reconstruct later once
+        versions move on. It has its own container partitioned on
+        <span class="ig-tag">/quoteId</span> for exactly this reason.</div></div></div>
+  </div>
+
+  <div class="vx-card vx-anim">
+    <h2>Submission shape by application type</h2>
+    <div class="sub">Which sections the CRM must send depends on the product's application type \u2014 the routing key
+      back to <code>ams_service.ins_application_type</code>. Sending a GL payload to a trucking rater fails
+      validation at the underwriting boundary, before rating is ever called.</div>
+    <div class="vx-tw"><table class="vx-t">
+      <thead><tr><th>App Type</th><th>Line</th><th>Required sections</th></tr></thead>
+      <tbody>${appTypes.map(([id, a]) => `<tr>
+        <td><b>${a.name}</b><div style="font-size:10.4px;color:var(--text-mute)">id ${id} \u00b7 ${a.raterType}</div></td>
+        <td style="font-size:12px">${a.lob}</td>
+        <td>${a.sections.map(x => `<span class="ig-tag me-1">${x}</span>`).join("")}
+          ${a.note ? `<div style="font-size:10.6px;color:var(--text-mute);margin-top:4px">${a.note}</div>` : ""}</td>
+      </tr>`).join("")}</tbody></table></div>
+  </div>
+
+</div>
+<div class="col-lg-5">
+
+  <div class="vx-card vx-anim">
+    <h2>Deployment boundary</h2>
+    <div class="sub">The architecture is only real if the network enforces it.</div>
+    <div style="font-size:12.3px;color:var(--text-dim);line-height:1.7">
+      <b style="color:var(--text)">Rating has no public route.</b> It listens on an internal segment reachable only
+      by the underwriting service. There is no gateway path, no CORS origin and no user-token acceptance \u2014 it
+      authenticates service identities, not people.
+      <br><br>
+      <b style="color:var(--text)">Sandbox is the exception that proves it.</b> The
+      <a href="quote-portal.html">Sandbox Quote Generation</a> screen in this platform <em>does</em> exercise the
+      engine directly. That is a configuration tool for people who administer rating \u2014 gated by the
+      <code>quotes:create</code> permission and clearly labelled a sandbox. It issues no quote, binds nothing, and
+      is not a distribution channel.
+    </div>
+    <div class="ig-flow mt-3">
+      <div class="ig-box blocked"><b>Public / broker network</b><span>CRM, portals, broker apps</span></div>
+      <i class="fa-solid fa-ban ig-arrow no"></i>
+      <div class="ig-box" style="border-color:var(--purple);background:rgba(139,92,246,.06)">
+        <b>Internal segment</b><span>Underwriting service \u2192 Rating engine</span></div>
+    </div>
+  </div>
+
+  <div class="vx-card vx-anim">
+    <h2>Storage contract</h2>
+    <div class="sub">What each module may read, and what it must never write.</div>
+    ${containers.map(([name, c]) => `
+      <div style="border:1px solid var(--border);border-radius:var(--radius);padding:11px 13px;margin-bottom:9px">
+        <div class="d-flex justify-content-between align-items-center">
+          <b style="font-size:12.6px">${name}</b>
+          <span class="vx-b ${c.shared ? "gray" : "blue"}">${c.partitionKey}</span>
+        </div>
+        <div style="font-size:11.4px;color:var(--text-dim);line-height:1.55;margin-top:4px">${c.why}</div>
+        <div style="margin-top:6px">${c.docTypes.map(t => `<span class="ig-tag me-1">${t}</span>`).join("")}</div>
+      </div>`).join("")}
+    <div style="font-size:11.4px;color:var(--text-dim);line-height:1.6">
+      <b>Rating owns <code>config</code> and <code>calculations</code>.</b> Other modules read them; only rating
+      writes them. <code>quotes</code> is shared \u2014 rating writes the premium, Policy Admin writes the bind.
+      <code>rateTables</code> is filed reference data and is not tenant-owned.
+    </div>
+  </div>
+
+  <div class="vx-card vx-anim">
+    <h2>Feedback loop</h2>
+    <div class="sub">The one path that runs backwards.</div>
+    <div style="font-size:12.3px;color:var(--text-dim);line-height:1.7">
+      Claims posts <b>incurred losses</b> and <b>claim counts</b> back against the bound quote. That is what turns a
+      quote record into loss experience, which drives
+      <a href="loss-runs.html">Loss Run Analytics</a>, the experience mod on the next renewal, and rate-action
+      indications by state, carrier, MGA and broker.
+      <br><br>Without this feed the platform can price new business but can never tell you whether the price was right.
+    </div>
+    <div class="ig-flow mt-2">
+      <div class="ig-box"><b>Claims</b><span>incurredLosses, claims</span></div>
+      <i class="fa-solid fa-arrow-right ig-arrow"></i>
+      <div class="ig-box"><b>Loss runs</b><span>LR vs target by state / MGA</span></div>
+      <i class="fa-solid fa-arrow-right ig-arrow"></i>
+      <div class="ig-box core"><b>Next version</b><span>factor changes, rate action</span></div>
+    </div>
+  </div>
+
+  <div class="vx-card vx-anim">
+    <h2>Integration checklist</h2>
+    <div class="sub">Before a module goes live against rating.</div>
+    ${[["Rating is reachable only from the underwriting service", true],
+       ["CRM receives released quotes, never raw rating results", true],
+       ["Sends tenantId on every call", true],
+       ["Calls eligibility before rating, and blocks on declines", true],
+       ["Checks underwriter authority before releasing a premium", true],
+       ["Persists result.version with the premium", true],
+       ["Persists the rating trace at bind", true],
+       ["Refuses to rate on a Draft or Scheduled version", true],
+       ["Sends the section set its application type requires", true],
+       ["Posts claim experience back against the quote", false]]
+      .map(([t, req]) => `<div class="d-flex align-items-start gap-2 py-2" style="border-bottom:1px solid var(--border);font-size:12.3px">
+        <i class="fa-regular fa-square" style="color:var(--text-mute);margin-top:2px"></i>
+        <span style="flex:1">${t}</span>
+        <span class="vx-b ${req ? "amber" : "gray"}">${req ? "required" : "recommended"}</span>
+      </div>`).join("")}
+  </div>
+
+</div>
+</div>`;
+</script>
+</body>
+</html>

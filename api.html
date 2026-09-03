@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>API Reference — Developer | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+<style>
+.ep{border:1px solid var(--border);border-radius:10px;margin-bottom:7px;overflow:hidden;background:var(--surface)}
+.ep-h{display:flex;align-items:center;gap:11px;padding:10px 13px;cursor:pointer;transition:.14s}
+.ep-h:hover{background:var(--surface-2)}
+.ep-m{font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:5px;min-width:56px;text-align:center;letter-spacing:.03em}
+.ep-m.GET{background:rgba(18,160,106,.14);color:var(--good)}
+.ep-m.POST{background:var(--primary-soft);color:var(--primary)}
+.ep-m.PATCH{background:rgba(198,137,15,.15);color:var(--warn)}
+.ep-m.DELETE{background:rgba(210,69,69,.13);color:var(--bad)}
+.ep-p{font-family:Consolas,monospace;font-size:12.6px;font-weight:600}
+.ep-p .v{color:var(--accent)}
+.ep-d{font-size:12.1px;color:var(--text-dim);margin-left:auto;text-align:right}
+.ep-b{display:none;padding:13px;border-top:1px solid var(--border);background:var(--surface-2)}
+.ep-b.on{display:block}
+.pill-auth{font-size:10px;padding:2px 7px;border-radius:20px;background:var(--surface-3);color:var(--text-mute);font-weight:700}
+</style>
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/grid.js"></script>
+<script src="assets/js/engine.js"></script>
+<script>
+vxShell("API Reference", "The endpoints this platform exposes. || Any application — AMS, policy admin, broker or agent portal — calls these to rate; none of them implement rating logic themselves.",
+  [{ l: "Rules & Forms" }, { l: "API Reference" }]);
+
+const BASE = "https://api.veridex.io/v1";
+
+const GROUPS = [
+  { g: "Quoting & Rating", i: "fa-calculator", c: "var(--cat-1)", eps: [
+    { m:"POST", p:"/quotes", d:"Create a quote", auth:"quote:write",
+      req:{ lob:"TRUCK", product:"Digital Trucking Program", state:"TX", county:"Rockwall County",
+            insured:{ name:"Lonestar Freight LLC" }, effectiveDate:"2026-09-01" },
+      res:{ quoteId:"Q-2026-10412", status:"Draft", ratingVersion:"v2026.03", rateLockDate:"2026-01-25" } },
+    { m:"POST", p:"/quotes/{quoteId}/calculate", d:"Calculate premium for a quote", auth:"quote:write",
+      req:{ coverages:[{ cobId:1, children:[2,3] },{ cobId:10, children:[11,12] }],
+            vehicles:[{ primaryClass:"321", year:2022, value:145000, trailer:"Tanker", trailerValue:60000, miles:65000 }],
+            drivers:[{ age:45, cdlYears:12, violations:0 }], liabLimit:1000000, liabDeductible:5000 },
+      res:{ quoteId:"Q-2026-10412", finalPremium:52429, coveragePremium:43760, fees:6012, tax:1027, ratingVersion:"v2026.03" } },
+    { m:"POST", p:"/rate", d:"Stateless rate — no quote persisted", auth:"rate:execute",
+      req:{ lob:"MPL", state:"TX", revenue:250000, hazardGroup:2, limit:200000, retention:5000, alae:"Defense Within Limits" },
+      res:{ finalPremium:2299, basicLimitLossCost:1695, lcm:1.538, adjustedILF:1.225, hazardGroupFactor:0.8 } },
+    { m:"PATCH", p:"/quotes/{quoteId}", d:"Recalculate after an endorsement change", auth:"quote:write",
+      req:{ patch:{ vehicles:{ add:[{ primaryClass:"672", year:2021, value:38000 }] } } },
+      res:{ quoteId:"Q-2026-10412", finalPremium:58104, delta:5675, ratingVersion:"v2026.03" } },
+    { m:"GET", p:"/quotes/{quoteId}/breakdown", d:"Full factor-by-factor breakdown", auth:"quote:read",
+      res:{ groups:[{ name:"Auto Liability", subtotal:33844, factors:[{ n:"Territory Base Loss Cost", v:4128.5 },{ n:"ILF", v:1.26 }] }],
+            feeLines:[{ name:"Broker Fee", type:"Percent", pct:8, base:45390, capped:"max", amount:2500 }] } },
+    { m:"GET", p:"/quotes/{quoteId}/explain", d:"AI premium explanation", auth:"quote:read",
+      res:{ summary:"Premium of $52,429 driven by Primary Class 321 (1.62x)…", drivers:["Primary Class 321 increased premium by 62%"], warnings:[] } },
+    { m:"GET", p:"/quotes/{quoteId}/worksheet", d:"Underwriter rating worksheet", auth:"quote:read",
+      res:{ format:"text/plain", url:"/quotes/Q-2026-10412/worksheet.txt" } },
+    { m:"POST", p:"/validate", d:"Validate a payload before quoting", auth:"quote:read",
+      req:{ lob:"CYBER", input:{ revenue:8000000, industry:"RETAIL" } },
+      res:{ valid:false, errors:["Missing required field: mfa","Missing required field: limit"] } },
+  ]},
+
+  { g: "Products & Coverages", i: "fa-cubes", c: "var(--cat-2)", eps: [
+    { m:"GET", p:"/products", d:"List products", auth:"config:read",
+      res:{ data:[{ code:"DTP", name:"Digital Trucking Program", lob:"Commercial Trucking", version:"v2026.03", states:50 }], total:10 } },
+    { m:"GET", p:"/products/{code}", d:"Product detail with active version", auth:"config:read",
+      res:{ code:"DTP", name:"Digital Trucking Program", activeVersion:"v2026.03", coverages:3, states:50 } },
+    { m:"GET", p:"/lobs", d:"List lines of business", auth:"config:read",
+      res:{ data:[{ code:"TRUCK", name:"Commercial Trucking", engine:"Multiplicative + Exp/Loss Mod" }], total:6 } },
+    { m:"GET", p:"/coverages", d:"Coverage / class-of-business tree", auth:"config:read",
+      req:{ lob:"Commercial Trucking", level:"Primary" },
+      res:{ data:[{ cobId:1, parentCobId:null, name:"Auto Liability", code:"AL", childCount:8, mandatory:true }] } },
+    { m:"GET", p:"/coverages/{cobId}/children", d:"Child coverages of a primary", auth:"config:read",
+      res:{ parentCobId:1, data:[{ cobId:2, name:"Bodily Injury", mandatory:true },{ cobId:3, name:"Property Damage", mandatory:true }] } },
+    { m:"GET", p:"/industry-classes", d:"NAICS industry classifications", auth:"config:read",
+      req:{ search:"trucking" },
+      res:{ data:[{ code:"484121", name:"General Freight Trucking, Long-Distance TL", hazardGroup:3, factor:1.1 }] } },
+  ]},
+
+  { g: "Rating Data", i: "fa-sliders", c: "var(--cat-4)", eps: [
+    { m:"GET", p:"/factors", d:"Rating factors (filter by LOB, category, scope)", auth:"config:read",
+      req:{ lob:"Commercial Trucking", category:"Vehicle", page:1, size:50 },
+      res:{ data:[{ code:"VEH_PRIMARY", name:"Primary Class Factor", lookupType:"Table Lookup", defaultValue:1.62 }], total:500 } },
+    { m:"GET", p:"/base-rates", d:"Base rates / loss costs", auth:"config:read",
+      req:{ lob:"Commercial Trucking", state:"TX" },
+      res:{ data:[{ state:"TX", territory:"T1", classCode:"321", baseRate:4128.5, unit:"Per Unit" }] } },
+    { m:"GET", p:"/lookup/{table}", d:"Query a large lookup table", auth:"config:read",
+      req:{ table:"zip-territory", zip:"75087" },
+      res:{ zip:"75087", city:"Rockwall", county:"Rockwall County", state:"TX", isoTerritory:116, territory:"T2" } },
+    { m:"GET", p:"/fees", d:"Fee schedule (fixed and percent)", auth:"config:read",
+      res:{ data:[{ code:"FEE_BROKER", valueType:"Percent", value:8, percentOf:"Premium Before Fees", minFee:250, maxFee:2500 }] } },
+    { m:"GET", p:"/discounts", d:"Discount schedule", auth:"config:read",
+      res:{ data:[{ code:"DISC_RENEWAL", value:-0.05, appliesTo:"Account" }] } },
+    { m:"GET", p:"/surcharges", d:"Surcharge schedule", auth:"config:read",
+      res:{ data:[{ code:"SUR_FMCSA", value:0.15, appliesTo:"Account" }] } },
+  ]},
+
+  { g: "Versions & Rate Lock", i: "fa-code-branch", c: "var(--cat-5)", eps: [
+    { m:"GET", p:"/products/{code}/versions", d:"Version history for a product", auth:"config:read",
+      res:{ data:[{ version:"v2026.03", status:"Active", effectiveStart:"2026-03-01", rateLockDate:"2026-01-25", rateLockDays:60 }] } },
+    { m:"GET", p:"/versions/resolve", d:"Which version rates a given date", auth:"rate:execute",
+      req:{ product:"DTP", transactionDate:"2026-09-01" },
+      res:{ version:"v2026.03", reason:"transactionDate falls inside effective window", rateLocked:false } },
+    { m:"GET", p:"/versions/{id}/changes", d:"What changed in a version", auth:"config:read",
+      res:{ version:"v2026.03", added:3, changed:4, removed:1, rateImpact:5.1,
+            changes:[{ type:"Changed", factor:"Primary Class 321", from:"1.58", to:"1.62", reason:"per Q3 filing" }] } },
+    { m:"GET", p:"/versions/compare", d:"Diff two versions", auth:"config:read",
+      req:{ a:"v2025.11", b:"v2026.03" },
+      res:{ differences:[{ attribute:"Liability LCM", a:1.62, b:1.67 }] } },
+  ]},
+
+  { g: "Geography & Tax", i: "fa-map-location-dot", c: "var(--cat-3)", eps: [
+    { m:"GET", p:"/states", d:"States with filing status", auth:"config:read",
+      res:{ data:[{ abv:"TX", name:"Texas", premiumTax:1.75, surplusTax:4.85, included:true }] } },
+    { m:"GET", p:"/counties", d:"Counties (filter by state)", auth:"config:read",
+      req:{ state:"TX" },
+      res:{ data:[{ fips:"01043", name:"Rockwall County", territory:"T2", catZone:"Hail" }] } },
+    { m:"GET", p:"/tax/resolve", d:"Total tax for a location — state + county", auth:"rate:execute",
+      req:{ state:"TX", county:"Rockwall County" },
+      res:{ stateTax:1.75, countyTax:0.82, surplusTax:4.85, stampingFee:0.15, totalTax:7.57 } },
+    { m:"GET", p:"/territories", d:"Rating territories", auth:"config:read",
+      res:{ data:[{ code:"TX-T1", name:"Urban Metro Core", isoTerr:116, relativity:1.152 }] } },
+  ]},
+
+  { g: "Rules & Eligibility", i: "fa-clipboard-check", c: "var(--cat-6)", eps: [
+    { m:"POST", p:"/eligibility/evaluate", d:"Run eligibility gates on a submission", auth:"rate:execute",
+      req:{ lob:"TRUCK", state:"TX", naics:"484121", fleetSize:18, radius:"48_states" },
+      res:{ eligible:true, failed:[], warnings:["Interstate beyond 500mi requires DOT compliance review"] } },
+    { m:"POST", p:"/underwriting/evaluate", d:"Run underwriting rules", auth:"rate:execute",
+      req:{ lob:"TRUCK", safetyRating:"Conditional", fmcsaAlerts:1, priorLossRatio:0.72 },
+      res:{ decision:"Refer", triggered:[{ code:"UW_FMCSA", severity:"Refer" },{ code:"UW_RENEWLR", severity:"Refer" }] } },
+    { m:"GET", p:"/forms/{productCode}", d:"Dynamic form schema for a product", auth:"config:read",
+      res:{ product:"DTP", pages:3, sections:5, fields:[{ key:"fleetSize", label:"Number of Power Units", type:"number", required:true }] } },
+  ]},
+
+  { g: "Administration", i: "fa-gear", c: "var(--cat-8)", eps: [
+    { m:"GET", p:"/audit", d:"Audit log (immutable)", auth:"audit:read",
+      req:{ from:"2026-07-01", area:"Rating Factors" },
+      res:{ data:[{ timestamp:"2026-07-31 16:42", user:"j.romero@veridex.io", action:"Updated factor", detail:"321: 1.58 → 1.62" }] } },
+    { m:"POST", p:"/config/export", d:"Export configuration modules", auth:"config:read",
+      req:{ modules:["factors","baseRates"], format:"json", version:"v2026.03" },
+      res:{ exportId:"EXP-8841", status:"ready", downloadUrl:"/exports/EXP-8841.json" } },
+    { m:"GET", p:"/health", d:"Service health & active version map", auth:"public",
+      res:{ status:"healthy", engine:"Veridex Rating Engine v1.0", activeVersions:10, uptime:"99.98%" } },
+  ]},
+];
+
+const CONSUMERS = [
+  ["AMS (Agency Management System)","fa-building","Primary consumer — quote & bind","1.24M calls/mo"],
+  ["Policy Administration","fa-file-contract","Endorsement & renewal rating","386k calls/mo"],
+  ["Broker Portal","fa-handshake","Self-service quoting","512k calls/mo"],
+  ["Agent Portal","fa-user-tie","Agency quoting","734k calls/mo"],
+  ["Customer Self-Service","fa-mobile-screen","Indicative quotes only","91k calls/mo"],
+  ["Third-Party / Public API","fa-plug","Partner integrations","48k calls/mo"],
+];
+
+const total = GROUPS.reduce((a, g) => a + g.eps.length, 0);
+
+document.getElementById("vxPageActions").innerHTML =
+  `<button class="btn btn-outline-secondary btn-sm" onclick="openapi()"><i class="fa-solid fa-file-code me-1"></i>OpenAPI Spec</button>
+   <button class="btn btn-outline-secondary btn-sm" onclick="keys()"><i class="fa-solid fa-key me-1"></i>API Keys</button>`;
+
+document.getElementById("vxBody").innerHTML = `
+<div class="row g-3 mb-1">
+  <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Endpoints Exposed</div>
+    <div class="val">${total}</div><div class="dt flat">across ${GROUPS.length} groups</div></div>
+    <div class="ic" style="background:var(--cat-1)"><i class="fa-solid fa-plug"></i></div></div></div>
+  <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Consuming Apps</div>
+    <div class="val">${CONSUMERS.length}</div><div class="dt up">all share one engine</div></div>
+    <div class="ic" style="background:var(--cat-2)"><i class="fa-solid fa-diagram-project"></i></div></div></div>
+  <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Calls / Month</div>
+    <div class="val">3.0M</div><div class="dt up"><i class="fa-solid fa-arrow-up"></i> 12% vs last month</div></div>
+    <div class="ic" style="background:var(--cat-3)"><i class="fa-solid fa-bolt"></i></div></div></div>
+  <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">p95 Latency</div>
+    <div class="val">142ms</div><div class="dt flat">rate endpoint</div></div>
+    <div class="ic" style="background:var(--cat-4)"><i class="fa-solid fa-gauge-high"></i></div></div></div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="vx-card vx-anim">
+      <div class="vx-card-head"><div><h2>Endpoints</h2><div class="sub">Base URL <code>${BASE}</code> · click an endpoint for request &amp; response</div></div>
+        <div class="vx-search" style="max-width:220px"><i class="fa-solid fa-magnifying-glass"></i>
+          <input class="form-control form-control-sm" id="q" placeholder="Filter endpoints..." style="padding-left:32px"></div></div>
+      <div id="eps"></div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="vx-card vx-anim">
+      <h2>Who Consumes This API</h2><div class="sub">No application implements rating internally</div>
+      ${CONSUMERS.map(([n, i, d, v]) => `<div class="d-flex align-items-center gap-2 py-2" style="border-bottom:1px solid var(--border)">
+        <div style="width:30px;height:30px;border-radius:8px;background:var(--surface-2);display:grid;place-items:center;color:var(--primary);flex:none">
+          <i class="fa-solid ${i}" style="font-size:12px"></i></div>
+        <div style="flex:1"><b style="font-size:12.4px">${n}</b><div style="font-size:11px;color:var(--text-mute)">${d}</div></div>
+        <span class="vx-b gray">${v}</span></div>`).join("")}
+    </div>
+
+    <div class="vx-card vx-anim vx-anim-d1">
+      <h2>Authentication</h2>
+      <div class="vx-code" style="font-size:11.5px">POST ${BASE}/oauth/token
+Content-Type: application/json
+
+{ "client_id": "...",
+  "client_secret": "...",
+  "grant_type": "client_credentials",
+  "scope": "rate:execute quote:write" }</div>
+      <div style="font-size:12.2px;color:var(--text-dim);margin-top:9px">
+        OAuth 2.0 client credentials. Tokens expire in 60 minutes. Every request is
+        tenant-scoped — a token can only reach its own carrier's configuration.</div>
+      <h6 style="font-size:12px;font-weight:700;margin:13px 0 6px">Scopes</h6>
+      ${[["rate:execute","Run rating calculations"],["quote:read","Read quotes & breakdowns"],
+         ["quote:write","Create & recalculate quotes"],["config:read","Read products, factors, tables"],
+         ["config:write","Modify configuration (admin)"],["audit:read","Read audit log"]]
+        .map(([s, d]) => `<div class="d-flex justify-content-between py-1" style="font-size:12px">
+          <code style="font-size:11.5px">${s}</code><span style="color:var(--text-mute)">${d}</span></div>`).join("")}
+    </div>
+
+    <div class="vx-card vx-anim vx-anim-d2">
+      <h2>Limits &amp; Conventions</h2>
+      ${[["Rate limit","1,200 req/min per tenant"],["Burst","200 req/sec"],["Pagination","?page= &size= (max 500)"],
+         ["Idempotency","Idempotency-Key header on POST"],["Versioning","URL path — /v1"],
+         ["Errors","RFC 7807 problem+json"],["Webhooks","quote.bound, version.published"]]
+        .map(([k, v]) => `<div class="d-flex justify-content-between py-1.5" style="font-size:12.2px;border-bottom:1px solid var(--border);padding:5px 0">
+          <span style="color:var(--text-dim)">${k}</span><b style="font-size:12px">${v}</b></div>`).join("")}
+    </div>
+  </div>
+</div>`;
+
+function drawEps(filter) {
+  const f = (filter || "").toLowerCase();
+  document.getElementById("eps").innerHTML = GROUPS.map((g, gi) => {
+    const eps = g.eps.filter(e => !f || e.p.toLowerCase().includes(f) || e.d.toLowerCase().includes(f) || e.m.toLowerCase() === f);
+    if (!eps.length) return "";
+    return `<div style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+        <i class="fa-solid ${g.i}" style="color:${g.c};font-size:13px"></i>
+        <b style="font-size:12.8px">${g.g}</b><span class="vx-b gray">${eps.length}</span></div>
+      ${eps.map((e, i) => `<div class="ep">
+        <div class="ep-h" data-e="${gi}-${i}">
+          <span class="ep-m ${e.m}">${e.m}</span>
+          <span class="ep-p"><span class="v">/v1</span>${e.p.replace(/\{(\w+)\}/g, '<span style="color:var(--warn)">{$1}</span>')}</span>
+          <span class="ep-d">${e.d}<br><span class="pill-auth">${e.auth}</span></span>
+        </div>
+        <div class="ep-b" id="b${gi}-${i}">
+          ${e.req ? `<div style="font-size:11px;font-weight:700;color:var(--text-mute);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">${e.m === "GET" ? "Query parameters" : "Request body"}</div>
+            <div class="vx-code" style="font-size:11.4px;margin-bottom:11px">${JSON.stringify(e.req, null, 2)}</div>` : ""}
+          <div style="font-size:11px;font-weight:700;color:var(--text-mute);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">200 Response</div>
+          <div class="vx-code" style="font-size:11.4px">${JSON.stringify(e.res, null, 2)}</div>
+          <div class="d-flex gap-2 mt-2">
+            <button class="btn btn-outline-secondary btn-sm" onclick='curl(${JSON.stringify(JSON.stringify({m:e.m,p:e.p,req:e.req}))})'>
+              <i class="fa-solid fa-terminal me-1"></i>cURL</button>
+            ${e.p.includes("/rate") || e.p.includes("calculate") ? `<button class="btn btn-primary btn-sm" onclick="tryIt()"><i class="fa-solid fa-play me-1"></i>Try it</button>` : ""}
+          </div>
+        </div></div>`).join("")}
+    </div>`;
+  }).join("") || `<div class="vx-empty"><i class="fa-solid fa-inbox"></i>No endpoints match.</div>`;
+
+  document.querySelectorAll(".ep-h").forEach(h => h.onclick = () => {
+    document.getElementById("b" + h.dataset.e).classList.toggle("on");
+  });
+}
+
+function curl(payload) {
+  const e = JSON.parse(payload);
+  const body = e.req && e.m !== "GET" ? ` \\\n  -d '${JSON.stringify(e.req)}'` : "";
+  const qs = e.req && e.m === "GET" ? "?" + Object.entries(e.req).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&") : "";
+  vxModal("cURL", `<div class="vx-code" style="font-size:11.6px">curl -X ${e.m} "${BASE}${e.p}${qs}" \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -H "Content-Type: application/json"${body}</div>`,
+    [{ t: "Close", c: "secondary" }, { t: "Copy", c: "primary", fn: () => vxToast("Copied", "cURL command copied to clipboard", "ok") }], "modal-lg");
+}
+
+function tryIt() {
+  const r = ENGINE.rate("MPL", { state: "TX", revenue: 250000, hazardGroup: 2, limit: 200000,
+    retention: 5000, alae: "Defense Within Limits", yip: "4th or More", experienceFactor: 0.9, uwAdjust: 0 });
+  vxModal("POST /v1/rate — live response", `
+    <div style="font-size:11px;font-weight:700;color:var(--text-mute);text-transform:uppercase;margin-bottom:5px">Request</div>
+    <div class="vx-code" style="font-size:11.4px;margin-bottom:11px">${JSON.stringify({ lob:"MPL", state:"TX", revenue:250000, hazardGroup:2, limit:200000, retention:5000, alae:"Defense Within Limits" }, null, 2)}</div>
+    <div style="font-size:11px;font-weight:700;color:var(--text-mute);text-transform:uppercase;margin-bottom:5px">200 Response · ${Math.round(90 + Math.random() * 80)}ms</div>
+    <div class="vx-code" style="font-size:11.4px">${JSON.stringify({
+      finalPremium: r.finalPremium, coveragePremium: r.coveragePremium,
+      fees: r.fees, tax: r.tax, ratingVersion: r.version,
+      factors: r.groups[0].factors.slice(0, 5).map(f => ({ name: f[0], value: f[1] })),
+      minimumApplied: r.minApplied,
+    }, null, 2)}</div>
+    <div class="vx-ai mt-2" style="padding:9px 12px;font-size:12.2px">This is the real engine responding — the same code path the Quote Portal uses.</div>`,
+    [{ t: "Close", c: "secondary" }], "modal-lg");
+}
+
+function openapi() {
+  vxModal("OpenAPI 3.1 Specification", `<div class="vx-code" style="font-size:11.4px;max-height:400px;overflow:auto">openapi: 3.1.0
+info:
+  title: Veridex Rating Engine API
+  version: "1.0.0"
+  description: Centralized premium calculation for all products and channels
+servers:
+  - url: ${BASE}
+    description: Production
+  - url: https://sandbox.veridex.io/v1
+    description: Sandbox
+security:
+  - oauth2: [rate:execute]
+paths:
+${GROUPS.flatMap(g => g.eps.map(e => `  ${e.p}:
+    ${e.m.toLowerCase()}:
+      summary: ${e.d}
+      tags: [${g.g}]
+      security: [{ oauth2: [${e.auth}] }]`)).join("\n")}</div>`,
+    [{ t: "Close", c: "secondary" }, { t: "Download YAML", c: "primary", fn: () => vxToast("Spec downloaded", "veridex-openapi-v1.yaml", "ok") }], "modal-xl");
+}
+
+function keys() {
+  const rows = [["AMS Production","ams_live_••••4f21","rate:execute quote:write config:read","2026-08-04","Active"],
+    ["Broker Portal","brk_live_••••9c07","rate:execute quote:write","2026-08-05","Active"],
+    ["Policy Admin","pol_live_••••2b88","rate:execute quote:read","2026-08-05","Active"],
+    ["Partner Sandbox","prt_test_••••7d10","rate:execute","2026-07-19","Revoked"]];
+  vxModal("API Keys", `<div class="vx-tw"><table class="vx-t">
+    <thead><tr><th>Client</th><th>Key</th><th>Scopes</th><th>Last Used</th><th>Status</th></tr></thead>
+    <tbody>${rows.map(r => `<tr><td><b>${r[0]}</b></td><td><code style="font-size:11.5px">${r[1]}</code></td>
+      <td style="font-size:11.5px;color:var(--text-dim)">${r[2]}</td><td>${r[3]}</td>
+      <td><span class="vx-b ${r[4] === "Active" ? "green" : "red"}">${r[4]}</span></td></tr>`).join("")}</tbody></table></div>`,
+    [{ t: "Close", c: "secondary" }, { t: "Issue New Key", c: "primary", fn: () => vxToast("Key issued", "New client credentials generated", "ok") }], "modal-lg");
+}
+
+document.getElementById("q").oninput = e => drawEps(e.target.value);
+drawEps("");
+</script>
+</body>
+</html>

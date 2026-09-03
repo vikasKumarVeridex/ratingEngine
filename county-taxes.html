@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>County Taxes — Pricing | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-grid.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-theme-quartz.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/dist/ag-grid-community.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/grid.js"></script>
+<script src="assets/js/ag-grid-adapter.js"></script>
+<script>
+vxShell("County Taxes", "Local tax charged by individual counties. || Applied on top of the state premium tax. One state can have many counties, each with a different rate.",
+  [{ l: "Pricing & Taxes" }, { l: "County Taxes" }]);
+
+document.getElementById("vxPageActions").innerHTML =
+  `<a href="taxes.html" class="btn btn-outline-secondary btn-sm"><i class="fa-solid fa-percent me-1"></i>State Taxes</a>`;
+
+/* states with the most taxing counties — makes the "many counties per state" point concrete */
+const byState = Object.entries(VX.countyTaxes.reduce((a,c)=>(a[c.stateName]=(a[c.stateName]||0)+1,a),{}))
+  .sort((a,b)=>b[1]-a[1]).slice(0,6);
+
+document.getElementById("vxBody").innerHTML = `
+  <div class="row g-3 mb-1">
+    <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Taxing Counties</div>
+      <div class="val">${vxNum(VX.countyTaxes.length)}</div><div class="dt flat">of ${vxNum(VX.counties.length)} configured</div></div>
+      <div class="ic" style="background:var(--cat-1)"><i class="fa-solid fa-map-pin"></i></div></div></div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">States Affected</div>
+      <div class="val">${new Set(VX.countyTaxes.map(c=>c.state)).size}</div><div class="dt flat">with local county tax</div></div>
+      <div class="ic" style="background:var(--cat-2)"><i class="fa-solid fa-flag-usa"></i></div></div></div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Highest County Rate</div>
+      <div class="val">${Math.max(...VX.countyTaxes.map(c=>c.countyTax)).toFixed(2)}%</div><div class="dt flat">local tax only</div></div>
+      <div class="ic" style="background:var(--cat-5)"><i class="fa-solid fa-arrow-up"></i></div></div></div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Highest Combined</div>
+      <div class="val">${Math.max(...VX.countyTaxes.map(c=>c.totalTax)).toFixed(2)}%</div><div class="dt flat">state + county</div></div>
+      <div class="ic" style="background:var(--cat-6)"><i class="fa-solid fa-layer-group"></i></div></div></div>
+  </div>
+
+  ${vxNotWiredBanner('Reference data only — no quote is charged from these rows.',
+    'The county tax a quote actually gets charged comes from the <b>Municipal Tax</b> field on <a href="counties.html">County Management</a>, added on top of state tax at quote time. The <b>County Tax</b> / <b>Total Tax</b> figures below are a separate, unused dataset.')}
+
+  <div class="vx-card vx-anim"><div id="grid"></div></div>`;
+
+const qs = new URLSearchParams(location.search).get("state");
+
+vxAgGrid({ el:"#grid", key:"countyTaxes", name:"County Tax", size:15,
+  cols:[
+    {k:"county",l:"County"},
+    {k:"stateName",l:"State"},
+    {k:"state",l:"Code"},
+    {k:"fips",l:"FIPS"},
+    {k:"stateTax",l:"State Tax",r:r=>r.stateTax.toFixed(2)+"%"},
+    {k:"countyTax",l:"County Tax",r:r=>'<b style="color:var(--warn)">+'+r.countyTax.toFixed(2)+'%</b>'},
+    {k:"totalTax",l:"Total Tax",r:r=>'<span class="vx-b '+(r.totalTax>4?"red":r.totalTax>2.5?"amber":"green")+'">'+r.totalTax.toFixed(2)+'%</span>'},
+    {k:"taxType",l:"Tax Type"},
+    {k:"appliesTo",l:"Applies To",r:r=>'<span class="vx-b '+(r.appliesTo==="All LOBs"?"blue":"gray")+'">'+r.appliesTo+'</span>'},
+    {k:"effectiveDate",l:"Effective"}],
+  form:[
+    {k:"county",l:"County Name"},
+    {k:"state",l:"State Code",t:"select",opts:VX.states.map(s=>s.abv)},
+    {k:"stateName",l:"State Name"},
+    {k:"fips",l:"FIPS Code"},
+    {k:"countyTax",l:"County Tax %",t:"number",step:"0.01"},
+    {k:"taxType",l:"Tax Type",t:"select",opts:["County Premium Tax","Local Fire Marshal Tax","Municipal Surcharge","County Assessment"]},
+    {k:"appliesTo",l:"Applies To",t:"select",opts:["All LOBs","Property only","Auto only","Liability only"]},
+    {k:"basis",l:"Tax Basis",t:"select",opts:["Net Written Premium","Gross Written Premium","Premium + Fees"]},
+    {k:"effectiveDate",l:"Effective Date",t:"date"}],
+  filters:[{k:"state",l:"State",opts:[...new Set(VX.countyTaxes.map(c=>c.state))].sort()},
+           {k:"appliesTo",l:"Applies To",opts:["All LOBs","Property only","Auto only","Liability only"]},
+           {k:"taxType",l:"Type",opts:["County Premium Tax","Local Fire Marshal Tax","Municipal Surcharge","County Assessment"]}]
+});
+
+if (qs) setTimeout(() => {
+  const sel = document.querySelector('[data-f="state"]');
+  if (sel) { sel.value = qs; sel.dispatchEvent(new Event("change")); vxToast("Filtered", "Showing taxing counties in " + qs, "info"); }
+}, 400);
+</script>
+</body>
+</html>

@@ -1,0 +1,1447 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rating Formulas — Rating | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-grid.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-theme-quartz.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+<style>
+.covcard{border:2px solid var(--border);border-radius:12px;padding:14px;cursor:pointer;transition:.16s;background:var(--surface);height:100%}
+.covcard:hover{border-color:var(--primary);transform:translateY(-1px);box-shadow:var(--shadow)}
+.covcard.on{border-color:var(--primary);background:var(--primary-soft)}
+.covcard i{font-size:19px;margin-bottom:7px;display:block}
+.covcard b{display:block;font-size:13px;margin-bottom:3px}
+.covcard span{font-size:11px;color:var(--text-dim);line-height:1.4;display:block}
+.covcard .covwarn{color:var(--warn);font-weight:600;margin-top:4px}
+.vx-vartile{border:1px solid var(--border);border-radius:8px;padding:7px 9px;margin-bottom:6px;cursor:grab;background:var(--surface);transition:.12s}
+.vx-vartile:hover{border-color:var(--primary);background:var(--primary-soft)}
+.vx-vartile:active{cursor:grabbing}
+.vx-vartile-label{font-size:12.3px;font-weight:600;color:var(--text)}
+.vx-vartile-meta{display:flex;justify-content:space-between;align-items:center;margin-top:2px;gap:8px}
+.vx-vartile-meta code{font-family:ui-monospace,Consolas,monospace;font-size:10px;color:var(--text-mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vx-vartile-meta b{font-size:11px;color:var(--primary);font-weight:700;flex:none;white-space:nowrap}
+.vx-vartile-driver{font-size:10.2px;color:var(--text-dim);margin-top:2px;line-height:1.35}
+.vx-vartile-hint{font-size:9.8px;color:var(--text-mute);margin-top:3px}
+.vx-vartile-hint a{color:var(--primary);text-decoration:underline}
+#fbTip{position:fixed;z-index:var(--z-tooltip);max-width:280px;background:var(--surface);border:1px solid var(--border);
+  border-radius:10px;box-shadow:var(--shadow-lg,0 12px 32px rgba(0,0,0,.22));padding:10px 12px;display:none;pointer-events:none}
+#fbTip .fbtip-h{font-size:11.5px;font-weight:700;margin-bottom:2px}
+#fbTip .fbtip-d{font-size:10.5px;color:var(--text-dim);margin-bottom:7px;line-height:1.4}
+#fbTip table{width:100%;border-collapse:collapse;font-size:11px}
+#fbTip td{padding:2px 0;border-bottom:1px solid var(--border)}
+#fbTip tr:last-child td{border-bottom:none}
+#fbTip td:last-child{text-align:right;font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap;padding-left:8px}
+#fbTip tr.def{background:var(--primary-soft)}
+#fbTip .fbtip-more{font-size:10px;color:var(--text-mute);margin-top:4px;text-align:center}
+#fbTip .fbtip-foot{font-size:9.5px;color:var(--text-mute);margin-top:6px;border-top:1px solid var(--border);padding-top:5px}
+</style>
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/dist/ag-grid-community.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/rate-data-full.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<!-- engine.js is required: the coverage picker reads ENGINE.FORMULA_HOOKS to
+     say whether a formula for that coverage is actually executed -->
+<script src="assets/js/engine.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/grid.js"></script>
+<script src="assets/js/ag-grid-adapter.js"></script>
+<script>
+/* The page lands on the formula LIST, so it is titled for that; fbShowBuilder()
+   retitles to "Formula Builder" when you are actually editing one. */
+vxShell("Rating Formulas", "Every rating formula on this tenant. || What it rates, which versions run it, and whether it has been evaluated.",
+  [{ l: "Rating" }, { l: "Rating Formulas" }]);
+
+/* Which coverage is being rated drives which variables even make sense — a
+   formula for Auto Liability, Physical Damage, GL Premises/Ops or Cyber
+   Breach Response each runs on a different real factor chain. This is
+   driven off the platform's actual Class-of-Business tree (VX.cobParents),
+   not a hand-picked shortlist, so every real COB across every LOB shows up
+   here — not just trucking's three. */
+const ACCOUNT_KEY = "__ACCOUNT__";
+const LOB_META = {
+  "Commercial Trucking": { icon: "fa-truck", color: "var(--cat-1)" },
+  "General Liability": { icon: "fa-store", color: "var(--cat-2)" },
+  "Commercial Property": { icon: "fa-building", color: "var(--cat-3)" },
+  "Professional Liability (MPL)": { icon: "fa-user-tie", color: "var(--cat-4)" },
+  "Cyber": { icon: "fa-shield-virus", color: "var(--cat-5)" },
+  "Umbrella / Excess": { icon: "fa-umbrella", color: "var(--cat-6)" },
+};
+
+/* Per-COB variable sets. AL/PD are verified against the source rating
+   workbook; GL/Property/MPL/Cyber mirror engine.js's approximate formulas
+   for those LOBs (real code, not workbook-verified); Cargo, Liquor
+   Liability, Business Auto and Inland Marine have no sourced rate at all
+   and are flagged accordingly. */
+const COB_VARS = {
+  "Auto Liability": [
+    { n: "BaseLossCost", v: 321 }, { n: "ILF", v: 2.06 }, { n: "LiabDeductibleFactor", v: 0.138 },
+    { n: "LCM", v: 1.67 }, { n: "PrimaryClassFactor", v: 1.62 }, { n: "SecondaryClassFactor", v: 1.98 },
+    { n: "FleetSizeFactor", v: 1.061 }, { n: "VehicleAgeFactor", v: 1.04 }, { n: "OCNFactor", v: 0.85 },
+    { n: "RadiusFactor", v: 1.15 }, { n: "NAICSFactor", v: 1.10 }, { n: "TortLimitationFactor", v: 1.00 },
+    { n: "MilesDrivenFactor", v: 1.00 }, { n: "RatingClassFactor", v: 1.00 }, { n: "DashcamFactor", v: 0.95 },
+    { n: "CDLExpDiscFactor", v: 0.90 }, { n: "DriverClassFactor", v: 0.925 },
+    { n: "VehicleOwnedFactor", v: 1.00 }, { n: "PollutionFactor", v: 1.00 },
+    { n: "DriverCriteriaFactor", v: 1.00 }, { n: "LossExperienceFactor", v: 1.00 },
+    { n: "PaymentPlanFactor", v: 1.00 }, { n: "UwCreditDebitFactor", v: 1.00 },
+    { n: "HeavyFarmFactor", v: 1.00 }, { n: "HeavyDumpingFactor", v: 1.00 },
+    { n: "AccountFactor", v: 0.85 }, { n: "RemainingFactors", v: 1.00 },
+  ],
+  "Physical Damage": [
+    { n: "VehicleValue", v: 145000 }, { n: "APDRate", v: 0.0475 }, { n: "APDDeductibleFactor", v: 0.875 },
+    { n: "APDRadiusFactor", v: 1.125 }, { n: "TrailerPhysDamFactor", v: 0.90 }, { n: "MilesDrivenFactor", v: 1.00 },
+    { n: "RatingClassFactor", v: 1.00 }, { n: "DashcamFactor", v: 0.95 }, { n: "APDStateFactor", v: 0.95 },
+    { n: "APDPackageFactor", v: 0.90 }, { n: "CDLExpDiscFactor", v: 0.90 }, { n: "DriverClassFactor", v: 0.925 },
+    { n: "AccountFactor", v: 0.85 },
+  ],
+  "Motor Truck Cargo": [
+    { n: "CargoLimit", v: 100000 }, { n: "CargoRatePer100", v: 0.65 },
+    { n: "CargoRadiusFactor", v: 1.125 },
+  ],
+  "General Liability": [
+    { n: "BasicLimitLossCost", v: 10375 }, { n: "IncreasedLimitsFactor", v: 1.262 }, { n: "LCM", v: 1.62 },
+    { n: "ClassFactor", v: 1.10 }, { n: "ScheduleRatingMod", v: 1.00 }, { n: "ExperienceMod", v: 1.00 },
+  ],
+  "Liquor Liability": [{ n: "BaseRate", v: 500 }, { n: "LCM", v: 1.62 }, { n: "ClassFactor", v: 1.00 }],
+  "Business Auto": [{ n: "BaseRate", v: 800 }, { n: "LCM", v: 1.62 }, { n: "ClassFactor", v: 1.00 }],
+  "Inland Marine": [{ n: "BaseRate", v: 400 }, { n: "LCM", v: 1.62 }, { n: "ClassFactor", v: 1.00 }],
+  "Property": [
+    { n: "TotalInsuredValue", v: 1450000 }, { n: "BaseRatePer100", v: 0.42 }, { n: "ConstructionFactor", v: 1.10 },
+    { n: "ProtectionClassFactor", v: 1.09 }, { n: "OccupancyFactor", v: 1.00 }, { n: "WindHailFactor", v: 1.00 },
+    { n: "DeductibleFactor", v: 0.90 }, { n: "LCM", v: 1.00 }, { n: "IRPM", v: 1.00 },
+  ],
+  "Professional Liability": [
+    { n: "BasicLimitLossCost", v: 1660 }, { n: "LCM", v: 1.538 }, { n: "AdjILF", v: 0.983 },
+    { n: "HazardGroupFactor", v: 0.80 }, { n: "ALAEFactor", v: 1.00 }, { n: "ClaimsMadeFactor", v: 1.00 },
+    { n: "LossExperienceFactor", v: 0.90 }, { n: "StateModFactor", v: 1.00 }, { n: "UWModFactor", v: 1.00 },
+  ],
+};
+const CYBER_VARS = [
+  { n: "BaseRate", v: 3360 }, { n: "BaseRateDeviation", v: 1.00 }, { n: "RevenueBandFactor", v: 1.00 },
+  { n: "IndustryClassFactor", v: 1.10 }, { n: "MFAControlsFactor", v: 1.05 }, { n: "AggregateLimitFactor", v: 1.00 },
+  { n: "RetentionFactor", v: 0.88 }, { n: "ScheduleRatingFactor", v: 1.00 },
+];
+["Liability", "Breach Response", "Cyber Crime", "Business Loss"].forEach(k => COB_VARS[k] = CYBER_VARS);
+/* The account-level palette used to hold generic placeholders — BaseLossCost,
+   ILF, LCM — which are per-coverage terms with nothing to do with the account
+   factor. A formula authored there referenced variables the engine never
+   supplies for this scope, so it could not have worked even once a hook
+   existed. These are the eight credit/debit answers the engine actually
+   passes, plus the two program-band bounds the clamp needs. */
+COB_VARS[ACCOUNT_KEY] = [
+  { n: "RenewalDiscount", v: 0 }, { n: "BusinessExperience", v: 0 },
+  { n: "CarrierSafetyFMCSA", v: 0 }, { n: "OOSVehicles", v: 0 },
+  { n: "OOSDrivers", v: 0 }, { n: "ICCFiling", v: 0 },
+  { n: "LossFrequency", v: 0 }, { n: "DriverLicenseStates", v: 0 },
+  { n: "AccountFactorMin", v: 0.85 }, { n: "AccountFactorMax", v: 1.50 },
+];
+
+/* Coverages with no sourced rate at all — shown with a warning instead of a
+   confident starting template. */
+const COB_UNSOURCED = { "Motor Truck Cargo": true, "Liquor Liability": true, "Business Auto": true, "Inland Marine": true,
+  "Liability": true, "Breach Response": true, "Cyber Crime": true, "Business Loss": true };
+const COB_WARN = {
+  "Motor Truck Cargo": "Rate not yet sourced from a filed rating manual — treat as a placeholder.",
+  "Liquor Liability": "No rating engine implementation yet — placeholder variables only.",
+  "Business Auto": "No rating engine implementation yet — placeholder variables only.",
+  "Inland Marine": "No rating engine implementation yet — placeholder variables only.",
+  "Liability": "Cyber's engine doesn't split premium by insuring-agreement group yet — all four groups share this same calculation.",
+  "Breach Response": "Cyber's engine doesn't split premium by insuring-agreement group yet — all four groups share this same calculation.",
+  "Cyber Crime": "Cyber's engine doesn't split premium by insuring-agreement group yet — all four groups share this same calculation.",
+  "Business Loss": "Cyber's engine doesn't split premium by insuring-agreement group yet — all four groups share this same calculation.",
+};
+
+/* Starting templates — AL/PD match engine.js's real per-vehicle formula
+   term-for-term; GL/Property/MPL/Cyber match engine.js's working
+   approximation for those LOBs. Loading a coverage gives the analyst a
+   working formula to adjust rather than a blank canvas. Model A / Model B
+   (Trucking's two candidates) are hardcoded in engine.js, not authored
+   here — they don't get a template of their own. */
+const DEFAULT_TOKENS = {
+  "Auto Liability": ["BaseLossCost","×","(","ILF","−","LiabDeductibleFactor",")","×","LCM","×","PrimaryClassFactor","×",
+    "SecondaryClassFactor","×","FleetSizeFactor","×","VehicleAgeFactor","×","OCNFactor","×","RadiusFactor","×",
+    "NAICSFactor","×","TortLimitationFactor","×","MilesDrivenFactor","×","RatingClassFactor","×","DashcamFactor","×",
+    "CDLExpDiscFactor","×","DriverClassFactor","×","VehicleOwnedFactor","×","PollutionFactor","×",
+        "DriverCriteriaFactor","×","LossExperienceFactor","×","PaymentPlanFactor","×","UwCreditDebitFactor","×",
+        "HeavyFarmFactor","×","HeavyDumpingFactor","×","AccountFactor","×","RemainingFactors"],
+  "Physical Damage": ["VehicleValue","×","APDRate","×","APDDeductibleFactor","×","APDRadiusFactor","×","TrailerPhysDamFactor","×",
+    "MilesDrivenFactor","×","RatingClassFactor","×","DashcamFactor","×","APDStateFactor","×","APDPackageFactor","×",
+    "CDLExpDiscFactor","×","DriverClassFactor","×","AccountFactor"],
+  "Motor Truck Cargo": ["(","CargoLimit","÷","100",")","×","CargoRatePer100","×","CargoRadiusFactor"],
+  "General Liability": ["BasicLimitLossCost","×","IncreasedLimitsFactor","×","LCM","×","ClassFactor","×","ScheduleRatingMod","×","ExperienceMod"],
+  "Property": ["(","TotalInsuredValue","÷","100",")","×","BaseRatePer100","×","ConstructionFactor","×","ProtectionClassFactor","×",
+    "OccupancyFactor","×","WindHailFactor","×","DeductibleFactor","×","LCM","×","IRPM"],
+  "Professional Liability": ["BasicLimitLossCost","×","LCM","×","AdjILF","×","HazardGroupFactor","×","ALAEFactor","×",
+    "ClaimsMadeFactor","×","LossExperienceFactor","×","StateModFactor","×","UWModFactor"],
+  "Liability": ["BaseRate","×","BaseRateDeviation","×","RevenueBandFactor","×","IndustryClassFactor","×","MFAControlsFactor","×",
+    "AggregateLimitFactor","×","RetentionFactor","×","ScheduleRatingFactor"],
+};
+DEFAULT_TOKENS["Breach Response"] = DEFAULT_TOKENS["Cyber Crime"] = DEFAULT_TOKENS["Business Loss"] = DEFAULT_TOKENS["Liability"];
+/* Opens on the filed expression rather than an empty canvas: additive, then
+   clamped to the program band. This is the one chain that is not a product. */
+DEFAULT_TOKENS[ACCOUNT_KEY] = ["MIN","(","AccountFactorMax",",","MAX","(","AccountFactorMin",",",
+  "1","+","RenewalDiscount","+","BusinessExperience","+","CarrierSafetyFMCSA","+",
+  "OOSVehicles","+","OOSDrivers","+","ICCFiling","+","LossFrequency","+",
+  "DriverLicenseStates",")",")"];
+
+/* Progressive disclosure: Basic shows only what a rating formula normally
+   needs (multiply factors, group with parens); Advanced adds comparisons,
+   conditionals and rounding. OPS stays the full list because toTokens()
+   uses it to classify saved formulas regardless of the current view. */
+const OPS_BASIC = ["×", "÷", "(", ")"];
+const OPS_ADV = ["+", "−", "^", ","];
+const OPS = [...OPS_BASIC, ...OPS_ADV];
+const FNS = ["IF", "ELSE", "MIN", "MAX", "ROUND", "LOOKUP", "AND", "OR", ">", "<", "="];
+
+function toTokens(arr, cobKey) {
+  const varNames = new Set((COB_VARS[cobKey] || []).map(v => v.n));
+  /* Function names are structure, not data — classifying MIN/MAX as numbers
+     styled them as literals and made an additive, clamped chain read as if it
+     were multiplying by a constant called MIN. */
+  return arr.map(v => ({
+    t: (OPS.includes(v) || FNS.includes(v)) ? "op" : (varNames.has(v) ? "var" : "num"), v }));
+}
+function findVarDefault(name) {
+  for (const key in COB_VARS) { const hit = COB_VARS[key].find(x => x.n === name); if (hit) return hit.v; }
+  return 1;
+}
+function currentVars() { return COB_VARS[currentCob || ACCOUNT_KEY] || []; }
+
+/* Plain-language label + definition + value type for every variable name —
+   PascalCase identifiers like "LiabDeductibleFactor" are what the formula
+   engine needs, not what a person should have to read. The palette, canvas
+   chips, test panel and rule builder all display through these instead of
+   the raw name; the raw name still drives evaluation and is always still
+   visible in the technical Expression preview and on hover. */
+const VAR_META = {
+  BaseLossCost: { l: "Base Loss Cost", d: "Starting expected-loss rate before any factors are applied.", u: "money" },
+  ILF: { l: "Increased Limits Factor (ILF)", d: "Cost of a higher liability limit relative to the basic limit.", u: "x" },
+  RenewalDiscount: { l: "Renewal Discount", d: "Credit for a clean renewal with an acceptable loss ratio.", u: "x" },
+  BusinessExperience: { l: "Business Experience", d: "Credit or debit banded on years in business. A New Venture floors the credit-bearing lines at zero.", u: "x" },
+  CarrierSafetyFMCSA: { l: "Carrier Safety / FMCSA Alerts", d: "Debit driven by the SAFER rating and open FMCSA alerts.", u: "x" },
+  OOSVehicles: { l: "OOS Violations \u2014 Vehicles", d: "Out-of-service vehicle violation rate against the national average.", u: "x" },
+  OOSDrivers: { l: "OOS Violations \u2014 Drivers", d: "Out-of-service driver violation rate against the national average.", u: "x" },
+  ICCFiling: { l: "ICC Filing", d: "Credit where an ICC filing is on file.", u: "x" },
+  LossFrequency: { l: "Loss Frequency", d: "Debit banded on prior-term claim frequency.", u: "x" },
+  DriverLicenseStates: { l: "Driver Licence States", d: "Debit for foreign licences or a high New York concentration in the driver schedule.", u: "x" },
+  AccountFactorMin: { l: "Account Factor Min", d: "Lower bound of the filed program band.", u: "x" },
+  AccountFactorMax: { l: "Account Factor Max", d: "Upper bound of the filed program band.", u: "x" },
+  RemainingFactors: { l: "Remaining Factors (catch-all)", d: "The product of every factor the engine supplies that this formula does not name explicitly. Put it last so factors added to the engine later are picked up without editing the formula.", u: "x" },
+  VehicleOwnedFactor: { l: "Vehicle Ownership Factor", d: "Adjustment for whether the unit is owned, leased, owner-operator or non-owned.", u: "x" },
+  PollutionFactor: { l: "Pollution Factor", d: "Auto liability pollution grade. The scale is not centred on 1.00 — a Low grade is still a debit.", u: "x" },
+  DriverCriteriaFactor: { l: "Driver Criteria Factor", d: "Applies when the rated driver schedule breaches the filed age or CDL-experience thresholds.", u: "x" },
+  LossExperienceFactor: { l: "Loss Experience Factor", d: "Banded on the prior-term loss ratio.", u: "x" },
+  PaymentPlanFactor: { l: "Payment Plan Factor", d: "Adjustment for the billing arrangement.", u: "x" },
+  UwCreditDebitFactor: { l: "UW Credit / Debit", d: "Underwriter judgment, clamped to the filed program band.", u: "x" },
+  HeavyFarmFactor: { l: "Heavy Farm Factor", d: "Specialised-use credit for farm operation.", u: "x" },
+  HeavyDumpingFactor: { l: "Heavy Dumping Factor", d: "Specialised-use load for dump operation.", u: "x" },
+  LiabDeductibleFactor: { l: "Liability Deductible Factor", d: "Subtracted from the ILF to reflect the liability deductible chosen.", u: "x" },
+  LCM: { l: "Loss Cost Multiplier (LCM)", d: "Converts a pure loss cost into a gross rate.", u: "x" },
+  PrimaryClassFactor: { l: "Primary Class Factor", d: "Adjustment for the vehicle's primary ISO class code.", u: "x" },
+  SecondaryClassFactor: { l: "Secondary Class Factor", d: "Adjustment for the vehicle's secondary ISO class code.", u: "x" },
+  FleetSizeFactor: { l: "Fleet Size Factor", d: "Discount or surcharge based on how many like-type vehicles are rated together.", u: "x" },
+  VehicleAgeFactor: { l: "Vehicle Age Factor", d: "Adjustment for the vehicle's model-year age.", u: "x" },
+  OCNFactor: { l: "OCN Factor", d: "Liability adjustment banded by the vehicle's stated value.", u: "x" },
+  RadiusFactor: { l: "Radius Factor", d: "Liability adjustment for radius of operation.", u: "x" },
+  NAICSFactor: { l: "NAICS Factor", d: "Adjustment for the insured's declared industry (NAICS) code.", u: "x" },
+  TortLimitationFactor: { l: "Tort Limitation Factor", d: "Adjustment for the state's tort system — 1.00 in nearly every state on file.", u: "x" },
+  MilesDrivenFactor: { l: "Miles Driven Factor", d: "Adjustment for annual mileage, banded by radius category.", u: "x" },
+  RatingClassFactor: { l: "Rating Class Factor", d: "Adjustment for the commodity/operation type being hauled.", u: "x" },
+  DashcamFactor: { l: "Dashcam Factor", d: "Credit for verified dashcam usage, larger for a preferred vendor.", u: "x" },
+  CDLExpDiscFactor: { l: "CDL Experience Discount", d: "Discount for the share of top-ranked drivers holding 3+ years of CDL experience.", u: "x" },
+  DriverClassFactor: { l: "Driver Class Factor", d: "Reflects the quality of the fleet's assigned drivers.", u: "x" },
+  AccountFactor: { l: "Account-Level Factor", d: "The policy's combined Account-Level credit/debit.", u: "x" },
+  VehicleValue: { l: "Vehicle Value", d: "The stated value of the vehicle, used to rate Physical Damage.", u: "money" },
+  APDRate: { l: "APD Rate", d: "Base physical damage rate, looked up by the vehicle's stated value.", u: "num" },
+  APDDeductibleFactor: { l: "APD Deductible Factor", d: "Credit for the Physical Damage deductible chosen.", u: "x" },
+  APDRadiusFactor: { l: "APD Radius Factor", d: "Radius-of-operation adjustment specific to Physical Damage.", u: "x" },
+  TrailerPhysDamFactor: { l: "Trailer PhysDam Factor", d: "Physical damage adjustment for the trailer type towed.", u: "x" },
+  APDStateFactor: { l: "APD State Factor", d: "State-specific adjustment to the Physical Damage rate.", u: "x" },
+  APDPackageFactor: { l: "APD Package Factor", d: "Credit for bundling Liability and Physical Damage on the same vehicle.", u: "x" },
+  CargoLimit: { l: "Cargo Limit", d: "The Cargo limit of insurance selected.", u: "money" },
+  CargoRatePer100: { l: "Cargo Rate per $100", d: "Placeholder cargo rate — not sourced from a filed manual.", u: "num" },
+  CargoRadiusFactor: { l: "Cargo Radius Factor", d: "Radius-of-operation adjustment for Cargo — borrows the same radius answer as Physical Damage.", u: "x" },
+  BasicLimitLossCost: { l: "Basic Limit Loss Cost", d: "Loss cost at the program's basic (reference) limit.", u: "money" },
+  IncreasedLimitsFactor: { l: "Increased Limits Factor", d: "General Liability's version of the ILF.", u: "x" },
+  ClassFactor: { l: "Class Factor", d: "A generic classification factor for the risk being rated.", u: "x" },
+  ScheduleRatingMod: { l: "Schedule Rating Mod", d: "Underwriter judgment credit/debit for characteristics a formula doesn't capture.", u: "x" },
+  ExperienceMod: { l: "Experience Mod", d: "Credibility-weighted factor from the account's own loss history.", u: "x" },
+  BaseRate: { l: "Base Rate", d: "A generic starting rate before factors are applied.", u: "money" },
+  TotalInsuredValue: { l: "Total Insured Value", d: "Building value plus Business Personal Property value.", u: "money" },
+  BaseRatePer100: { l: "Base Rate per $100", d: "Property's base rate per $100 of insured value.", u: "num" },
+  ConstructionFactor: { l: "Construction Factor", d: "Adjustment for the building's construction type.", u: "x" },
+  ProtectionClassFactor: { l: "Protection Class Factor", d: "Adjustment for the location's fire-protection class (PPC).", u: "x" },
+  OccupancyFactor: { l: "Occupancy Factor", d: "Adjustment for how the insured building is occupied/used.", u: "x" },
+  WindHailFactor: { l: "Wind/Hail Factor", d: "Adjustment for wind/hail catastrophe zone.", u: "x" },
+  DeductibleFactor: { l: "Deductible Factor", d: "Credit or debit for the deductible chosen.", u: "x" },
+  IRPM: { l: "IRPM", d: "Individual Risk Premium Modification — underwriter judgment credit/debit.", u: "x" },
+  AdjILF: { l: "Adjusted ILF", d: "Increased Limits Factor after adjusting for the retention selected.", u: "x" },
+  HazardGroupFactor: { l: "Hazard Group Factor", d: "Risk tier assigned to the professional class of business.", u: "x" },
+  ALAEFactor: { l: "ALAE Factor", d: "Loads or credits the rate based on whether ALAE is inside or outside the limit.", u: "x" },
+  ClaimsMadeFactor: { l: "Claims-Made Factor", d: "Adjustment for claims-made status and year in program.", u: "x" },
+  LossExperienceFactor: { l: "Loss Experience Factor", d: "Adjustment for the account's professional-liability loss experience.", u: "x" },
+  StateModFactor: { l: "State Mod Factor", d: "State-specific modification to the Professional Liability rate.", u: "x" },
+  UWModFactor: { l: "UW Mod Factor", d: "Underwriter credit/debit on the Professional Liability rate.", u: "x" },
+  BaseRateDeviation: { l: "Base Rate Deviation", d: "A carrier-selected deviation applied to the filed base rate.", u: "x" },
+  RevenueBandFactor: { l: "Revenue Band Factor", d: "Cyber factor banded by the insured's annual revenue.", u: "x" },
+  IndustryClassFactor: { l: "Industry Class Factor", d: "Cyber factor for the insured's industry classification.", u: "x" },
+  MFAControlsFactor: { l: "MFA Controls Factor", d: "Credit for enforced multi-factor authentication.", u: "x" },
+  AggregateLimitFactor: { l: "Aggregate Limit Factor", d: "Factor for the aggregate limit selected.", u: "x" },
+  RetentionFactor: { l: "Retention Factor", d: "Adjustment for the retention (deductible-equivalent) selected.", u: "x" },
+  ScheduleRatingFactor: { l: "Schedule Rating Factor", d: "Underwriter schedule-rating credit/debit for Cyber.", u: "x" },
+  TrendFactor: { l: "Trend Factor", d: "Loss trend applied to bring historical costs to the effective period.", u: "x" },
+};
+/* ==========================================================================
+   Where each variable's value actually comes from.
+
+   Showing "RadiusFactor 1.15×" in the palette implies 1.15 is the value.
+   It isn't — it's one row of a five-row table, selected by what the insured
+   answered for Radius of Operation. Every variable therefore declares its
+   kind and, for lookups, the live rate table behind it, so the palette can
+   show a RANGE and a DEFAULT row rather than a single misleading number.
+   Rows are derived from VX at render time, never re-typed here, so the
+   palette can't drift from the tables the engine actually rates on.
+   ========================================================================== */
+const VAR_SOURCE = {
+  // --- Trucking lookups ---
+  ILF: { kind: "lookup", driver: "Liability Limit", table: "IncreasedLimitsFactors (per state)", base: 1.00,
+    rows: () => Object.entries(VX.truckILF.TX).map(([lim, f]) => ({ l: "$" + Number(lim).toLocaleString("en-US"), v: f })) },
+  LiabDeductibleFactor: { kind: "lookup", driver: "Liability Deductible", table: "CA_Liab_Deductible", base: 0,
+    rows: () => VX.truckLiabDed.map(d => ({ l: "$" + d.amount.toLocaleString("en-US"), v: d.factor })),
+    note: "Subtracted from the ILF rather than multiplied." },
+  PrimaryClassFactor: { kind: "lookup", driver: "Vehicle Class (per unit)", table: "CA_PrimaryFactors",
+    rows: () => VX.truckPrimary.map(p => ({ l: `${p.code} — ${p.desc}`, v: p.liability })) },
+  SecondaryClassFactor: { kind: "lookup", driver: "Secondary Class (per unit)", table: "CA_SecondaryFactors", base: 1.98,
+    rows: () => (typeof VXFULL !== "undefined" ? VXFULL.secondaryClasses : []).map(r => ({ l: `${r[0]} — ${r[1] || "Secondary Class " + r[0]}`, v: r[2] })),
+    note: "All 11 trucking secondary classes on file share the same factor." },
+  FleetSizeFactor: { kind: "lookup", driver: "Number of rated power units", table: "CA_Fleet_TTT", base: 1.00,
+    rows: () => VX.truckFleetSize.filter(f => f.vehicleType === "Heavy Trucks").map(f => ({ l: f.label + " units", v: f.factor })) },
+  VehicleAgeFactor: { kind: "lookup", driver: "Model Year (per unit)", table: "CA_Age — TTT Liability", base: 1.00,
+    rows: () => VX.truckAge.map(a => ({ l: a.label, v: a.tttLiability })) },
+  OCNFactor: { kind: "lookup", driver: "Vehicle stated value (per unit)", table: "CA_OCN_Liability", base: 1.00,
+    rows: () => VX.truckOCN.filter(o => o.vehicleType === "Heavy").map(o => ({ l: `$${o.min.toLocaleString("en-US")} – $${o.max.toLocaleString("en-US")}`, v: o.factor })) },
+  RadiusFactor: { kind: "lookup", driver: "Radius of Operation", table: "RadiusFctrs — Liability", base: 1.00,
+    rows: () => VX.truckRadius.map(r => ({ l: `${r.label} (${r.distance})`, v: r.liabilityFactor })) },
+  NAICSFactor: { kind: "lookup", driver: "Industry Classification (NAICS)", table: "CA_NAICS_TTT", base: 1.00,
+    rows: () => VX.truckNAICS.map(n => ({ l: `${n.code} — ${n.label}`, v: n.factor })) },
+  TortLimitationFactor: { kind: "constant", driver: "Garaging State", table: "Helper_CovTypesOptions_Liab",
+    note: "1.00 in every state on file except New Jersey's tort-elimination election." },
+  MilesDrivenFactor: { kind: "lookup", driver: "Annual Miles + Radius category", table: "Table58 — Miles Driven", base: 1.00,
+    rows: () => VX.truckMiles.map(m => ({ l: `${m.radiusCategory} · ${m.label}`, v: m.factor })) },
+  RatingClassFactor: { kind: "lookup", driver: "Cargo / Hauling Type", table: "Table50 — Rating Class", base: 1.00,
+    rows: () => VX.truckRatingClass.map(r => ({ l: r.ratingClass, v: r.factor })) },
+  DashcamFactor: { kind: "lookup", driver: "Dashcams Installed", table: "Dashcams_Tbl", base: 1.00,
+    rows: () => VX.truckDashcam.map(d => ({ l: d.option, v: d.factor })) },
+  LCM: { kind: "constant", driver: null, table: "ProgramDeviations", note: "Carrier-selected expense & profit loading — identical on every quote." },
+  APDRate: { kind: "lookup", driver: "Vehicle stated value (per unit)", table: "PhysDamRatesByTIV",
+    rows: () => VX.truckPhysDamRate.map(([v, f]) => ({ l: "$" + v.toLocaleString("en-US"), v: f })),
+    note: "Declines as stated value rises, flooring at the program minimum rate." },
+  APDDeductibleFactor: { kind: "lookup", driver: "Physical Damage Deductible", table: "DeductFctr_ALT", base: 1.00,
+    rows: () => VX.truckApdDed.map(d => ({ l: "$" + d.amount.toLocaleString("en-US"), v: d.factor })) },
+  APDRadiusFactor: { kind: "lookup", driver: "Radius of Operation", table: "RadiusFctrs — APD", base: 1.00,
+    rows: () => VX.truckRadius.map(r => ({ l: `${r.label} (${r.distance})`, v: r.apdFactor })) },
+  TrailerPhysDamFactor: { kind: "lookup", driver: "Trailer Type (per unit)", table: "TrailerTypes", base: 1.00,
+    rows: () => Object.entries(VX.truckTrailerPdFactor).map(([k, v]) => ({ l: k, v })) },
+  APDStateFactor: { kind: "lookup", driver: "Garaging State", table: "Table9 — APD State", base: 1.00,
+    rows: () => [{ l: "California", v: VX.truckApdState.CA }, { l: "All other states", v: VX.truckApdState.DEFAULT }] },
+  APDPackageFactor: { kind: "lookup", driver: "Coverages selected", table: "Table11 — APD Package", base: 1.00,
+    rows: () => [{ l: "Liability + Physical Damage together", v: VX.truckApdPackage.yes }, { l: "Physical Damage alone", v: VX.truckApdPackage.no }] },
+  CargoRadiusFactor: { kind: "lookup", driver: "Radius of Operation", table: "RadiusFctrs — APD (borrowed)", base: 1.00,
+    rows: () => VX.truckRadius.map(r => ({ l: `${r.label} (${r.distance})`, v: r.apdFactor })) },
+  CargoRatePer100: { kind: "constant", driver: null, table: null, note: "Not sourced from a filed rating manual — placeholder." },
+  // --- Property lookups ---
+  ConstructionFactor: { kind: "lookup", driver: "Construction Type", table: "Construction Type", base: 1.00,
+    rows: () => VX.propConstruction.map(c => ({ l: c.label, v: c.factor })) },
+  ProtectionClassFactor: { kind: "lookup", driver: "Protection Class (PPC)", table: "Public Protection Classification", base: 1.00,
+    rows: () => VX.propPPC.map(p => ({ l: "PPC " + p.ppc, v: p.factor })) },
+  OccupancyFactor: { kind: "lookup", driver: "Occupancy", table: "Occupancy", base: 1.00,
+    rows: () => VX.propOccupancy.map(o => ({ l: o.label, v: o.factor })) },
+  WindHailFactor: { kind: "lookup", driver: "Wind / Hail Zone", table: "Wind/Hail Zone", base: 1.00,
+    rows: () => VX.propWindHail.map(w => ({ l: w.label, v: w.factor })) },
+  DeductibleFactor: { kind: "lookup", driver: "Deductible", table: "Property Deductibles", base: 1.00,
+    rows: () => VX.propDed.map(d => ({ l: "$" + d.amount.toLocaleString("en-US"), v: d.factor })) },
+  IncreasedLimitsFactor: { kind: "lookup", driver: "Each Occurrence Limit", table: "GL ELP / ILF", base: 1.00,
+    rows: () => VX.glELP.map(e => ({ l: "$" + e.limit.toLocaleString("en-US"), v: e.elp })) },
+  HazardGroupFactor: { kind: "lookup", driver: "Hazard Group", table: "MPL Hazard Groups",
+    rows: () => (VX.mplHazardGroups || []).map(h => ({ l: `HG ${h.hg} — ${h.desc}`, v: h.factor })) },
+  RetentionFactor: { kind: "lookup", driver: "Retention", table: "Cyber Retentions", base: 1.00,
+    rows: () => (VX.cyberRetentions || []).map(r => ({ l: "$" + r.retention.toLocaleString("en-US"), v: r.factor })) },
+  AggregateLimitFactor: { kind: "lookup", driver: "Aggregate Limit", table: "Cyber Limits", base: 1.00,
+    rows: () => (VX.cyberLimits || []).map(l => ({ l: "$" + l.limit.toLocaleString("en-US"), v: l.factor })) },
+  IndustryClassFactor: { kind: "lookup", driver: "Industry Classification", table: "Cyber Industry", base: 1.00,
+    rows: () => (VX.cyberIndustry || []).map(c => ({ l: c.label, v: c.factor })) },
+  MFAControlsFactor: { kind: "lookup", driver: "MFA Controls", table: "Cyber MFA Controls", base: 1.00,
+    rows: () => (VX.cyberMFA || []).map(m => ({ l: m.label, v: m.factor })) },
+  // --- Computed at rating time, not looked up ---
+  AccountFactor: { kind: "computed", driver: "8 underwriting questions", table: "Insured!Z15", base: 1.00,
+    note: "Sum of eight credit/debit answers, then clamped to the program's min/max band." },
+  DriverClassFactor: { kind: "computed", driver: "Driver age, violations & accidents", table: "Drivers!AF20", base: 1.00,
+    note: "Ranks drivers best-to-worst, takes as many as there are rated units, and averages them." },
+  CDLExpDiscFactor: { kind: "computed", driver: "Driver CDL experience", table: "Drivers!AF19", base: 1.00,
+    note: "Full 10% credit only if every rated driver has 3+ years CDL experience." },
+  ExperienceMod: { kind: "computed", driver: "Loss history (3yr)", table: "ExperienceRatingMod_ALT1!W7", base: 1.00,
+    note: "Credibility-weighted against the account's own losses. Credit capped at 10%; debits are uncapped." },
+  LossExperienceFactor: { kind: "computed", driver: "Loss history", table: "MPL loss experience", base: 1.00 },
+  IRPM: { kind: "judgment", driver: "IRPM Modification", base: 1.00, note: "Underwriter judgment, typically capped at ±25%." },
+  ScheduleRatingMod: { kind: "judgment", driver: "Schedule Rating Mod", base: 1.00, note: "Underwriter judgment for what the formula can't see." },
+  ScheduleRatingFactor: { kind: "judgment", driver: "Schedule Rating", base: 1.00 },
+  UWModFactor: { kind: "judgment", driver: "Underwriter credit/debit", base: 1.00 },
+  StateModFactor: { kind: "constant", driver: "State", base: 1.00 },
+  ALAEFactor: { kind: "lookup", driver: "Defense Cost (ALAE) Treatment", table: "MPL ALAE Treatment", base: 1.00 },
+  ClaimsMadeFactor: { kind: "lookup", driver: "Year in Program", table: "MPL YIP", base: 1.00 },
+  AdjILF: { kind: "computed", driver: "Limit + Retention", table: "MPL ILF × retention", note: "ILF adjusted down by the retention factor." },
+  BaseRateDeviation: { kind: "constant", driver: null, table: "Program Deviations" },
+  RevenueBandFactor: { kind: "lookup", driver: "Annual Revenue", table: "Cyber Revenue Bands", base: 1.00 },
+  ClassFactor: { kind: "lookup", driver: "Class of Business", table: "Industry Classes", base: 1.00 },
+  // --- Direct inputs / bases, not factors at all ---
+  BaseLossCost: { kind: "lookup", driver: "Garaging State + Territory", table: "CA_Liab_LC",
+    rows: () => Object.entries(VX.truckBaseLC).filter(([k]) => k !== "DEFAULT").map(([k, v]) => ({ l: k, v })) },
+  VehicleValue: { kind: "input", driver: "Vehicle stated value" },
+  CargoLimit: { kind: "input", driver: "Cargo Limit" },
+  TotalInsuredValue: { kind: "input", driver: "Building + BPP values" },
+  BasicLimitLossCost: { kind: "input", driver: "Annual Revenue / exposure base" },
+  BaseRate: { kind: "input", driver: "Exposure base" },
+  BaseRatePer100: { kind: "constant", driver: null, table: "Program base rate" },
+  TrendFactor: { kind: "constant", driver: null, table: "Trend", note: "Brings historical loss costs to the effective period." },
+};
+const KIND_META = {
+  lookup:   { l: "Lookup",   c: "blue",   i: "fa-table-list",  d: "Selected from a rate table by an insured answer" },
+  computed: { l: "Computed", c: "purple", i: "fa-calculator",  d: "Derived at rating time from several answers" },
+  judgment: { l: "Judgment", c: "amber",  i: "fa-user-pen",    d: "Set by an underwriter, not by a table" },
+  constant: { l: "Constant", c: "gray",   i: "fa-lock",        d: "Same on every quote — not driven by insured input" },
+  input:    { l: "Input",    c: "cyan",   i: "fa-keyboard",    d: "Entered directly on the quote, not looked up" },
+};
+function varSource(n) { return VAR_SOURCE[n] || { kind: "constant", driver: null }; }
+function varRows(n) {
+  const s = varSource(n);
+  if (!s.rows) return null;
+  try { return s.rows().filter(r => r && r.v != null && !isNaN(r.v)); } catch (e) { return null; }
+}
+function varRange(n) {
+  const rows = varRows(n);
+  if (!rows || rows.length < 2) return null;
+  const vals = rows.map(r => +r.v);
+  return { min: Math.min(...vals), max: Math.max(...vals), count: rows.length };
+}
+function varLabel(n) { return (VAR_META[n] && VAR_META[n].l) || n; }
+function varDef(n) { return (VAR_META[n] && VAR_META[n].d) || ""; }
+function fmtVarValue(n, v) {
+  const u = VAR_META[n] && VAR_META[n].u;
+  if (u === "money") return "$" + Number(v).toLocaleString();
+  if (u === "x") return Number(v).toFixed(3).replace(/0+$/, "").replace(/\.$/, "") + "×";
+  return String(v);
+}
+function lobsWithCob() { return [...new Set(VX.cobParents.map(c => c.lob))]; }
+function cobsForLob(lob) { return VX.cobParents.filter(c => c.lob === lob).map(c => c.name); }
+
+/* ── A/B treatment ─────────────────────────────────────────────────
+   A = control (shipped design). B = the alternate under test.
+   Both arms share every calculation path; only presentation differs, so a
+   measured difference is attributable to the design and not to the logic. */
+const FB_VARIANT = (() => {
+  const q = new URLSearchParams(location.search).get("variant");
+  if (q === "a" || q === "b") { try { localStorage.setItem("vxFbVariant", q); } catch (e) {} return q; }
+  try { return localStorage.getItem("vxFbVariant") || "a"; } catch (e) { return "a"; }
+})();
+const isB = () => FB_VARIANT === "b";
+
+function setVariant(v) {
+  try { localStorage.setItem("vxFbVariant", v); } catch (e) {}
+  const u = new URL(location.href);
+  u.searchParams.set("variant", v);
+  location.href = u.toString();
+}
+
+let currentLob = "Commercial Trucking";
+let currentCob = "Auto Liability";
+let TOK = toTokens(DEFAULT_TOKENS["Auto Liability"], "Auto Liability");
+
+/* the formula currently loaded on the canvas, if any — Save Formula edits
+   this record in place; leaving it null means Save creates a new one */
+let currentFormula = null;
+/* Whether Evaluate Formula has succeeded since the canvas last changed.
+   Publishing an engine with untested Draft formulas attached is now a real,
+   visible warning on Rating Versions — this is what makes that check honest
+   rather than decorative. */
+let canvasTested = false;
+
+function cobOptionsForLob(lob) { return VX.cobParents.filter(c => c.lob === lob).map(c => c.name); }
+/* Products and versions are partitioned on /tenantId, so the raw arrays hold
+   one copy per tenant that owns the line — reading them unscoped listed the
+   same product and the same version several times over. The Formula Builder
+   always works inside the active tenant, so scope to that partition (and
+   de-duplicate the version labels, since a cloned product can legitimately
+   carry the same label in more than one row). */
+function productsForLob(lob) {
+  const rows = (typeof COSMOS !== "undefined") ? COSMOS.productsFor(lob) : VX.products.filter(p => p.lob === lob);
+  return [...new Set(rows.map(p => p.name))];
+}
+function versionsForProduct(product) {
+  const tid = (typeof COSMOS !== "undefined") ? COSMOS.tenantId() : null;
+  const rows = VX.versions.filter(v => v.product === product
+    && (tid == null || v.tenantId == null || v.tenantId === tid)
+    && v.status !== "Expired" && v.status !== "Archived");
+  const seen = new Set();
+  return rows.filter(v => (seen.has(v.version) ? false : (seen.add(v.version), true)));
+}
+
+/* Basic / Advanced — a visibility toggle over UI that already exists, so an
+   admin building a normal multiplicative formula isn't shown conditionals,
+   comparisons and rounding they don't need. Remembered per tab. */
+let fbAdvanced = sessionStorage.getItem("vxFbAdvanced") === "1";
+function applyFbMode() {
+  document.querySelectorAll(".vx-adv").forEach(el => el.style.display = fbAdvanced ? "" : "none");
+  const b = document.getElementById("fbModeBtn");
+  if (b) b.innerHTML = `<i class="fa-solid fa-sliders me-1"></i>${fbAdvanced ? "Advanced" : "Basic"} view`;
+}
+function toggleFbMode() {
+  fbAdvanced = !fbAdvanced;
+  sessionStorage.setItem("vxFbAdvanced", fbAdvanced ? "1" : "0");
+  applyFbMode();
+  vxToast(fbAdvanced ? "Advanced view" : "Basic view",
+    fbAdvanced ? "Conditionals, comparisons and rounding are now available" : "Showing just the factor chain — the usual case", "info");
+}
+
+/* Two views on one page: a grid of every saved formula (the landing view, so
+   the page opens on what exists rather than on a blank canvas), and the
+   builder itself. Building is a full-screen task — a modal would leave no
+   room for the variable palette, canvas and test panel — so it takes over the
+   page and Back returns to the grid. */
+function fbShowList() {
+  document.getElementById("fbList").style.display = "";
+  document.getElementById("fbBuilder").style.display = "none";
+  document.getElementById("vxPageActions").innerHTML =
+    `<a href="glossary.html" class="btn btn-outline-secondary btn-sm" title="What do ILF, LCM, OCN etc. mean?"><i class="fa-solid fa-book me-1"></i>Glossary</a>
+     <button class="btn btn-primary btn-sm" onclick="fbNewFormula()"><i class="fa-solid fa-plus me-1"></i>New Formula</button>`;
+  document.querySelector(".vx-page-head h1").textContent = "Rating Formulas";
+  vxSetSubtitle("Every rating formula on this tenant. || What it rates, which versions run it, and whether it has been evaluated.");
+  if (fbGrid) fbGrid.reload();
+  history.replaceState(null, "", location.pathname);
+}
+function fbShowBuilder() {
+  document.getElementById("fbList").style.display = "none";
+  document.getElementById("fbBuilder").style.display = "";
+  document.getElementById("vxPageActions").innerHTML =
+    `<button class="btn btn-outline-secondary btn-sm" onclick="fbBack()"><i class="fa-solid fa-arrow-left me-1"></i>Back to Rating Formulas</button>
+     <a href="glossary.html" class="btn btn-outline-secondary btn-sm" title="What do ILF, LCM, OCN etc. mean?"><i class="fa-solid fa-book me-1"></i>Glossary</a>
+     <button class="btn btn-outline-secondary btn-sm" id="fbModeBtn" onclick="toggleFbMode()"></button>
+     <button class="btn btn-primary btn-sm" onclick="saveF()"><i class="fa-solid fa-floppy-disk me-1"></i>Save Formula</button>`;
+  document.querySelector(".vx-page-head h1").textContent = "Formula Builder";
+  vxSetSubtitle("Compose a rating formula visually. || Pick a coverage, get its real factor chain pre-loaded, then adjust — no code, no deployment.");
+  applyFbMode();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+/* Leaving the builder with unsaved edits should not silently discard them. */
+function fbBack() {
+  if (TOK.length && !currentFormula) {
+    vxConfirm("Discard this formula?",
+      "This formula hasn't been saved yet. Going back will discard the expression on the canvas.",
+      () => { TOK = []; currentFormula = null; draw(); fbShowList(); }, true);
+    return;
+  }
+  fbShowList();
+}
+function fbNewFormula() {
+  currentFormula = null; currentCob = null; TOK = []; canvasTested = false;
+  renderLobPicker(); renderCobPicker(); draw(); drawRules(); renderCanvasContext();
+  fbShowBuilder();
+}
+
+document.body.insertAdjacentHTML("beforeend", `<div id="fbTip"></div>`);
+
+/* ==========================================================================
+   Hover tooltip — shows the real lookup table, not just a definition string.
+   Hovering "RadiusFactor" used to give you one sentence of prose; you had to
+   click through to a modal to see it's actually a 5-row table with the
+   default highlighted. This shows that table directly, on hover, wherever
+   the variable appears (palette tile or canvas token). Click still opens
+   the full inspectVar() modal for the complete row list + notes.
+   ========================================================================== */
+function fbTipShow(name, x, y) {
+  const el = document.getElementById("fbTip");
+  const s = varSource(name), km = KIND_META[s.kind] || KIND_META.constant;
+  const rows = varRows(name);
+  const body = `
+    <div class="fbtip-h">${varLabel(name)} <span class="vx-b ${km.c}" style="font-size:8px">${km.l}</span></div>
+    <div class="fbtip-d">${s.driver ? "Driven by " + s.driver : "Same on every quote — not looked up"}</div>
+    ${rows && rows.length ? `<table>${rows.slice(0, 6).map(r => {
+        const isDef = s.base != null && Math.abs(+r.v - s.base) < 1e-9;
+        return `<tr class="${isDef ? "def" : ""}"><td>${r.l}${isDef ? " ★" : ""}</td><td>${fmtVarValue(name, r.v)}</td></tr>`;
+      }).join("")}</table>
+      ${rows.length > 6 ? `<div class="fbtip-more">+ ${rows.length - 6} more rows — click to see all</div>` : ""}`
+      : `<div style="font-size:11.5px;font-weight:700">${s.base != null ? fmtVarValue(name, s.base) : "—"}</div>`}
+    <div class="fbtip-foot">${rows && rows.length ? "★ = default row · " : ""}Click for full detail</div>`;
+  el.innerHTML = body;
+  el.style.display = "block";
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const w = el.offsetWidth, h = el.offsetHeight;
+  el.style.left = Math.min(x + 14, vw - w - 10) + "px";
+  el.style.top = Math.min(y + 14, vh - h - 10) + "px";
+}
+function fbTipHide() { document.getElementById("fbTip").style.display = "none"; }
+function bindTip(selector, nameFn) {
+  document.querySelectorAll(selector).forEach(el => {
+    el.onmouseenter = e => fbTipShow(nameFn(el), e.clientX, e.clientY);
+    el.onmousemove = e => { const t = document.getElementById("fbTip"); if (t.style.display === "block") fbTipShow(nameFn(el), e.clientX, e.clientY); };
+    el.onmouseleave = fbTipHide;
+  });
+}
+
+document.getElementById("vxBody").innerHTML = `
+<div id="fbList">
+  <div id="fbDiag"></div>
+  <div class="vx-card vx-anim"><div id="fbGrid"></div></div>
+</div>
+
+<div id="fbBuilder" style="display:none">
+<div class="vx-abbar" id="abBar"></div>
+<div class="vx-card vx-anim" id="pickerCard">
+  <div id="pickerBar"></div>
+  <div id="pickerFull">
+    <h2><i class="fa-solid fa-truck-fast me-2 text-primary"></i>What are you rating?</h2>
+    <div class="sub">1. Pick a line of business, then 2. pick which of its real classes of business you're building a formula for.</div>
+    <div class="row g-2 mb-2" id="lobPicker"></div>
+    <div class="row g-2" id="cobPicker"></div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-3" id="colPalette">
+    <div class="vx-card vx-anim">
+      <h2>Rating Variables</h2><div class="sub" id="palSub">Drag onto the canvas</div>
+      <input class="form-control form-control-sm mb-2" id="vq" placeholder="Filter variables...">
+      <div class="vx-fb-pal" id="palVar" style="max-height:620px;overflow-y:auto;display:block"></div>
+    </div>
+  </div>
+
+  <div class="col-lg-6" id="colCanvas">
+    <div class="vx-card vx-anim">
+      <div id="canvasContext" class="mb-2"></div>
+      <div class="vx-card-head"><div><h2>Formula Canvas</h2>
+        <div class="sub">Click to append, drag to place exactly. <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes.</div></div>
+        <div class="d-flex gap-2 align-items-center"><span id="fbStatus" class="me-2"></span>
+        <button class="btn btn-outline-secondary btn-sm" onclick="undo()"><i class="fa-solid fa-rotate-left"></i></button>
+        <button class="btn btn-outline-secondary btn-sm" onclick="clearCanvas()"><i class="fa-solid fa-trash"></i></button></div></div>
+      ${currentCob && !ENGINE.runsFormula(currentLob, currentCob) ? `
+      <div style="border:1px solid var(--border);border-left:3px solid var(--warn);
+        background:rgba(232,163,61,.08);border-radius:0 8px 8px 0;padding:10px 13px;margin-bottom:10px;
+        font-size:12px;line-height:1.55">
+        <i class="fa-solid fa-circle-info me-1" style="color:var(--warn)"></i>
+        <b>A formula here is saved but not executed.</b> The engine calls a saved formula for
+        ${ENGINE.FORMULA_HOOKS.length} coverage${ENGINE.FORMULA_HOOKS.length === 1 ? "" : "s"} only —
+        ${ENGINE.FORMULA_HOOKS.map(h => h.label || h.cob).join(", ")}. You can compose, evaluate and version this one;
+        it will not change a premium until the calculator for <b>${currentCob}</b> reaches for it.
+      </div>` : ""}
+      <div class="vx-fb-ops">
+        <div class="vx-fb-pal">${OPS_BASIC.map(o => `<span class="vx-tok op" draggable="true" data-t="op" data-v="${o}">${o}</span>`).join("")}</div>
+        <div class="numwrap"><input type="number" step="0.001" class="form-control form-control-sm" id="numIn" placeholder="Constant">
+          <button class="btn btn-outline-secondary btn-sm" onclick="addNum()">Add</button></div>
+        <div class="vx-fb-pal vx-adv advset">${OPS_ADV.map(o => `<span class="vx-tok op" draggable="true" data-t="op" data-v="${o}">${o}</span>`).join("")}${FNS.map(f => `<span class="vx-tok fn" draggable="true" data-t="fn" data-v="${f}">${f}</span>`).join("")}</div>
+      </div>
+      <div class="vx-fb-canvas" id="canvas"></div>
+      <div class="mt-3"><label>Expression preview <span style="font-weight:400;color:var(--text-mute);text-transform:none;letter-spacing:0">— technical form, exactly what Evaluate/Save use</span></label><div class="vx-code" id="expr"></div></div>
+    </div>
+    <div class="vx-card vx-anim vx-anim-d1 vx-adv">
+      <div style="cursor:pointer" onclick="toggleRules()">
+        <h2><i class="fa-solid fa-chevron-right me-2" id="rulesChevron" style="font-size:11px;transition:transform .15s;display:inline-block"></i>Conditional Overrides <span class="ms-1">${vxWiredChip(false,"Not wired")}</span></h2>
+        <div class="sub">Document edge-case rules for underwriters — e.g. "cap Account Factor at 1.50."</div>
+      </div>
+      <div id="rulesBody" style="display:none;margin-top:10px">
+        ${vxNotWiredBanner("Notes for underwriters, not logic.",
+          "Conditions are saved with the formula but not read by Evaluate Formula or by the rating engine. A rule here cannot cap or override a computed value — write the actual cap into the formula's tokens instead.")}
+        <div id="rules"></div>
+        <button class="btn btn-outline-secondary btn-sm mt-2" onclick="addRule()"><i class="fa-solid fa-plus me-1"></i>Add Condition</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-3" id="colTest">
+    <div class="vx-card vx-anim">
+      <h2>Test &amp; Preview</h2><div class="sub">Live evaluation with current variable values</div>
+      <div id="testVals" style="max-height:230px;overflow-y:auto"></div>
+      <button class="btn btn-primary btn-sm w-100 mt-2" onclick="test()"><i class="fa-solid fa-play me-1"></i>Evaluate Formula</button>
+      <div id="testOut" class="mt-3"></div>
+    </div>
+  </div>
+</div>
+</div>`;
+
+/* B: a flat, declaration-ordered list means the author scrolls to discover a
+   factor exists, and the filter only helps if they already know its name. The
+   two orderings that actually matter — what this formula already uses, and
+   what a formula for this coverage usually uses — are both derivable from data
+   already on hand (TOK and DEFAULT_TOKENS). */
+function palGroupOf(name) {
+  if (TOK.some(t => t.t === "var" && t.v === name)) return 0;          // in this formula
+  const dflt = DEFAULT_TOKENS[currentCob || ACCOUNT_KEY] || [];
+  if (dflt.includes(name)) return 1;                                    // expected here
+  return 2;                                                             // other available
+}
+const PAL_GROUPS = [
+  { l: "In this formula", i: "fa-check", c: "var(--good)" },
+  { l: "Expected for this coverage", i: "fa-star", c: "var(--primary)" },
+  { l: "Other available", i: "fa-ellipsis", c: "var(--text-mute)" },
+];
+
+function palVarsB(f) {
+  const q = (f || "").toLowerCase();
+  const rows = currentVars().filter(v =>
+    !q || v.n.toLowerCase().includes(q) || varLabel(v.n).toLowerCase().includes(q));
+  const buckets = [[], [], []];
+  rows.forEach(v => buckets[palGroupOf(v.n)].push(v));
+
+  document.getElementById("palVar").innerHTML = buckets.map((bucket, gi) => {
+    if (!bucket.length) return "";
+    const g = PAL_GROUPS[gi];
+    return `<div class="palgrp"><i class="fa-solid ${g.i}" style="color:${g.c}"></i>${g.l}
+        <span>${bucket.length}</span></div>` +
+      bucket.map(v => {
+        const src = varSource(v.n), km = KIND_META[src.kind] || KIND_META.constant, rng = varRange(v.n);
+        const val = rng ? `${fmtVarValue(v.n, rng.min)} – ${fmtVarValue(v.n, rng.max)}`
+                        : fmtVarValue(v.n, v.v);
+        /* Three lines at rest instead of six. Driver, raw identifier and the
+           full row list are not removed — they move to the tooltip and the
+           inspect panel, both of which already exist. */
+        return `<div class="vx-vartile slim ${gi === 0 ? "used" : ""}" draggable="true" data-t="var" data-v="${v.n}"
+            title="${v.n}${src.driver ? " · driven by " + src.driver : ""} — click to add, drag to place">
+          <div class="d-flex align-items-center gap-2">
+            <div class="vx-vartile-label" style="flex:1">${varLabel(v.n)}</div>
+            <span class="vx-b ${km.c}" style="font-size:8px;flex:none">${km.l}</span>
+            <button class="vartile-i" data-inspect="1" title="Where this value comes from"
+              onclick="event.stopPropagation();inspectVar('${v.n}')"><i class="fa-solid fa-circle-info"></i></button>
+          </div>
+          <div class="vx-vartile-meta"><b>${val}</b></div>
+        </div>`;
+      }).join("");
+  }).join("") || `<div style="font-size:12px;color:var(--text-mute);padding:8px">No variables match.</div>`;
+}
+
+function palVars(f) {
+  if (isB()) { palVarsB(f); bindDrag(); return; }
+  const q = (f || "").toLowerCase();
+  document.getElementById("palVar").innerHTML = currentVars()
+    .filter(v => !q || v.n.toLowerCase().includes(q) || varLabel(v.n).toLowerCase().includes(q))
+    .map(v => {
+      const s = varSource(v.n), km = KIND_META[s.kind] || KIND_META.constant, rng = varRange(v.n);
+      // A lookup has a RANGE, not a value. Showing one number implies it's fixed.
+      const valueLine = rng
+        ? `<b title="Spans ${rng.count} rows">${fmtVarValue(v.n, rng.min)} – ${fmtVarValue(v.n, rng.max)}</b>`
+        : `<b>${fmtVarValue(v.n, v.v)}</b>`;
+      return `<div class="vx-vartile" draggable="true" data-t="var" data-v="${v.n}" title="Click to add · drag to place">
+        <div class="d-flex justify-content-between align-items-start gap-2">
+          <div class="vx-vartile-label">${varLabel(v.n)}</div>
+          <span class="d-flex align-items-center gap-1" style="flex:none">
+            <span class="vx-b ${km.c}" style="font-size:8.5px">${km.l}</span>
+            <button class="vartile-i" data-inspect="1" title="Where this value comes from"
+              onclick="event.stopPropagation();inspectVar('${v.n}')"><i class="fa-solid fa-circle-info"></i></button>
+          </span>
+        </div>
+        ${s.driver ? `<div class="vx-vartile-driver"><i class="fa-solid fa-arrow-turn-up fa-rotate-90 me-1" style="font-size:8px"></i>${s.driver}</div>` : ""}
+        <div class="vx-vartile-meta"><code>${v.n}</code>${valueLine}</div>
+      </div>`;
+    }).join("");
+  const sub = document.getElementById("palSub");
+  if (sub) sub.textContent = `${currentVars().length} variables for ${currentCob || "Account Level"} — hover for the lookup table, click for full detail`;
+  bindDrag();
+  bindTip(".vx-vartile", el => el.dataset.v);
+}
+
+/* Full provenance for one variable: what drives it, which table it comes
+   from, every row in that table, and which row is the neutral default. */
+function inspectVar(n) {
+  const s = varSource(n), km = KIND_META[s.kind] || KIND_META.constant;
+  const rows = varRows(n), rng = varRange(n);
+  const body = `
+    <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+      <span class="vx-b ${km.c}"><i class="fa-solid ${km.i} me-1"></i>${km.l}</span>
+      <span style="font-size:12px;color:var(--text-dim)">${km.d}</span>
+    </div>
+    <div class="row g-2 mb-3">
+      <div class="col-md-6"><label>Driven by</label><div style="font-size:13px">${s.driver || '<span style="color:var(--text-mute)">Nothing — same on every quote</span>'}</div></div>
+      <div class="col-md-6"><label>Default (neutral row)</label><div style="font-size:13px">${s.base != null ? fmtVarValue(n, s.base) : '<span style="color:var(--text-mute)">no neutral row</span>'}</div></div>
+      <div class="col-md-6"><label>Range across values</label><div style="font-size:13px">${rng ? `${fmtVarValue(n, rng.min)} – ${fmtVarValue(n, rng.max)} over ${rng.count} rows` : '<span style="color:var(--text-mute)">single value</span>'}</div></div>
+    </div>
+    <div style="font-size:12.5px;color:var(--text-dim);line-height:1.6">${varDef(n)}</div>
+    ${s.note ? `<div class="vx-ai mt-2" style="padding:9px 13px;font-size:12px"><i class="fa-solid fa-circle-info me-1"></i>${s.note}</div>` : ""}
+    ${rows && rows.length ? `<h6 style="font-size:12px;font-weight:700;margin:16px 0 6px">Every row in this table</h6>
+      <div class="vx-tw" style="max-height:320px;overflow-y:auto"><table class="vx-t">
+        <thead><tr><th>When the answer is…</th><th style="text-align:right">Factor applied</th></tr></thead>
+        <tbody>${rows.map(r => `<tr${s.base != null && Math.abs(+r.v - s.base) < 1e-9 ? ' style="background:var(--surface-2)"' : ""}>
+          <td style="font-size:12px">${r.l}${s.base != null && Math.abs(+r.v - s.base) < 1e-9 ? ' <span class="vx-b gray" style="font-size:9px">default</span>' : ""}</td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px">${fmtVarValue(n, r.v)}</td></tr>`).join("")}</tbody>
+      </table></div>` : ""}`;
+  vxModal(`${varLabel(n)} — where this value comes from`, body,
+    [{ t: "Close", c: "secondary" },
+     { t: "Open Glossary", c: "secondary", fn: () => { location.href = "glossary.html"; } },
+     { t: "Browse Rate Tables", c: "primary", fn: () => { location.href = "rate-tables.html"; } }]);
+}
+function renderLobPicker() {
+  document.getElementById("lobPicker").innerHTML = lobsWithCob().map(lob => {
+    const m = LOB_META[lob] || { icon: "fa-layer-group", color: "var(--cat-8)" };
+    return `<div class="col-6 col-lg-2"><div class="covcard ${lob === currentLob ? "on" : ""}" data-lob="${lob}" style="padding:10px">
+      <i class="fa-solid ${m.icon}" style="color:${m.color};font-size:16px;margin-bottom:4px"></i><b style="font-size:12px">${lob}</b>
+    </div></div>`;
+  }).join("");
+  document.querySelectorAll("[data-lob]").forEach(el => el.onclick = () => selectLob(el.dataset.lob));
+}
+function renderCobPicker() {
+  const m = LOB_META[currentLob] || { icon: "fa-layer-group", color: "var(--cat-8)" };
+  const cobs = cobsForLob(currentLob).map(name => ({
+    key: name, label: name, icon: m.icon, color: m.color,
+    desc: (VX.cobParents.find(c => c.name === name && c.lob === currentLob) || {}).sourceRef || "",
+    warn: COB_WARN[name],
+  }));
+  cobs.push({ key: null, label: "Account-Level (this LOB)", icon: "fa-layer-group", color: "var(--cat-8)",
+    desc: "Not tied to one coverage — applies once across the whole policy for this line of business." });
+  document.getElementById("cobPicker").innerHTML = cobs.map(c => `
+    <div class="col-6 col-lg-3"><div class="covcard ${c.key === currentCob ? "on" : ""}" data-cob="${c.key === null ? "" : c.key}">
+      <i class="fa-solid ${c.icon}" style="color:${c.color}"></i><b>${c.label}</b><span>${c.desc}</span>
+      ${c.key === null ? "" : (ENGINE.runsFormula(currentLob, c.key)
+        ? `<span class="vx-b green" style="margin-top:6px;font-size:8.5px"><i class="fa-solid fa-bolt me-1"></i>engine runs this</span>`
+        : `<span class="vx-b gray" style="margin-top:6px;font-size:8.5px"><i class="fa-solid fa-pause me-1"></i>saved, not executed</span>`)}
+      ${c.warn ? `<span class="covwarn"><i class="fa-solid fa-triangle-exclamation me-1"></i>${c.warn}</span>` : ""}
+    </div></div>`).join("");
+  document.querySelectorAll("[data-cob]").forEach(el => el.onclick = () => selectCob(el.dataset.cob || null));
+  renderPickerBar();
+}
+/* B: the picker is a prerequisite, not the purpose of the screen. Once a
+   selection exists it collapses to a single line and gives the ~250px back to
+   the canvas. A is untouched. */
+let pickerOpen = false;
+function renderPickerBar() {
+  const bar = document.getElementById("pickerBar");
+  const full = document.getElementById("pickerFull");
+  if (!bar || !full) return;
+  if (!isB()) { bar.innerHTML = ""; full.style.display = ""; return; }
+
+  const n = currentVars().length;
+  const cobLabel = currentCob || "Account-Level";
+  full.style.display = pickerOpen ? "" : "none";
+  bar.innerHTML = `<div class="d-flex align-items-center gap-2 flex-wrap" style="font-size:13px">
+    <i class="fa-solid fa-diagram-project" style="color:var(--primary)"></i>
+    <b>${currentLob}</b>
+    <i class="fa-solid fa-chevron-right" style="font-size:9px;color:var(--text-mute)"></i>
+    <b>${cobLabel}</b>
+    <span class="vx-b blue">${n} variable${n === 1 ? "" : "s"}</span>
+    <button class="btn btn-outline-secondary btn-sm ms-auto" onclick="togglePicker()">
+      <i class="fa-solid fa-${pickerOpen ? "xmark" : "pen"} me-1"></i>${pickerOpen ? "Done" : "Change"}</button>
+  </div>`;
+}
+function togglePicker() { pickerOpen = !pickerOpen; renderPickerBar(); }
+
+function selectLob(lob) {
+  if (lob === currentLob) return;
+  currentLob = lob;
+  const cobs = cobsForLob(lob);
+  selectCob(cobs.length ? cobs[0] : null, true);
+  renderLobPicker();
+}
+function selectCob(cob, skipConfirm) {
+  if (cob === currentCob && !skipConfirm) return;
+  const label = cob || "Account-Level";
+  const go = () => applyCob(cob);
+  if (!skipConfirm && TOK.length) {
+    vxConfirm(`Switch to ${label}?`,
+      `This loads a fresh starting formula for ${label} and clears the current canvas. Save first if you want to keep what's there.`,
+      go, false);
+  } else go();
+}
+/* Picking a coverage used to silently fill the canvas with VeriDex's own
+   real, filed formula for it — correct for VeriDex itself, but for a tenant
+   that hasn't built or imported anything for this line yet, a full
+   multi-term expression appearing the moment you click "New Formula" reads
+   as "this is already my formula," when nothing has actually been saved.
+   The canvas now starts genuinely empty; the real chain is still one click
+   away via loadStartingTemplate() below, but only on explicit request, and
+   labelled as a generic reference template rather than this tenant's own. */
+function applyCob(cob) {
+  currentCob = cob;
+  if (isB()) pickerOpen = false;
+  const key = cob || ACCOUNT_KEY;
+  hist = [];
+  TOK = [];
+  canvasTested = false;
+  currentFormula = null;
+  renderCobPicker();
+  palVars(document.getElementById("vq").value);
+  draw();
+  drawRules();
+}
+function loadStartingTemplate() {
+  const key = currentCob || ACCOUNT_KEY;
+  pushHist();
+  TOK = toTokens(DEFAULT_TOKENS[key] || [], key);
+  canvasTested = false;
+  draw();
+  renderCanvasContext();
+  vxAutoSave();
+}
+/* ---------- Palette → canvas input ----------
+   Drag is an enhancement, never the only way in: HTML5 drag-and-drop is
+   unreliable on trackpads and does not exist on touch, and the palette was
+   previously drag-only. Clicking a palette tile now appends the token, which
+   is also faster for building a long chain. Variable tiles keep their detail
+   view on the info button rather than on the whole tile, so the click can
+   mean "add". */
+function bindDrag() {
+  document.querySelectorAll('[draggable="true"]').forEach(t => {
+    t.ondragstart = e => {
+      e.dataTransfer.setData("text/plain", JSON.stringify({ t: t.dataset.t, v: t.dataset.v }));
+      e.dataTransfer.effectAllowed = "copy";
+      t.classList.add("dragging");
+    };
+    t.ondragend = () => t.classList.remove("dragging");
+    // click to add — the primary, always-works path
+    t.onclick = e => {
+      if (e.target.closest("[data-inspect]")) return;   // info button handles itself
+      addToken({ t: t.dataset.t, v: t.dataset.v });
+    };
+  });
+}
+
+/* Every mutation goes through here so undo history can never be skipped —
+   the old click-to-delete mutated TOK directly, which made deletions
+   silently un-undoable even though an Undo button existed. */
+function pushHist() { hist.push(TOK.map(x => ({ ...x }))); if (hist.length > 60) hist.shift(); }
+function addToken(tok, at) {
+  pushHist();
+  if (at == null || at >= TOK.length) TOK.push(tok); else TOK.splice(at, 0, tok);
+  canvasTested = false; draw(); vxAutoSave();
+}
+function removeToken(i) { pushHist(); TOK.splice(i, 1); canvasTested = false; draw(); vxAutoSave(); }
+function moveToken(from, to) {
+  if (from === to || to === from + 1) return;
+  pushHist();
+  const [t] = TOK.splice(from, 1);
+  TOK.splice(from < to ? to - 1 : to, 0, t);
+  canvasTested = false; draw(); vxAutoSave();
+}
+function renderCanvasContext() {
+  const f = currentFormula;
+  const scopeLabel = f ? (f.scope === "Class of Business" ? f.cob : "Account level") : "Not set — Save Formula to choose";
+  const engineLabel = f && f.attachments && f.attachments.length
+    ? (f.attachments.length === 1 ? `${f.attachments[0].ratingVersion} (${f.attachments[0].product})` : `${f.attachments.length} rating versions`)
+    : "Unattached";
+  document.getElementById("canvasContext").innerHTML = `
+    <div class="d-flex flex-wrap align-items-center gap-2" style="font-size:11.8px;color:var(--text-dim)">
+      <span class="vx-b ${f ? "blue" : "gray"}">${f ? "Editing" : "New Formula"}</span>
+      <b style="color:var(--text)">${f ? f.name : "(unsaved)"}</b>
+      <span>·</span><span>Scope: <b>${scopeLabel}</b></span>
+      <span>·</span><span>Engine: <b>${engineLabel}</b></span>
+      <span>·</span><span class="vx-b ${canvasTested ? "green" : "amber"}"><i class="fa-solid ${canvasTested ? "fa-circle-check" : "fa-triangle-exclamation"} me-1"></i>${canvasTested ? "Tested" : "Not tested since last change"}</span>
+    </div>`;
+}
+const cv = () => document.getElementById("canvas");
+/* A flat strip cannot show precedence: "A × B + C × D" and "A × (B + C) × D"
+   differ by two chips of no visual weight and are different rates. B tints the
+   parenthesised run so grouping is legible without counting brackets. */
+function drawTokensB() {
+  let depth = 0;
+  return TOK.map((t, i) => {
+    const chip = `<span class="vx-tok ${t.t}" data-i="${i}" draggable="true" title="Drag to reorder">${
+      t.t === "var" ? varLabel(t.v) : t.v}<button class="tokx" data-del="${i}" title="Remove this term" aria-label="Remove term">&#10005;</button></span>`;
+    if (t.v === "(") { depth++; return `<span class="tokgrp d${Math.min(depth, 3)}">` + chip; }
+    if (t.v === ")") { depth = Math.max(0, depth - 1); return chip + `</span>`; }
+    return chip;
+  }).join("") + "</span>".repeat(depth);   // tolerate an unbalanced draft
+}
+
+/* Validity is checked on every mutation — a linear scan of an array that is
+   never more than a few dozen items. Three states, because "incomplete" is the
+   normal condition mid-compose and flagging it red teaches people to ignore
+   the indicator. */
+function formulaStatus() {
+  if (!TOK.length) return { s: "empty", m: "Nothing on the canvas yet" };
+  let depth = 0, prev = null;
+  for (let i = 0; i < TOK.length; i++) {
+    const t = TOK[i], v = t.v;
+    if (v === "(") depth++;
+    else if (v === ")") { depth--; if (depth < 0) return { s: "invalid", m: "Closing bracket with nothing open", i }; }
+    const isOp = t.t === "op" && !["(", ")"].includes(v);
+    const prevIsOp = prev && prev.t === "op" && !["(", ")"].includes(prev.v);
+    if (isOp && prevIsOp) return { s: "invalid", m: `Two operators in a row (${prev.v} ${v})`, i };
+    if (isOp && prev === null) return { s: "invalid", m: `Formula starts with an operator (${v})`, i };
+    prev = t;
+  }
+  if (depth > 0) return { s: "incomplete", m: `${depth} bracket${depth === 1 ? "" : "s"} still open` };
+  if (prev && prev.t === "op" && ![")"].includes(prev.v))
+    return { s: "incomplete", m: `Ends on an operator (${prev.v}) — add a term` };
+  return { s: "valid", m: `${TOK.filter(t => t.t === "var").length} variables, brackets balanced` };
+}
+
+function renderStatusB() {
+  const el = document.getElementById("fbStatus");
+  if (!el) return;
+  if (!isB()) { el.innerHTML = ""; return; }
+  const st = formulaStatus();
+  const M = {
+    empty:      ["gray",  "fa-circle",        "Empty"],
+    incomplete: ["amber", "fa-circle-half-stroke", "Incomplete"],
+    invalid:    ["red",   "fa-circle-xmark",  "Invalid"],
+    valid:      ["green", "fa-circle-check",  "Valid"],
+  }[st.s];
+  el.innerHTML = `<span class="vx-b ${M[0]}"><i class="fa-solid ${M[1]} me-1"></i>${M[2]}</span>
+    <span style="font-size:11.5px;color:var(--text-dim);margin-left:7px">${st.m}</span>`;
+  cv().querySelectorAll(".vx-tok").forEach(t => t.classList.remove("bad"));
+  if (st.i != null) {
+    const bad = cv().querySelector(`[data-i="${st.i}"]`);
+    if (bad) bad.classList.add("bad");
+  }
+}
+
+/* Shown in the empty canvas when a reference chain exists for the current
+   coverage — an explicit, labelled offer rather than the canvas pre-filling
+   itself, so it's clear this is VeriDex's own filed formula, not something
+   already saved for this tenant. */
+function emptyCanvasHtml(hint) {
+  const key = currentCob || ACCOUNT_KEY;
+  const hasTemplate = (DEFAULT_TOKENS[key] || []).length > 0;
+  return `<div style="padding:6px">
+    <span style="color:var(--text-mute);font-size:12.5px">${hint}</span>
+    ${hasTemplate ? `<div class="mt-2">
+      <button type="button" class="btn btn-outline-secondary btn-sm" onclick="loadStartingTemplate()">
+        <i class="fa-solid fa-wand-magic-sparkles me-1"></i>Load VeriDex's real ${currentCob || "Account-Level"} formula as a starting point</button>
+      <div style="font-size:10.8px;color:var(--text-mute);margin-top:4px">The filed expression this coverage is actually calculated with elsewhere on the platform — a reference template, not something already saved for your tenant.</div>
+    </div>` : ""}
+  </div>`;
+}
+function draw() {
+  if (isB()) {
+    cv().innerHTML = TOK.length ? drawTokensB() : emptyCanvasHtml("Drag a variable here, or click one in the palette…");
+    drawTail();
+    return;
+  }
+  cv().innerHTML = TOK.length
+    ? TOK.map((t, i) => `<span class="vx-tok ${t.t}" data-i="${i}" draggable="true" title="Drag to reorder">
+        ${t.t === "var" ? varLabel(t.v) : t.v}<button class="tokx" data-del="${i}" title="Remove this term" aria-label="Remove term">&#10005;</button></span>`).join("")
+    : emptyCanvasHtml("Click or drag variables and operators here to build your formula…");
+
+  /* Remove is an explicit ×, not a click anywhere on the token — the whole
+     token used to be a delete target, so misclicking while reading the
+     formula destroyed a term. */
+  drawTail();
+}
+
+/* Shared by both arms: token handlers, expression preview, context strip and
+   the test-value panel. Only the canvas paint above differs. */
+function drawTail() {
+  cv().querySelectorAll("[data-del]").forEach(b => b.onclick = e => {
+    e.stopPropagation(); removeToken(+b.dataset.del);
+  });
+  // reorder within the canvas
+  cv().querySelectorAll("[data-i]").forEach(el => {
+    el.ondragstart = e => {
+      e.dataTransfer.setData("text/plain", JSON.stringify({ move: +el.dataset.i }));
+      e.dataTransfer.effectAllowed = "move";
+      el.classList.add("dragging");
+    };
+    el.ondragend = () => { el.classList.remove("dragging"); clearCaret(); };
+  });
+  bindTip(".vx-tok.var", el => TOK[+el.dataset.i].v);
+  document.getElementById("expr").textContent = TOK.map(t => t.v).join(" ") || "// empty formula";
+  renderCanvasContext();
+  /* Test values live in state, not in the DOM. They used to be re-seeded from
+     findVarDefault() on every draw(), which meant a value typed to probe a
+     scenario was discarded as soon as the author added the next token — the
+     exact moment they were most likely to add one. A value survives removing
+     and re-adding its variable too, so an experiment is not lost by editing. */
+  const tv = document.getElementById("testVals");
+  const used = [...new Set(TOK.filter(t => t.t === "var").map(t => t.v))];
+  used.forEach(n => { if (TESTVALS[n] === undefined) TESTVALS[n] = findVarDefault(n); });
+  tv.innerHTML = used.length ? used.map(n => {
+    const dirty = TESTVALS[n] !== findVarDefault(n);
+    return `<div class="d-flex justify-content-between align-items-center mb-1" style="gap:8px" title="${n}">
+      <span style="font-size:11.5px;color:var(--text-dim);flex:1">${varLabel(n)}${dirty
+        ? ' <span class="vx-b amber" style="font-size:8px">edited</span>' : ""}</span>
+      <input type="number" step="0.001" class="form-control form-control-sm TV" data-n="${n}" value="${TESTVALS[n]}" style="width:88px">
+    </div>`;
+  }).join("") : `<div style="font-size:12px;color:var(--text-mute)">No variables in formula yet.</div>`;
+  tv.querySelectorAll(".TV").forEach(i => i.oninput = () => { TESTVALS[i.dataset.n] = +i.value; });
+  renderStatusB();
+  if (isB()) palVars(document.getElementById("vq") ? document.getElementById("vq").value : "");
+}
+let hist = [];
+const TESTVALS = {};   // typed test values, keyed by variable name
+function undo() {
+  if (!hist.length) { vxToast("Nothing to undo", "No earlier state on the canvas", "info"); return; }
+  TOK = hist.pop(); canvasTested = false; draw(); vxAutoSave();
+}
+function clearCanvas() {
+  if (!TOK.length) return;
+  pushHist(); TOK = []; canvasTested = false; draw(); vxAutoSave();
+  vxToast("Canvas cleared", "Undo restores it", "info");
+}
+/* ---------- Drop positioning ----------
+   Drops used to append unconditionally, so inserting a term in the middle of
+   a chain meant deleting everything after it and retyping. The drop index is
+   now the gap nearest the pointer, shown live as a caret. */
+function dropIndexAt(clientX) {
+  const toks = [...cv().querySelectorAll("[data-i]")];
+  for (let i = 0; i < toks.length; i++) {
+    const r = toks[i].getBoundingClientRect();
+    if (clientX < r.left + r.width / 2) return i;
+  }
+  return toks.length;
+}
+function showCaret(i) {
+  clearCaret();
+  const toks = [...cv().querySelectorAll("[data-i]")];
+  const caret = document.createElement("span");
+  caret.className = "vx-fb-caret";
+  caret.id = "fbCaret";
+  if (i >= toks.length) cv().appendChild(caret); else cv().insertBefore(caret, toks[i]);
+}
+function clearCaret() { const c = document.getElementById("fbCaret"); if (c) c.remove(); }
+
+cv().ondragover = e => {
+  e.preventDefault();
+  cv().classList.add("over");
+  showCaret(dropIndexAt(e.clientX));
+};
+cv().ondragleave = e => {
+  // only when the pointer actually leaves the canvas, not on child transitions
+  if (e.relatedTarget && cv().contains(e.relatedTarget)) return;
+  cv().classList.remove("over"); clearCaret();
+};
+cv().ondrop = e => {
+  e.preventDefault();
+  const at = dropIndexAt(e.clientX);
+  cv().classList.remove("over"); clearCaret();
+  let payload;
+  try { payload = JSON.parse(e.dataTransfer.getData("text/plain")); } catch (err) { return; }
+  if (!payload) return;
+  if (payload.move != null) moveToken(payload.move, at);
+  else addToken(payload, at);
+};
+
+/* Ctrl/Cmd+Z anywhere on the builder — undo existed only as a toolbar button. */
+document.addEventListener("keydown", e => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z"
+      && document.getElementById("fbBuilder") && document.getElementById("fbBuilder").style.display !== "none"
+      && !/INPUT|TEXTAREA|SELECT/.test((e.target.tagName || ""))) {
+    e.preventDefault(); undo();
+  }
+});
+function addNum() {
+  const n = document.getElementById("numIn").value;
+  if (!n) return;
+  addToken({ t: "num", v: n });
+  document.getElementById("numIn").value = "";
+}
+function test() {
+  const vals = {};
+  document.querySelectorAll(".TV").forEach(i => vals[i.dataset.n] = +i.value);
+  const js = TOK.map(t => t.t === "var" ? (vals[t.v] ?? 1) : t.v === "×" ? "*" : t.v === "÷" ? "/" : t.v === "−" ? "-" : t.v).join(" ");
+  let out;
+  try { out = Function('"use strict";return (' + js + ')')(); } catch (e) { out = null; }
+  document.getElementById("testOut").innerHTML = out === null || isNaN(out)
+    ? `<div class="vx-b red">Invalid expression — check operators and parentheses</div>`
+    : `<div class="vx-ai"><span class="tag"><i class="fa-solid fa-flask"></i>Test Result</span>
+       <div style="font-size:22px;font-weight:800;margin:4px 0">${vxMoney(out)}</div>
+       <div style="font-size:11.5px;color:var(--text-dim);word-break:break-all">${js}</div></div>`;
+  if (out !== null && !isNaN(out)) {
+    vxToast("Formula evaluated", "Result: " + vxMoney(out), "ok");
+    canvasTested = true;
+    if (currentFormula) { currentFormula.tested = true; currentFormula.lastTestedAt = new Date().toISOString().slice(0, 10); }
+    renderCanvasContext();
+  }
+}
+function toggleRules() {
+  const body = document.getElementById("rulesBody");
+  const chev = document.getElementById("rulesChevron");
+  const open = body.style.display !== "none";
+  body.style.display = open ? "none" : "block";
+  chev.style.transform = open ? "rotate(0deg)" : "rotate(90deg)";
+}
+let RULES = [{ v: "AccountFactor", op: ">", val: "1.50", act: "Cap at 1.50" }];
+function addRule() { RULES.push({ v: currentVars()[0].n, op: ">", val: "1", act: "Refer to underwriter" }); drawRules(); }
+function drawRules() {
+  document.getElementById("rules").innerHTML = RULES.map((r, i) => `
+    <div class="mb-2" style="border:1px solid var(--border);border-radius:8px;padding:8px 10px">
+      <div class="d-flex gap-2 align-items-center mb-1">
+        <span class="vx-b purple" style="flex:none;width:34px;text-align:center">IF</span>
+        <select class="form-select form-select-sm R" data-i="${i}" data-f="v">${currentVars().map(v => `<option value="${v.n}" ${v.n === r.v ? "selected" : ""}>${varLabel(v.n)}</option>`).join("")}</select>
+        <select class="form-select form-select-sm R" data-i="${i}" data-f="op" style="width:64px">${[">", "<", "=", "≥", "≤"].map(o => `<option ${o === r.op ? "selected" : ""}>${o}</option>`).join("")}</select>
+        <input class="form-control form-control-sm R" data-i="${i}" data-f="val" value="${r.val}" style="width:72px">
+      </div>
+      <div class="d-flex gap-2 align-items-center">
+        <span class="vx-b amber" style="flex:none;width:34px;text-align:center">THEN</span>
+        <input class="form-control form-control-sm R" data-i="${i}" data-f="act" value="${r.act}">
+        <button class="btn btn-outline-secondary btn-sm" style="flex:none" onclick="RULES.splice(${i},1);drawRules()"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+    </div>`).join("");
+  document.querySelectorAll(".R").forEach(e => e.onchange = () => { RULES[+e.dataset.i][e.dataset.f] = e.value; vxAutoSave(); });
+}
+function loadFormula(id) {
+  const f = VX.savedFormulas.find(x => x.id === id);
+  if (!f) return;
+  const modalEl = document.getElementById("vxModal");
+  const inst = modalEl && bootstrap.Modal.getInstance(modalEl);
+  if (inst) inst.hide();
+  currentFormula = { ...f };
+  currentLob = f.lob || VX.lobs[0].name;
+  currentCob = f.scope === "Class of Business" ? f.cob : null;
+  pushHist();
+  TOK = f.tokens.map(t => ({ ...t }));
+  canvasTested = !!f.tested;
+  renderLobPicker();
+  renderCobPicker();
+  palVars(document.getElementById("vq").value);
+  draw();
+  drawRules();
+  fbShowBuilder();
+  vxToast("Formula loaded", f.name + " loaded into canvas — Save Formula stages a new draft revision", "ok");
+}
+
+function saveF() {
+  const src = currentFormula || {};
+  const defLob = src.lob || currentLob;
+  const defScope = src.scope || (currentCob ? "Class of Business" : "Account");
+  const defCobValue = src.cob || (currentCob || "");
+  const cobOpts = lob => cobOptionsForLob(lob).map(c => `<option ${c === defCobValue ? "selected" : ""}>${c}</option>`).join("");
+  /* A formula attaches to a RATING VERSION, not to a product.
+     A product owns many versions, and the same coverage's math legitimately
+     differs between them — attaching at product level silently bound the
+     formula to whichever version happened to be first on file, so an admin
+     could never target a specific engine. The checklist is therefore one row
+     per version, grouped under its product. */
+  const attachedKey = a => `${a.product}||${a.ratingVersion}`;
+  const selectedVersions = new Set((src.attachments || []).map(attachedKey));
+  const versionChecklist = lob => {
+    const prods = productsForLob(lob);
+    if (!prods.length) return `<div style="font-size:12px;color:var(--text-mute)">No products under this LOB yet.</div>`;
+    const blocks = prods.map(p => {
+      const vers = versionsForProduct(p);
+      if (!vers.length) return `<div style="margin-bottom:9px">
+        <div style="font-size:11.5px;font-weight:700;color:var(--text-dim)">${p}</div>
+        <div style="font-size:11.5px;color:var(--text-mute);padding-left:10px">No open rating version — expired and archived versions can't take new formulas.</div></div>`;
+      return `<div style="margin-bottom:9px">
+        <div style="font-size:11.5px;font-weight:700;color:var(--text-dim);margin-bottom:2px">${p}</div>
+        ${vers.map(v => {
+          const id = "sfVer-" + (p + v.version).replace(/[^a-z0-9]/gi, "");
+          const chk = selectedVersions.has(`${p}||${v.version}`);
+          return `<div class="form-check" style="padding-left:1.9rem">
+            <input class="form-check-input" type="checkbox" id="${id}" data-prod="${p}" data-ver="${v.version}" ${chk ? "checked" : ""}>
+            <label class="form-check-label" for="${id}" style="font-size:12.5px">${v.version}
+              <span class="vx-b ${v.status === "Published" ? "green" : v.status === "Draft" ? "amber" : v.status === "Scheduled" ? "blue" : "gray"}">${v.status}</span></label>
+          </div>`;
+        }).join("")}
+      </div>`;
+    }).join("");
+    return blocks;
+  };
+
+  vxModal(currentFormula ? "Save Formula — " + currentFormula.name : "Save Formula", `<div class="row g-3">
+    <div class="col-md-6"><label>Formula Name</label><input class="form-control form-control-sm" id="sfName" value="${src.name || "New Formula"}"></div>
+    <div class="col-md-6"><label>Line of Business</label><select class="form-select form-select-sm" id="sfLob">${vxLobNames().map(n => `<option ${n === defLob ? "selected" : ""}>${n}</option>`).join("")}</select></div>
+    <div class="col-md-6"><label>Scope</label><select class="form-select form-select-sm" id="sfScope">
+      <option value="Account" ${defScope === "Account" ? "selected" : ""}>Account Level — applies once across the policy</option>
+      <option value="Class of Business" ${defScope === "Class of Business" ? "selected" : ""}>Class of Business Level — applies to one coverage</option>
+    </select></div>
+    <div class="col-md-6" id="sfCobWrap" style="${defScope === "Account" ? "display:none" : ""}"><label>Class of Business</label><select class="form-select form-select-sm" id="sfCob">${cobOpts(defLob)}</select></div>
+    <div class="col-12">
+      <div class="d-flex align-items-center justify-content-between mb-1">
+        <label class="mb-0">Attach to Rating Versions</label>
+        <div class="d-flex gap-2"><a href="#" id="sfSelAll" style="font-size:11.5px">Select all</a><a href="#" id="sfSelNone" style="font-size:11.5px">Clear</a></div>
+      </div>
+      <div id="sfProducts" style="max-height:230px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:10px 12px">${versionChecklist(defLob)}</div>
+      <div style="font-size:11px;color:var(--text-mute);margin-top:4px">A formula attaches to a specific <b>rating version</b>, not to a product — a product owns many versions and the same coverage's math can differ between them. Pick every version this formula should rate on.</div>
+    </div>
+    <div class="col-12"><label>Expression</label><div class="vx-code">${TOK.map(t => t.v).join(" ") || "// empty formula"}</div></div></div>
+    ${currentCob && COB_UNSOURCED[currentCob] ? `<div class="mb-3 mt-3" style="border:1px solid var(--border);border-left:3px solid var(--warn);background:rgba(198,137,15,.08);border-radius:0 10px 10px 0;padding:9px 13px;font-size:11.8px"><i class="fa-solid fa-triangle-exclamation me-1" style="color:var(--warn)"></i>${COB_WARN[currentCob]}</div>` : ""}
+    ${canvasTested
+      ? `<div class="vx-ai mt-3"><span class="tag"><i class="fa-solid fa-circle-check"></i>Evaluated</span>
+         This formula was run through Evaluate Formula and produced a result. Saving carries that tested status forward — it still stages as <b>Draft</b> until its rating engine is published.</div>`
+      : `<div class="callout mt-3" style="border-left:3px solid var(--warn);background:rgba(198,137,15,.08);border-radius:0 10px 10px 0;padding:12px 16px">
+         <span style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--warn);display:block;margin-bottom:4px"><i class="fa-solid fa-triangle-exclamation me-1"></i>Not evaluated yet</span>
+         This formula hasn't been run through <b>Evaluate Formula</b> since it was last changed. It will still save as Draft, but Rating Versions will warn before letting anyone publish an engine with an untested formula attached.</div>`}`,
+    [{ t: "Cancel", c: "secondary" }, { t: "Save as Draft", c: "primary", fn: () => {
+      const name = document.getElementById("sfName").value.trim() || "Untitled Formula";
+      const lob = document.getElementById("sfLob").value;
+      const scope = document.getElementById("sfScope").value;
+      const cob = scope === "Class of Business" ? document.getElementById("sfCob").value : "";
+      const attachments = [...document.querySelectorAll("#sfProducts [data-prod]:checked")]
+        .map(el => ({ product: el.dataset.prod, ratingVersion: el.dataset.ver }));
+      const rec = {
+        id: currentFormula ? currentFormula.id : Date.now(),
+        name, lob, scope, cob, attachments, status: "Draft",
+        tested: canvasTested, lastTestedAt: canvasTested ? (src.lastTestedAt || new Date().toISOString().slice(0, 10)) : null,
+        createdBy: (src.createdBy || "vikas.kumar@veridex.io"), updated: new Date().toISOString().slice(0, 10),
+        tokens: TOK.slice(),
+      };
+      const i = VX.savedFormulas.findIndex(f => f.id === rec.id);
+      if (i >= 0) VX.savedFormulas[i] = rec; else VX.savedFormulas.push(rec);
+      localStorage.setItem("vxSavedFormulas", JSON.stringify(VX.savedFormulas));
+      currentFormula = rec;
+      vxToast("Formula saved", name + " staged as Draft" + (attachments.length ? ` on ${attachments.length} rating version${attachments.length === 1 ? "" : "s"}` : "") + " — publish each version to go live", "ok");
+      renderCanvasContext();
+      if (fbGrid) fbGrid.reload();   // the grid is the landing view — keep it current
+    }}]);
+
+  document.getElementById("sfLob").onchange = e => {
+    document.getElementById("sfCob").innerHTML = cobOpts(e.target.value);
+    document.getElementById("sfProducts").innerHTML = versionChecklist(e.target.value);
+  };
+  document.getElementById("sfScope").onchange = e => {
+    document.getElementById("sfCobWrap").style.display = e.target.value === "Class of Business" ? "" : "none";
+  };
+  document.getElementById("sfSelAll").onclick = e => { e.preventDefault(); document.querySelectorAll("#sfProducts [data-prod]:not(:disabled)").forEach(c => c.checked = true); };
+  document.getElementById("sfSelNone").onclick = e => { e.preventDefault(); document.querySelectorAll("#sfProducts [data-prod]").forEach(c => c.checked = false); };
+}
+
+/* Bulk-attach selected formulas to a rating version.
+   This used to live inside a "Load Formula" dialog that became unreachable
+   when the page moved to a grid-first layout — the grid already lists and
+   opens formulas, so only the multi-select attach was worth keeping, and it
+   belongs where the multi-select is. */
+function bulkAttach(recs) {
+  if (!recs.length) { vxToast("Nothing selected", "Select at least one formula first", "warn"); return; }
+  const tid = (typeof COSMOS !== "undefined") ? COSMOS.tenantId() : null;
+  const vers = VX.versions.filter(v => v.status !== "Expired" && v.status !== "Archived"
+    && (tid == null || v.tenantId == null || v.tenantId === tid));
+
+  vxModal("Attach to a Rating Version", `
+    <div style="font-size:12.4px;color:var(--text-dim);margin-bottom:10px">
+      A formula belongs to a <b>version</b>, not to a product — a product owns many versions.
+      This adds the version alongside whatever these formulas are already attached to.
+    </div>
+    <div class="vx-tw mb-3"><table class="vx-t"><tbody>
+      ${recs.map(f => `<tr><td><b>${f.name}</b>
+        <div style="font-size:10.5px;color:var(--text-mute)">${f.scope === "Account" ? "Account level" : f.cob} · ${f.lob}</div></td>
+        <td style="text-align:right"><span class="vx-b ${f.status === "Active" ? "green" : "amber"}">${f.status}</span></td></tr>`).join("")}
+    </tbody></table></div>
+    <label>Rating version</label>
+    <select class="form-select form-select-sm" id="bulkVersion">
+      <option value="">Select a rating version…</option>
+      ${vers.map(v => `<option value="${v.id}">${v.product} — ${v.version} (${v.status})</option>`).join("")}
+    </select>`,
+    [{ t: "Cancel", c: "secondary" }, { t: "Attach", c: "primary", fn: () => {
+      const verId = +document.getElementById("bulkVersion").value;
+      if (!verId) { vxToast("Pick a rating version", "Choose which version to attach these formulas to", "warn"); return false; }
+      const ver = VX.versions.find(v => v.id === verId);
+      const doAssign = () => {
+        recs.forEach(rec => {
+          const f = VX.savedFormulas.find(x => x.id === rec.id);
+          if (!f) return;
+          f.attachments = f.attachments || [];
+          if (!f.attachments.some(a => a.product === ver.product && a.ratingVersion === ver.version)) {
+            f.attachments.push({ product: ver.product, ratingVersion: ver.version });
+          }
+          f.status = "Draft";
+        });
+        localStorage.setItem("vxSavedFormulas", JSON.stringify(VX.savedFormulas));
+        vxToast("Formulas attached", `${recs.length} formula(s) staged as Draft on ${ver.version} (${ver.product})`, "ok");
+        vxAutoSave(); fbGrid.reload();
+      };
+      /* Attaching demotes a live formula to Draft until the engine is
+         republished — that is a production change, so it is confirmed. */
+      const live = recs.filter(f => f.status === "Active").map(f => f.name);
+      if (live.length) {
+        setTimeout(() => vxConfirm("Demote live formulas to Draft?",
+          `<b>${live.length}</b> of the formulas selected — ${live.map(n => `<b>${n}</b>`).join(", ")} — ${live.length === 1 ? "is" : "are"} currently <span class="vx-b green">Active</span> in production. Attaching ${live.length === 1 ? "it" : "them"} to ${ver.version} demotes ${live.length === 1 ? "it" : "them"} to Draft until that engine is republished.`,
+          doAssign, true), 320);
+      } else doAssign();
+    }}]);
+}
+
+/* Temporary, plainly visible diagnostic — no DevTools needed to read it —
+   for tracking down reports of Commercial Trucking formulas missing from
+   this list. Shows what actually loaded vs. what data.js's self-heal
+   (D._formulaRepair) found and did. Safe to remove once that's resolved. */
+(() => {
+  const el = document.getElementById("fbDiag");
+  if (!el) return;
+  const truckCount = (VX.savedFormulas || []).filter(f => f.lob === "Commercial Trucking").length;
+  const rep = VX._formulaRepair || {};
+  let raw = null;
+  try { raw = JSON.parse(localStorage.getItem("vxSavedFormulas")); } catch (e) {}
+  el.innerHTML = `<div class="mb-3" style="border:1px solid var(--border);border-left:3px solid var(--primary);
+      background:var(--primary-soft);border-radius:0 10px 10px 0;padding:10px 14px;font-size:11.8px;
+      font-family:monospace;line-height:1.7">
+    <b>Diagnostic</b> — total formulas loaded: ${(VX.savedFormulas || []).length} · Trucking formulas: ${truckCount} ·
+    tenant: ${VX.activeTenantId} · self-heal before/added: ${rep.beforeCount ?? "n/a"}/${rep.addedCount ?? "n/a"} ·
+    localStorage vxSavedFormulas entries right now: ${raw ? raw.length : "(none stored)"}
+  </div>`;
+})();
+
+/* ---------- Formula grid (landing view) ---------- */
+let fbGrid = null;
+fbGrid = vxAgGrid({ el: "#fbGrid", key: "savedFormulas", name: "Formula", size: 12, readOnly: true,
+  cols: [
+    { k: "name", l: "Formula" },
+    { k: "lob", l: "Line of Business" },
+    { k: "_scope", l: "Rates", sort: false, r: r => r.scope === "Account"
+        ? '<span class="vx-b purple">Account level</span>'
+        : `<span class="vx-b cyan">${r.cob || "—"}</span>` },
+    { k: "_versions", l: "Attached To", sort: false, r: r => {
+        const a = r.attachments || [];
+        if (!a.length) return '<span class="vx-b gray">Unattached</span>';
+        return a.map(x => `<span class="vx-b blue me-1" title="${x.product}">${x.ratingVersion}</span>`).join("")
+          + `<div style="font-size:10.3px;color:var(--text-mute);margin-top:2px">${[...new Set(a.map(x => x.product))].join(", ")}</div>`;
+      } },
+    { k: "tested", l: "Evaluated", r: r => r.tested
+        ? `<span class="vx-b green" title="Last evaluated ${r.lastTestedAt || "—"}"><i class="fa-solid fa-circle-check me-1"></i>Tested</span>`
+        : '<span class="vx-b amber"><i class="fa-solid fa-triangle-exclamation me-1"></i>Untested</span>' },
+    { k: "status", l: "Status", r: r => `<span class="vx-b ${r.status === "Active" ? "green" : "amber"}">${r.status}</span>` },
+    { k: "_len", l: "Terms", sort: false, r: r => `${(r.tokens || []).filter(t => t.t === "var").length} vars` },
+    { k: "updated", l: "Updated" },
+    { k: "createdBy", l: "Author" },
+  ],
+  filters: [
+    { k: "lob", l: "LOB", opts: vxLobNames() },
+    { k: "status", l: "Status", opts: ["Active", "Draft"] },
+  ],
+  bulkActions: [
+    { i: "fa-link", t: "Attach to rating version", fn: bulkAttach },
+  ],
+  rowActions: [
+    { i: "fa-pen-to-square", t: "Open in builder", fn: r => loadFormula(r.id) },
+    { i: "fa-trash", t: "Delete formula", fn: r => vxConfirm("Delete formula?",
+        `Remove <b>${r.name}</b>? Any rating version it is attached to will stop running it.`, () => {
+          VX.savedFormulas = VX.savedFormulas.filter(x => x.id !== r.id);
+          localStorage.setItem("vxSavedFormulas", JSON.stringify(VX.savedFormulas));
+          vxToast("Formula deleted", r.name, "err"); vxAutoSave(); fbGrid.reload();
+        }, true) },
+  ],
+});
+
+document.getElementById("vq").oninput = e => palVars(e.target.value);
+function renderAbBar() {
+  const el = document.getElementById("abBar");
+  if (!el) return;
+  const b = isB();
+  el.innerHTML = `<span class="t">Design test</span>
+    <button class="arm ${b ? "" : "on"}" onclick="setVariant('a')">A · Control</button>
+    <button class="arm ${b ? "on" : ""}" onclick="setVariant('b')">B · Alternate</button>
+    <span class="desc">${b
+      ? "Collapsed picker · grouped palette · grouped tokens · live validity"
+      : "Card picker · flat palette · flat token strip"}</span>`;
+  /* Give the canvas the column B's layout calls for. Done here rather than in
+     the markup so the two arms share one template. */
+  const pal = document.getElementById("colPalette"), can = document.getElementById("colCanvas"),
+        test = document.getElementById("colTest");
+  if (can) { can.className = b ? "col-lg-7" : "col-lg-6"; }
+  if (test) { test.className = b ? "col-lg-2" : "col-lg-3"; }
+  if (pal) { pal.className = "col-lg-3"; }
+}
+renderAbBar();
+renderLobPicker(); renderCobPicker(); renderPickerBar(); palVars(""); draw(); drawRules();
+
+/* Land on the grid. ?new opens a blank builder, ?id=<n> opens that formula —
+   so the two views are linkable and Back always has somewhere to return to. */
+(() => {
+  const q = new URLSearchParams(location.search);
+  if (q.has("new")) return fbNewFormula();
+  const id = +q.get("id");
+  if (id && VX.savedFormulas.some(f => f.id === id)) return loadFormula(id);
+  fbShowList();
+})();
+</script>
+</body>
+</html>

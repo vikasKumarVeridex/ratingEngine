@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Discounts — Pricing | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-grid.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-theme-quartz.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/dist/ag-grid-community.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/grid.js"></script>
+<script src="assets/js/ag-grid-adapter.js"></script>
+<script>
+vxShell("Discount Management", "Premium credits. || Applied at account, driver, vehicle, property, cyber or payment level.", [{l:"Pricing Rules"},{l:"Discount Management"}]);
+document.getElementById("vxBody").innerHTML = `
+  ${vxNotWiredBanner('Only the <b>first 2 active discounts</b> matching a quote’s LOB are applied.',
+    'Matching runs in list order over the quote’s own LOB plus any marked "All"; anything beyond the first two is silently skipped. Reorder or deactivate a discount here to change which ones actually apply.')}
+  <div class="vx-card vx-anim"><div id="grid"></div></div>`;
+const grid = vxAgGrid({ el:"#grid", key:"discounts", name:"Discount",
+
+  cols:[{k:"name",l:"Discount"},{k:"code",l:"Code"},{k:"lob",l:"LOB"},
+      {k:"type",l:"Applies To",r:r=>'<span class="vx-b blue">'+r.type+'</span>'},
+      {k:"value",l:"Value",editable:true,r:r=>'<span style="color:var(--good);font-weight:650">'+(r.value*100).toFixed(0)+'%</span>'},
+      {k:"condition",l:"Condition"},
+      {k:"active",l:"Status",editable:true,r:r=>'<span class="vx-b '+(r.active?"green":"gray")+'">'+(r.active?"Active":"Inactive")+'</span>'}],
+  form:[{k:"name",l:"Discount Name"},{k:"code",l:"Code"},{k:"lob",l:"LOB",t:"select",opts:vxLobNames()},
+      {k:"type",l:"Applies To",t:"select",opts:["Account","Driver","Vehicle","Property","Cyber","Payment"]},
+      {k:"value",l:"Value (negative decimal)",t:"number",step:"0.01"},{k:"condition",l:"Condition",t:"textarea"},{k:"active",l:"Active",t:"check"}],
+  filters:[{k:"lob",l:"LOB",opts:vxLobNames()},{k:"type",l:"Applies To",opts:["Account","Driver","Vehicle","Property","Cyber","Payment"]}],
+  bulkActions:[
+    { i:"fa-toggle-on", t:"Activate", fn:recs => { recs.forEach(r=>r.active=true); vxToast("Discounts activated", recs.length+" discount(s) activated", "ok"); vxAutoSave(); grid.reload(); } },
+    { i:"fa-toggle-off", t:"Deactivate", fn:recs => { recs.forEach(r=>r.active=false); vxToast("Discounts deactivated", recs.length+" discount(s) deactivated", "ok"); vxAutoSave(); grid.reload(); } },
+    { i:"fa-trash", t:"Delete", fn:recs => vxConfirm("Delete "+recs.length+" discount(s)?",
+        "This removes the selected discounts from the active configuration.",
+        () => { VX.discounts = VX.discounts.filter(d => !recs.some(r=>r.id===d.id)); vxToast("Discounts deleted", recs.length+" removed", "err"); vxAutoSave(); grid.reload(); }, true) },
+  ] });
+
+</script>
+</body>
+</html>

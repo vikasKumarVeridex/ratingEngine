@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Roles &amp; Permissions — Administration | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-grid.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-theme-quartz.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/dist/ag-grid-community.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/permissions.js"></script>
+<script src="assets/js/grid.js"></script>
+<script src="assets/js/ag-grid-adapter.js"></script>
+<script>
+vxShell("Roles & Permissions", "Who may do what, and under which conditions. || Roles grant actions (RBAC); constraints narrow them by attribute (ABAC).",
+  [{l:"Administration"},{l:"Roles & Permissions"}]);
+
+const P = VX_PERM;
+const LEVEL_CLS = { Admin:"red", Write:"amber", Operate:"blue", Read:"gray", External:"cyan", System:"purple" };
+
+document.getElementById("vxBody").innerHTML = `
+  <div class="vx-exp2 vx-anim" id="expRbac">
+    <div class="hd"><i class="fa-solid fa-user-shield" style="color:var(--primary);font-size:11.5px"></i>
+      <b>Two layers</b><span>A role grants actions; constraints narrow them by attribute. Deny is the default.</span>
+      <button type="button" class="tog" onclick="vxExpToggle('expRbac')">Why?</button></div>
+    <div class="bd">
+      <p><b>RBAC</b> answers "may an actuary edit rate tables?" — coarse, stable, and the way an administrator
+      thinks. <b>ABAC</b> then answers "… <i>this</i> rate table, for <i>that</i> state, at <i>this</i> amount?"
+      using attributes of the user, the record and the request.</p>
+      <p>Neither is sufficient alone. RBAC cannot express "within your authority" without inventing a role per
+      dollar limit; ABAC alone turns every decision into a rule hunt. Carrier platforms run the combination, so
+      that is what is modelled here. A permission not granted is not held — there is no implicit allow.</p>
+    </div>
+  </div>
+
+  <div class="vx-card vx-anim"><div id="grid"></div></div>
+  <div class="row g-3">
+    <div class="col-lg-5"><div class="vx-card vx-anim" id="simCard"></div></div>
+    <div class="col-lg-7"><div class="vx-card vx-anim" id="matrixCard"></div></div>
+  </div>`;
+
+/* ---------------------------------------------------------------------------
+   Permission matrix editor. Resources down, actions across, grouped the way
+   the nav groups them. Only the actions that genuinely apply to a resource get
+   a checkbox — an empty cell where "publish a ZIP code" would go is clearer
+   than an unchecked box that can never be ticked.
+   --------------------------------------------------------------------------- */
+function matrixHtml(rec) {
+  const perms = rec.permissions || {};
+  return P.groups().map(g => {
+    const rows = P.RESOURCES.filter(r => r.g === g);
+    return `<div style="margin-bottom:14px">
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-mute)">${g}</div>
+        <a href="#" style="font-size:11px" data-gall="${g}">all</a>
+        <a href="#" style="font-size:11px" data-gnone="${g}">none</a>
+      </div>
+      <div class="vx-tw"><table class="vx-t" style="font-size:12px">
+        <thead><tr><th style="min-width:180px">Resource</th>
+          ${P.ACTIONS.map(a => `<th style="text-align:center;width:74px" title="${a.d}">${a.l}</th>`).join("")}</tr></thead>
+        <tbody>${rows.map(r => `<tr data-grp="${g}">
+          <td>${r.l}</td>
+          ${P.ACTIONS.map(a => r.actions.includes(a.k)
+            ? `<td style="text-align:center"><input type="checkbox" class="pm" data-res="${r.k}" data-act="${a.k}"
+                 ${(perms[r.k] || []).includes(a.k) ? "checked" : ""}></td>`
+            : `<td style="text-align:center;color:var(--text-mute)">–</td>`).join("")}
+        </tr>`).join("")}</tbody>
+      </table></div></div>`;
+  }).join("");
+}
+
+/* Constraint rows. Each is: attribute + operator + (value, when the operator
+   needs one) + which resources it applies to (empty = all of them). */
+function constraintRow(c, i) {
+  const op = P.OPERATORS.find(o => o.k === c.op) || {};
+  return `<div class="d-flex gap-2 align-items-center mb-2 cxrow" data-i="${i}">
+    <select class="form-select form-select-sm cx" data-f="attr" style="width:150px">
+      ${P.ATTRIBUTES.map(a => `<option value="${a.k}" ${a.k === c.attr ? "selected" : ""} title="${a.d}">${a.l}</option>`).join("")}</select>
+    <select class="form-select form-select-sm cx" data-f="op" style="width:190px">
+      ${P.OPERATORS.map(o => `<option value="${o.k}" ${o.k === c.op ? "selected" : ""} title="${o.d}">${o.l}</option>`).join("")}</select>
+    <input class="form-control form-control-sm cx" data-f="value" style="width:170px"
+      placeholder="${op.needsValue ? "value, or a,b,c" : "— not needed"}"
+      value="${Array.isArray(c.value) ? c.value.join(", ") : (c.value == null ? "" : c.value)}"
+      ${op.needsValue ? "" : "disabled"}>
+    <input class="form-control form-control-sm cx" data-f="resources" style="flex:1;min-width:150px"
+      placeholder="all resources" value="${(c.resources || []).join(", ")}"
+      title="Resource keys this applies to, comma separated. Blank means every resource.">
+    <button class="btn btn-outline-secondary btn-sm" onclick="delCx(${i})"><i class="fa-solid fa-xmark"></i></button>
+  </div>`;
+}
+
+let editing = null;   // the role currently open in the editor
+
+function roleEditor(rec, startTab) {
+  startTab = startTab || "details";
+  editing = JSON.parse(JSON.stringify(rec));
+  editing.permissions = editing.permissions || {};
+  editing.constraints = editing.constraints || [];
+  vxModal(`Edit role — ${rec.name}`, `
+    <ul class="nav nav-tabs mb-3" style="border-bottom:1px solid var(--border)">
+      <li class="nav-item"><a class="nav-link ${startTab === "details" ? "active" : ""}" href="#" data-ptab="details" style="font-size:12.3px">
+        <i class="fa-solid fa-id-card me-1"></i>Details</a></li>
+      <li class="nav-item"><a class="nav-link ${startTab === "rbac" ? "active" : ""}" href="#" data-ptab="rbac" style="font-size:12.3px">
+        <i class="fa-solid fa-table-cells me-1"></i>Permissions (RBAC)
+        <span class="vx-b blue ms-1">${P.grantCount(editing)}</span></a></li>
+      <li class="nav-item"><a class="nav-link ${startTab === "abac" ? "active" : ""}" href="#" data-ptab="abac" style="font-size:12.3px">
+        <i class="fa-solid fa-filter me-1"></i>Constraints (ABAC)
+        <span class="vx-b amber ms-1">${(editing.constraints || []).length}</span></a></li>
+    </ul>
+    <div id="ptabDetails" style="display:${startTab === "details" ? "" : "none"}">
+      <div class="row g-3">
+        <div class="col-md-6"><label>Role Name</label>
+          <input class="form-control form-control-sm RF" data-f="name" value="${editing.name || ""}"></div>
+        <div class="col-md-6"><label>Access Level</label>
+          <select class="form-select form-select-sm RF" data-f="level">
+            ${["Admin","Write","Operate","Read","External","System"].map(x =>
+              `<option ${x === editing.level ? "selected" : ""}>${x}</option>`).join("")}</select></div>
+        <div class="col-md-6"><label>Users Assigned</label>
+          <input type="number" class="form-control form-control-sm RF" data-f="users" value="${editing.users || 0}"></div>
+        <div class="col-12"><label>Plain-language summary</label>
+          <textarea class="form-control form-control-sm RF" data-f="perms" rows="2">${editing.perms || ""}</textarea>
+          <div style="font-size:10.8px;color:var(--text-dim);margin-top:3px">
+            Shown in the roles list. It describes the matrix — the matrix itself is the next tab.</div></div>
+      </div>
+    </div>
+    <div id="ptabRbac" style="display:${startTab === "rbac" ? "" : "none"}">
+      <div class="sub">Tick the actions this role may perform on each resource. Anything unticked is
+        not held — there is no implicit allow.</div>
+      ${matrixHtml(editing)}</div>
+    <div id="ptabAbac" style="display:none">
+      <div class="sub">Every constraint on this role must pass for the action to be allowed. Leave the resource
+        list blank to apply it everywhere.</div>
+      <div id="cxList">${editing.constraints.map(constraintRow).join("") ||
+        '<div class="vx-empty" style="padding:16px"><i class="fa-solid fa-filter"></i>No constraints — this role is limited only by its permission matrix.</div>'}</div>
+      <button class="btn btn-outline-secondary btn-sm mt-1" onclick="addCx()"><i class="fa-solid fa-plus me-1"></i>Add constraint</button>
+    </div>`,
+    [{ t: "Cancel", c: "secondary" },
+     { t: "Save role", c: "primary", fn: () => {
+        collectDetails();
+        collectMatrix();
+        collectConstraints();
+        API.update("roles", rec.id, { name: editing.name, level: editing.level, users: editing.users,
+          perms: editing.perms, permissions: editing.permissions, constraints: editing.constraints })
+          .then(() => {
+            vxToast("Permissions saved", `${P.grantCount(editing)} grants · ${editing.constraints.length} constraint${editing.constraints.length === 1 ? "" : "s"}`, "ok");
+            vxAutoSave(); grid.reload(); renderSim();
+          });
+     } }], "modal-xl");
+  wirePermModal();
+}
+
+function collectDetails() {
+  document.querySelectorAll("#vxModal .RF").forEach(el => {
+    editing[el.dataset.f] = el.type === "number" ? +el.value : el.value;
+  });
+}
+function collectMatrix() {
+  const out = {};
+  document.querySelectorAll("#vxModal .pm:checked").forEach(cb => {
+    (out[cb.dataset.res] = out[cb.dataset.res] || []).push(cb.dataset.act);
+  });
+  editing.permissions = out;
+}
+function collectConstraints() {
+  const out = [];
+  document.querySelectorAll("#vxModal .cxrow").forEach(row => {
+    const g = f => { const el = row.querySelector(`.cx[data-f="${f}"]`); return el ? el.value.trim() : ""; };
+    const op = g("op"), val = g("value");
+    const needs = (P.OPERATORS.find(o => o.k === op) || {}).needsValue;
+    const c = { attr: g("attr"), op };
+    if (needs && val) c.value = val.includes(",") ? val.split(",").map(x => x.trim()).filter(Boolean) : val;
+    const res = g("resources");
+    c.resources = res ? res.split(",").map(x => x.trim()).filter(Boolean) : [];
+    out.push(c);
+  });
+  editing.constraints = out;
+}
+function redrawCx() {
+  const el = document.getElementById("cxList");
+  el.innerHTML = editing.constraints.map(constraintRow).join("") ||
+    '<div class="vx-empty" style="padding:16px"><i class="fa-solid fa-filter"></i>No constraints — this role is limited only by its permission matrix.</div>';
+  wirePermModal();
+}
+function addCx() { collectConstraints(); editing.constraints.push({ attr: "tenantId", op: "eqUser", resources: [] }); redrawCx(); }
+function delCx(i) { collectConstraints(); editing.constraints.splice(i, 1); redrawCx(); }
+
+function wirePermModal() {
+  const m = document.getElementById("vxModal");
+  if (!m) return;
+  m.querySelectorAll("[data-ptab]").forEach(a => a.onclick = e => {
+    e.preventDefault();
+    m.querySelectorAll("[data-ptab]").forEach(x => x.classList.toggle("active", x === a));
+    // capture every pane before switching, so nothing typed is dropped
+    collectDetails(); collectMatrix(); collectConstraints();
+    const t = a.dataset.ptab;
+    m.querySelector("#ptabDetails").style.display = t === "details" ? "" : "none";
+    m.querySelector("#ptabRbac").style.display    = t === "rbac"    ? "" : "none";
+    m.querySelector("#ptabAbac").style.display    = t === "abac"    ? "" : "none";
+  });
+  m.querySelectorAll("[data-gall]").forEach(a => a.onclick = e => {
+    e.preventDefault();
+    m.querySelectorAll(`tr[data-grp="${a.dataset.gall}"] .pm`).forEach(c => c.checked = true);
+  });
+  m.querySelectorAll("[data-gnone]").forEach(a => a.onclick = e => {
+    e.preventDefault();
+    m.querySelectorAll(`tr[data-grp="${a.dataset.gnone}"] .pm`).forEach(c => c.checked = false);
+  });
+  // an operator that needs no value disables the value box, so it can't look editable
+  m.querySelectorAll('.cx[data-f="op"]').forEach(sel => sel.onchange = () => {
+    const row = sel.closest(".cxrow");
+    const needs = (P.OPERATORS.find(o => o.k === sel.value) || {}).needsValue;
+    const v = row.querySelector('.cx[data-f="value"]');
+    v.disabled = !needs;
+    v.placeholder = needs ? "value, or a,b,c" : "— not needed";
+    if (!needs) v.value = "";
+  });
+}
+
+/* ---------------------------------------------------------------------------
+   Simulator. A matrix tells you what a role holds; it does not tell you what
+   happens to a real request. This runs the actual evaluator and reports the
+   decision AND the rule that decided it.
+   --------------------------------------------------------------------------- */
+const SIM = { user: "", resource: "quotes", action: "create", state: "TX", lob: "Commercial Trucking", status: "Draft", premium: 150000, tenantId: 1 };
+
+function renderSim() {
+  const users = VX.users || [];
+  if (!SIM.user && users.length) SIM.user = users[0].name;
+  const u = users.find(x => x.name === SIM.user) || users[0] || {};
+  const res = P.resource(SIM.resource) || P.RESOURCES[0];
+  if (!res.actions.includes(SIM.action)) SIM.action = res.actions[0];
+
+  const verdict = u.name ? P.evaluate(u, SIM.resource, SIM.action, {
+    tenantId: SIM.tenantId, lob: SIM.lob, state: SIM.state, status: SIM.status,
+    premium: +SIM.premium, owner: u.attrs && u.attrs.owner,
+  }) : { allow: false, reason: "No users on file.", stage: "rbac" };
+
+  const a = (u.attrs || {});
+  document.getElementById("simCard").innerHTML = `
+    <h2><i class="fa-solid fa-vial me-2" style="color:var(--primary)"></i>Access simulator</h2>
+    <div class="sub">Run a real request through the evaluator.</div>
+
+    <label>User</label>
+    <select class="form-select form-select-sm mb-2 S" data-k="user">
+      ${users.map(x => `<option ${x.name === SIM.user ? "selected" : ""}>${x.name}</option>`).join("")}</select>
+    <div style="font-size:11.3px;color:var(--text-dim);margin-bottom:10px">
+      ${u.role || "—"} · MFA ${u.mfa || "—"}<br>
+      LOB: ${(a.lob || []).join(", ") || "—"} · States: ${(a.state || []).join(", ") || "—"}<br>
+      Authority: ${a.authorityLimit ? vxMoney(a.authorityLimit) : "none"}
+    </div>
+
+    <div class="row g-2">
+      <div class="col-7"><label>Resource</label>
+        <select class="form-select form-select-sm S" data-k="resource">
+          ${P.RESOURCES.map(r => `<option value="${r.k}" ${r.k === SIM.resource ? "selected" : ""}>${r.l}</option>`).join("")}</select></div>
+      <div class="col-5"><label>Action</label>
+        <select class="form-select form-select-sm S" data-k="action">
+          ${res.actions.map(k => `<option value="${k}" ${k === SIM.action ? "selected" : ""}>${P.action(k).l}</option>`).join("")}</select></div>
+      <div class="col-6"><label>State</label>
+        <select class="form-select form-select-sm S" data-k="state">
+          ${VX.states.map(s => `<option ${s.abv === SIM.state ? "selected" : ""}>${s.abv}</option>`).join("")}</select></div>
+      <div class="col-6"><label>Status</label>
+        <select class="form-select form-select-sm S" data-k="status">
+          ${["Draft","Published","Expired","Active","Retired"].map(s => `<option ${s === SIM.status ? "selected" : ""}>${s}</option>`).join("")}</select></div>
+      <div class="col-12"><label>Line of business</label>
+        <select class="form-select form-select-sm S" data-k="lob">
+          ${vxLobNames().map(l => `<option ${l === SIM.lob ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+      <div class="col-12"><label>Quote premium</label>
+        <input type="number" class="form-control form-control-sm S" data-k="premium" value="${SIM.premium}"></div>
+    </div>
+
+    <div class="mt-3" style="border:1px solid ${verdict.allow ? "var(--good)" : "var(--bad)"};border-radius:9px;
+      background:${verdict.allow ? "rgba(34,176,125,.08)" : "rgba(224,92,92,.08)"};padding:11px 13px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <i class="fa-solid ${verdict.allow ? "fa-circle-check" : "fa-circle-xmark"}"
+           style="color:${verdict.allow ? "var(--good)" : "var(--bad)"};font-size:15px"></i>
+        <b style="font-size:14px">${verdict.allow ? "Allowed" : "Denied"}</b>
+        <span class="vx-b ${verdict.stage === "rbac" ? "blue" : "amber"}" style="margin-left:auto">
+          ${verdict.stage === "rbac" ? "RBAC" : "ABAC"}</span>
+      </div>
+      <div style="font-size:11.8px;color:var(--text-dim);margin-top:6px;line-height:1.5">${verdict.reason}</div>
+    </div>`;
+
+  document.querySelectorAll("#simCard .S").forEach(el => el.onchange = () => {
+    SIM[el.dataset.k] = el.type === "number" ? +el.value : el.value;
+    renderSim();
+  });
+}
+
+/* ---------------------------------------------------------------------------
+   Grid
+   --------------------------------------------------------------------------- */
+function permSummary(r) {
+  const n = P.grantCount(r);
+  const res = Object.keys(r.permissions || {}).length;
+  if (!n) return '<span class="vx-b gray">no grants</span>';
+  return `<span class="vx-b blue" title="${res} resources">${n} grants</span>`;
+}
+function cxSummary(r) {
+  const c = (r.constraints || []);
+  if (!c.length) return '<span class="vx-b gray">none</span>';
+  return `<span class="vx-b amber" title="${c.map(P.describe).join(" · ")}">${c.length} constraint${c.length === 1 ? "" : "s"}</span>`;
+}
+
+const grid = vxAgGrid({ el:"#grid", key:"roles", name:"Role",
+  cols:[
+    {k:"name",l:"Role"},
+    {k:"level",l:"Access Level",r:r=>'<span class="vx-b '+(LEVEL_CLS[r.level]||"gray")+'">'+r.level+'</span>'},
+    {k:"users",l:"Users"},
+    {k:"_grants",l:"Permissions",sort:false,r:permSummary},
+    {k:"_cx",l:"Constraints",sort:false,r:cxSummary},
+    {k:"perms",l:"Summary"}],
+  form:[{k:"name",l:"Role Name"},
+      {k:"level",l:"Access Level",t:"select",opts:["Admin","Write","Operate","Read","External","System"]},
+      {k:"users",l:"Users Assigned",t:"number"},
+      {k:"perms",l:"Plain-language summary",t:"textarea",
+        hint:"Describes the matrix in lists. After adding, open the role to set its permissions."}],
+  /* The matrix is far too big for the standard form modal, so it gets its own
+     editor rather than being crammed into a field. */
+  /* The pencil opens the full editor — people click the pencil, and a permission
+     matrix hidden behind a second icon may as well not exist. The shield stays
+     as a shortcut that lands directly on the matrix tab. */
+  onEdit: rec => roleEditor(rec, "details"),
+  rowActions:[{ t:"Jump to permission matrix", i:"fa-user-shield", fn: rec => roleEditor(rec, "rbac") }],
+  filters:[{k:"level",l:"Level",opts:["Admin","Write","Operate","Read","External","System"]}] });
+
+function renderEffective() {
+  const users = VX.users || [];
+  const u = users.find(x => x.name === SIM.user) || users[0];
+  const el = document.getElementById("matrixCard");
+  if (!el || !u) return;
+  const roles = P.rolesOf(u);
+  const rows = P.RESOURCES.map(r => {
+    const held = P.ACTIONS.filter(a => r.actions.includes(a.k) &&
+      roles.some(role => ((role.permissions || {})[r.k] || []).includes(a.k)));
+    return { r, held };
+  }).filter(x => x.held.length);
+  el.innerHTML = `
+    <h2><i class="fa-solid fa-list-check me-2" style="color:var(--primary)"></i>Effective access</h2>
+    <div class="sub">What <b>${u.name}</b> holds via ${roles.map(x => x.name).join(" + ") || "no role"} —
+      before constraints. The simulator applies those.</div>
+    ${rows.length ? `<div class="vx-tw" style="max-height:360px;overflow:auto"><table class="vx-t" style="font-size:12px">
+      <thead><tr><th>Resource</th><th>Actions granted</th></tr></thead>
+      <tbody>${rows.map(x => `<tr><td>${x.r.l}</td>
+        <td>${x.held.map(a => `<span class="vx-b ${a.k === "publish" || a.k === "delete" ? "amber" : "blue"}"
+          style="margin-right:3px">${a.l}</span>`).join("")}</td></tr>`).join("")}</tbody></table></div>`
+      : `<div class="vx-empty" style="padding:20px"><i class="fa-solid fa-ban"></i>This role grants nothing.</div>`}`;
+}
+const _renderSim = renderSim;
+renderSim = function () { _renderSim(); renderEffective(); };
+renderSim();
+</script>
+</body>
+</html>

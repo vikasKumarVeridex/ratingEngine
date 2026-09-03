@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ZIP Codes — Geography | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-grid.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-theme-quartz.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/dist/ag-grid-community.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/grid.js"></script>
+<script src="assets/js/ag-grid-adapter.js"></script>
+<script>
+vxShell("ZIP Code Configuration", "ZIP → county → territory mapping. || Production tables hold 41k–63k rows per LOB; a representative sample is shown here.", [{l:"Geography"},{l:"ZIP Code Configuration"}]);
+document.getElementById("vxBody").innerHTML = `<div class="vx-card vx-anim"><div id="grid"></div></div>`;
+vxAgGrid({ el:"#grid", key:"zipcodes", name:"ZIP Code",
+  size:12,
+  cols:[{k:"zip",l:"ZIP"},{k:"city",l:"City"},{k:"county",l:"County"},{k:"state",l:"State"},
+      {k:"isoTerr",l:"ISO Terr"},{k:"terrUse",l:"Territory (Use)",r:r=>'<span class="vx-b blue">'+r.terrUse+'</span>'},
+      {k:"ppc",l:"Protection Class"},{k:"catZone",l:"Cat Zone"}],
+  form:[{k:"zip",l:"ZIP Code"},{k:"city",l:"City"},{k:"county",l:"County"},{k:"state",l:"State",t:"select",opts:VX.states.map(s=>s.abv)},
+      {k:"isoTerr",l:"ISO Territory",t:"number"},{k:"terrUse",l:"Territory (Use)"},{k:"ppc",l:"Protection Class",t:"number"}],
+  filters:[{k:"state",l:"State",opts:VX.states.map(s=>s.abv)}] });
+
+</script>
+</body>
+</html>

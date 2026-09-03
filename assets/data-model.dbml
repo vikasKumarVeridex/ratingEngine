@@ -1,0 +1,907 @@
+// ==========================================================================
+// Veridex Rating Platform -- data model, exported as DBML
+// Generated from the live data structures (assets/js/data.js +
+// rate-data-full.js) on 2026-08-19, not hand-typed.
+// Columns and types are introspected from real records. References below
+// are EMPIRICALLY DETECTED: a column is linked to another table's identity
+// field only when at least 80% of its distinct values are found there.
+// This is measured co-occurrence, not an authored foreign-key constraint --
+// nothing in this codebase declares real FKs, so confidence is noted inline.
+// Paste into https://dbdiagram.io to render an ERD.
+// ==========================================================================
+
+Table VX_workbooks {
+  id number [pk]
+  name varchar
+  lob varchar
+  sheets number
+  rows varchar
+  imported varchar
+  status varchar
+  owner varchar
+
+  Note: 'Source workbooks'
+}
+
+Table VX_lobs {
+  id number [pk]
+  code varchar
+  name varchar
+  sourceSheets number
+  engine varchar
+  status varchar
+  products number
+  desc varchar
+
+  Note: 'Lines of Business'
+}
+
+Table VX_products {
+  id number [pk]
+  code varchar
+  name varchar
+  lob varchar
+  cob json
+  states number
+  version varchar
+  status varchar
+  owner varchar
+  updated varchar
+  quotes number
+  gwp number
+  appTypeId number
+  raterType varchar
+
+  Note: 'Products appTypeId / raterType mirror the real ams_service.ins_application_type table (application_type_id, rater_type_id -> "Generic"/"Custom") and ams-ui\'s main-page-queue.component.ts dispatch, which opens AddSubmissionNewRaterComponent only for application_type_id 483 and routes every other app'
+}
+
+Table VX_programParams {
+  id number [pk]
+  lob varchar
+  param varchar
+  value number
+  src varchar
+
+  Note: 'Program parameters [REAL from workbooks]'
+}
+
+Table VX_mplHazardGroups {
+  id number [pk]
+  hg number
+  desc varchar
+  factor number
+
+  Note: 'MPL factor tables [REAL]'
+}
+
+Table VX_mplYIP {
+  id number [pk]
+  yip varchar
+  factor number
+
+  Note: 'MPL factor tables [REAL]'
+}
+
+Table VX_mplALAE {
+  id number [pk]
+  treatment varchar
+  factor number
+}
+
+Table VX_mplILF {
+  id number [pk]
+  limit number
+  ilf number
+}
+
+Table VX_mplRetention {
+  id number [pk]
+  retention number
+  factor number
+}
+
+Table VX_truckPrimary {
+  id number [pk]
+  code varchar
+  desc varchar
+  liability number
+  category varchar
+  effectiveDate varchar
+  active boolean
+  fleetType varchar
+  ocnType varchar
+
+  Note: 'Trucking factor tables [REAL]'
+}
+
+Table VX_truckAge {
+  id number [pk]
+  label varchar
+  vehicleAge number
+  tttLiability number
+  pptLiability number
+  effectiveDate varchar
+  active boolean
+}
+
+Table VX_truckFleetSize {
+  id number [pk]
+  vehicleType varchar
+  label varchar
+  min number
+  max number
+  factor number
+}
+
+Table VX_truckOCN {
+  id number [pk]
+  vehicleType varchar
+  min number
+  max number
+  factor number
+}
+
+Table VX_truckRadius {
+  id number [pk]
+  category varchar
+  label varchar
+  distance varchar
+  liabilityFactor number
+  apdFactor number
+}
+
+Table VX_truckRatingClass {
+  id number [pk]
+  ratingClass varchar
+  factor number
+}
+
+Table VX_truckDashcam {
+  id number [pk]
+  option varchar
+  factor number
+}
+
+Table VX_truckMiles {
+  id number [pk]
+  radiusCategory varchar
+  label varchar
+  min number
+  max number
+  factor number
+
+  Note: 'Miles Driven Factor — Table58, keyed by BOTH radius category and mileage band (previously a single curve applied regardless of radius).'
+}
+
+Table VX_truckLiabDed {
+  id number [pk]
+  deductibleType varchar
+  amount number
+  factor number
+}
+
+Table VX_truckApdDed {
+  id number [pk]
+  amount number
+  factor number
+
+  Note: 'APD Deductible Factor — DeductFctr_ALT (PhysDamRatesByTIV!J1:L8). Was entirely missing before — engine.js had no APD deductible input at all.'
+}
+
+Table VX_truckNAICS {
+  code varchar
+  label varchar
+  factor number
+
+  Note: 'NAICS Industry Factor — CA_NAICS_TTT. All 5 real trucking NAICS codes currently on file carry the same Liability factor (1.10).'
+}
+
+Table VX_truckAcctBizExp {
+  yearsInBusiness varchar
+  factor number
+
+  Note: 'Account-Level Credits/Debits (Insured tab) Every one of these is a BANDED DROPDOWN in the source workbook, not a free number. That distinction matters: "No Inspections" and "No Loss Data" are real selectable answers with a 0.00 factor, and neither can be expressed as a percentage. A numeric input si'
+}
+
+Table VX_truckAcctCarrierSafety {
+  rating varchar
+  fmcsaAlerts number
+  factor number
+
+  Note: 'Account-Level Credits/Debits (Insured tab) Every one of these is a BANDED DROPDOWN in the source workbook, not a free number. That distinction matters: "No Inspections" and "No Loss Data" are real selectable answers with a 0.00 factor, and neither can be expressed as a percentage. A numeric input si'
+}
+
+Table VX_truckAcctUnitBands {
+  band varchar
+  min number
+  max number
+
+  Note: 'Table59 — keyed by loss-frequency band AND fleet size. The credit for a clean book is bigger on a large fleet, and the debit for a bad one is far bigger; a single-dimension lookup understates both ends.'
+}
+
+Table VX_truckAcctLossFreq {
+  band varchar
+  unitBand varchar
+  min number
+  max number
+  factor number
+
+  Note: 'Table59 — keyed by loss-frequency band AND fleet size. The credit for a clean book is bigger on a large fleet, and the debit for a bad one is far bigger; a single-dimension lookup understates both ends.'
+}
+
+Table VX_truckCargoCommodities {
+  code varchar
+  label varchar
+  excluded boolean
+  note varchar
+  reason varchar
+
+  Note: 'Cargo commodity list. Cargo itself has no filed rate in this program (see the "not sourced" placeholder in engine.js) — this is a standard motor truck cargo commodity classification, not extracted from a filing, and is labelled as such in the UI. Excluded commodities are real cargo exclusions common'
+}
+
+Table VX_propConstruction {
+  id number [pk]
+  code varchar
+  label varchar
+  factor number
+
+  Note: 'Property factor tables'
+}
+
+Table VX_propPPC {
+  id number [pk]
+  ppc number
+  label varchar
+  factor number
+}
+
+Table VX_propOccupancy {
+  id number [pk]
+  code varchar
+  label varchar
+  factor number
+}
+
+Table VX_propDed {
+  id number [pk]
+  amount number
+  factor number
+}
+
+Table VX_propWindHail {
+  id number [pk]
+  code varchar
+  label varchar
+  factor number
+}
+
+Table VX_propIRPM {
+  id number [pk]
+  characteristic varchar
+  minCredit number
+  maxDebit number
+  selected number
+  desc varchar
+}
+
+Table VX_glSchedRating {
+  id number [pk]
+  characteristic varchar
+  minCredit number
+  maxDebit number
+  selected number
+  desc varchar
+
+  Note: 'GL factor tables'
+}
+
+Table VX_glELP {
+  id number [pk]
+  limit number
+  elp number
+}
+
+Table VX_cyberIndustry {
+  id number [pk]
+  code varchar
+  label varchar
+  factor number
+
+  Note: 'Cyber factor tables'
+}
+
+Table VX_cyberMFA {
+  id number [pk]
+  code varchar
+  label varchar
+  factor number
+}
+
+Table VX_cyberLimits {
+  id number [pk]
+  limit number
+  factor number
+}
+
+Table VX_cyberRetentions {
+  id number [pk]
+  retention number
+  factor number
+}
+
+Table VX_caProvinces {
+  id number [pk]
+  abv varchar
+  name varchar
+  country varchar
+
+  Note: 'Canadian provinces/territories — for the Loss Run Dashboard\'s cross-border trucking exposure ONLY. Deliberately NOT merged into D.states: rating, taxes, and every product/quote form on this platform assume a US state (premium tax tables, county tax, ZIP territory resolution all only cover the US), '
+}
+
+Table VX_states {
+  id number [pk]
+  abv varchar
+  name varchar
+  stateCode varchar
+  included boolean
+  filingStatus varchar
+  premiumTax number
+  surplusTax number
+  stampingFee number
+  territories number
+  counties number
+  lobs number
+  effectiveDate varchar
+
+  Note: 'Canadian provinces/territories — for the Loss Run Dashboard\'s cross-border trucking exposure ONLY. Deliberately NOT merged into D.states: rating, taxes, and every product/quote form on this platform assume a US state (premium tax tables, county tax, ZIP territory resolution all only cover the US), '
+}
+
+Table VX_counties {
+  id number [pk]
+  fips varchar
+  name varchar
+  state varchar
+  stateName varchar
+  territory varchar
+  population number
+  catZone varchar
+  taxRate number
+  active boolean
+}
+
+Table VX_territories {
+  id number [pk]
+  code varchar
+  state varchar
+  name varchar
+  isoTerr number
+  relativity number
+  zips number
+  lob varchar
+  active boolean
+}
+
+Table VX_zipcodes {
+  id number [pk]
+  zip varchar
+  city varchar
+  county varchar
+  state varchar
+  isoTerr number
+  terrUse varchar
+  ppc number
+  catZone varchar
+}
+
+Table VX_industryClasses {
+  id number [pk]
+  code varchar
+  name varchar
+  lob varchar
+  hazardGroup number
+  factor number
+  active boolean
+  quotes number
+}
+
+Table VX_cob {
+  id number [pk]
+  cobId number
+  parentCobId varchar
+  level varchar
+  code varchar
+  name varchar
+  lob varchar
+  sourceRef varchar
+  mandatory boolean
+  childCount number
+  ratingBasis varchar
+  defaultLimit number
+  factor number
+  version varchar
+  active boolean
+  quotes number
+  parentName varchar
+}
+
+Table VX_cobParents {
+  id number [pk]
+  cobId number
+  parentCobId varchar
+  level varchar
+  code varchar
+  name varchar
+  lob varchar
+  sourceRef varchar
+  mandatory boolean
+  childCount number
+  ratingBasis varchar
+  defaultLimit number
+  factor number
+  version varchar
+  active boolean
+  quotes number
+}
+
+Table VX_baseRates {
+  id number [pk]
+  lob varchar
+  state varchar
+  territory varchar
+  classCode varchar
+  coverage varchar
+  baseRate number
+  unit varchar
+  filingId varchar
+  effectiveDate varchar
+  version varchar
+  active boolean
+
+  Note: 'Base rates & lookup tables'
+}
+
+Table VX_lookupTables {
+  id number [pk]
+  name varchar
+  lob varchar
+  keys varchar
+  rows number
+  source varchar
+  version varchar
+  active boolean
+}
+
+Table VX_discounts {
+  id number [pk]
+  name varchar
+  code varchar
+  type varchar
+  value number
+  condition varchar
+  lob varchar
+  effectiveDate varchar
+  active boolean
+
+  Note: 'Some Account-level items are still line-specific — FMCSA and out-of-service rates are motor-carrier concepts and must not surface on a Property or Cyber quote, so they override the type-based mapping above.'
+}
+
+Table VX_surcharges {
+  id number [pk]
+  name varchar
+  code varchar
+  type varchar
+  value number
+  condition varchar
+  lob varchar
+  effectiveDate varchar
+  active boolean
+}
+
+Table VX_fees {
+  id number [pk]
+  name varchar
+  code varchar
+  valueType varchar
+  value number
+  percentOf varchar
+  minFee number
+  maxFee number
+  chargeType varchar
+  basis varchar
+  taxable boolean
+  lob varchar
+  active boolean
+
+  Note: 'Fees support BOTH a fixed dollar amount and a percentage of a chosen basis. valueType: "Fixed" → value is dollars, multiplied by qty (charge type) valueType: "Percent"→ value is a %, applied to `percentOf` basis Min/Max cap a percentage fee so it stays inside a sensible band.'
+}
+
+Table VX_trailerTypes {
+  id number [pk]
+  type varchar
+  pdBucket varchar
+
+  Note: 'Trailer types (source: Vehicles tab "Trailer Type" column). The real TrailerTypes PhysDam factor table (HelperTables!DA3:DB5) only has two buckets — Reefer (0.95) and All Other (0.90) — so every descriptive option below maps to one of those two for the APD calc via `pdBucket`; the richer list is kep'
+}
+
+Table VX_driverClasses {
+  id number [pk]
+  cls varchar
+  pts varchar
+  factor number
+  desc varchar
+
+  Note: 'Driver violation classes (source: Drivers tab — Violation Class / Points / Indiv. Driver Class Factor). NOTE: the real DriverClassFctr table (HelperTables!BU4:BY4390, a full Age(14-99) x Points(0-50+) cross-join) returns raw values of ~3.05-8.99 at 0-10+ points, applied as a direct multiplier alongs'
+}
+
+Table VX_ratingFactors {
+  id number [pk]
+  code varchar
+  name varchar
+  lob varchar
+  coverage varchar
+  kind varchar
+  driver varchar
+  sourceSheet varchar
+  tableId varchar
+  rowCount number
+  minValue number
+  maxValue number
+  defaultValue varchar
+  verified boolean
+  wired boolean
+  custom boolean
+  range varchar
+  effectiveDate varchar
+  version varchar
+  active boolean
+}
+
+Table VX_workbookSheets {
+  id number [pk]
+  workbook varchar
+  lob varchar
+  sheet varchar
+  wired boolean
+  usedBy json
+}
+
+Table VX_workbookTables {
+  id number [pk]
+  workbook varchar
+  lob varchar
+  name varchar
+  sheet varchar
+  rows number
+  status varchar
+  drives varchar
+  note varchar
+
+  Note: 'Source workbook table inventory Every named rate table in the Digital Trucking workbook, with whether this platform actually implements it. Extracted from the .xlsb ListObjects, not hand-listed. Updated 2026-08-19: the ZIP-to-territory lookup, the full loss-cost and ILF tables, the real Driver Class'
+}
+
+Table VX_inputGaps {
+  id number [pk]
+  tab varchar
+  field varchar
+  status varchar
+  note varchar
+
+  Note: 'Quote-form input coverage vs the source rater Audited field-by-field against the Insured, Vehicles, Drivers, CommonCoverages, ExperienceRatingMod_ALT1 and LossRating_ALT2 tabs. "account" means we capture the answer once for the policy where the rater captures it per vehicle (or per claim) — the valu'
+}
+
+Table VX_taxes {
+  id number [pk]
+  state varchar
+  stateName varchar
+  premiumTax number
+  surplusTax number
+  stampingFee number
+  basis varchar
+  active boolean
+  countyCount number
+}
+
+Table VX_countyTaxes {
+  id number [pk]
+  county varchar
+  fips varchar
+  state varchar
+  stateName varchar
+  stateTax number
+  countyTax number
+  totalTax number
+  taxType varchar
+  basis varchar
+  appliesTo varchar
+  effectiveDate varchar
+  active boolean
+
+  Note: 'County-level taxes A single state can have MANY counties each charging their own local tax on top of the state premium tax. Total tax = state premium tax + county tax (+ surplus lines + stamping fee where applicable).'
+}
+
+Table VX_premiumRules {
+  id number [pk]
+  name varchar
+  code varchar
+  type varchar
+  scope varchar
+  value number
+  lob varchar
+  active boolean
+}
+
+Table VX_eligibilityRules {
+  id number [pk]
+  name varchar
+  code varchar
+  desc varchar
+  lob varchar
+  active boolean
+
+  Note: 'Rules'
+}
+
+Table VX_versions {
+  id number [pk]
+  product varchar
+  lob varchar
+  version varchar
+  status varchar
+  effectiveStart varchar
+  effectiveEnd varchar
+  rateLockDate varchar
+  rateLockDays number
+  createdBy varchar
+  createdOn varchar
+  factorCount number
+  quotesRated number
+  added number
+  changed number
+  removed number
+  changes json
+  rateImpact number
+  notes varchar
+}
+
+Table VX_quotes {
+  id number [pk]
+  quoteNo varchar
+  insured varchar
+  product varchar
+  lob varchar
+  state varchar
+  county varchar
+  country varchar
+  agent varchar
+  premium number
+  status varchar
+  effectiveDate varchar
+  createdOn varchar
+  version varchar
+  underwriter varchar
+  claims number
+  incurredLosses number
+
+  Note: '~12% of the loss-run sample is cross-border Canadian trucking exposure — illustrative only (see the note on STATE_LOSS_BIAS above): the rating engine, taxes and every quote form on this platform still only handle US states. Canadian rows carry country:"CA" and no county (D.counties is US-only) so th'
+}
+
+Table VX_policies {
+  id number [pk]
+  policyNo varchar
+  insured varchar
+  product varchar
+  lob varchar
+  state varchar
+  country varchar
+  agent varchar
+  premium number
+  effectiveDate varchar
+  expirationDate varchar
+  status varchar
+  version varchar
+}
+
+Table VX_roles {
+  id number [pk]
+  name varchar
+  users number
+  perms varchar
+  level varchar
+
+  Note: 'Users / roles'
+}
+
+Table VX_users {
+  id number [pk]
+  name varchar
+  email varchar
+  role varchar
+  status varchar
+  mfa varchar
+  lastLogin varchar
+}
+
+Table VX_audit {
+  id number [pk]
+  timestamp varchar
+  user varchar
+  area varchar
+  action varchar
+  detail varchar
+  version varchar
+  ip varchar
+}
+
+Table VX_factorChangeLog {
+  id number [pk]
+  timestamp varchar
+  user varchar
+  factorCode varchar
+  factorName varchar
+  lob varchar
+  state varchar
+  from number
+  to number
+  pctChange number
+  reason varchar
+  version varchar
+
+  Note: 'Rating factor change log "Who changed a rating factor value, and to what" — the generic audit log above cycles through 8 decorative detail strings regardless of area or user, so it can\'t actually answer that question. This is a SEPARATE, purpose-built log that names a real factor from the 46-entry '
+}
+
+Table VX_settings {
+  id number [pk]
+  key varchar
+  label varchar
+  value varchar
+  category varchar
+
+  Note: 'System settings'
+}
+
+Table VX_notifications {
+  id number [pk]
+  icon varchar
+  color varchar
+  title varchar
+  desc varchar
+  time varchar
+
+  Note: 'Notifications'
+}
+
+Table VX_savedFormulas {
+  id number [pk]
+  name varchar
+  lob varchar
+  scope varchar
+  cob varchar
+  attachments json
+  status varchar
+  createdBy varchar
+  updated varchar
+  tested boolean
+  lastTestedAt varchar
+  tokens json
+}
+
+// 100% confidence, empirically detected
+Ref: VX_workbooks.lob > VX_lobs.name
+
+// 100% confidence, empirically detected
+Ref: VX_products.lob > VX_lobs.name
+
+// 100% confidence, empirically detected
+Ref: VX_programParams.lob > VX_lobs.name
+
+// 100% confidence, empirically detected
+Ref: VX_counties.state > VX_states.abv
+
+// 100% confidence, empirically detected
+Ref: VX_counties.stateName > VX_states.name
+
+// 100% confidence, empirically detected
+Ref: VX_territories.state > VX_states.abv
+
+// 100% confidence, empirically detected
+Ref: VX_zipcodes.county > VX_counties.name
+
+// 100% confidence, empirically detected
+Ref: VX_zipcodes.state > VX_states.abv
+
+// 100% confidence, empirically detected
+Ref: VX_industryClasses.lob > VX_lobs.name
+
+// 100% confidence, empirically detected
+Ref: VX_cob.lob > VX_lobs.name
+
+// 100% confidence, empirically detected
+Ref: VX_cob.parentName > VX_cobParents.name
+
+// 100% confidence, empirically detected
+Ref: VX_cobParents.lob > VX_lobs.name
+
+// 100% confidence, empirically detected
+Ref: VX_baseRates.lob > VX_lobs.name
+
+// 100% confidence, empirically detected
+Ref: VX_baseRates.state > VX_states.abv
+
+// 100% confidence, empirically detected
+Ref: VX_lookupTables.lob > VX_lobs.name
+
+// 100% confidence, empirically detected
+Ref: VX_ratingFactors.lob > VX_lobs.name
+
+// 100% confidence, empirically detected
+Ref: VX_workbookSheets.workbook > VX_workbooks.name
+
+// 100% confidence, empirically detected
+Ref: VX_workbookSheets.lob > VX_lobs.name
+
+// 100% confidence, empirically detected
+Ref: VX_taxes.state > VX_states.abv
+
+// 100% confidence, empirically detected
+Ref: VX_taxes.stateName > VX_states.name
+
+// 100% confidence, empirically detected
+Ref: VX_countyTaxes.county > VX_counties.name
+
+// 100% confidence, empirically detected
+Ref: VX_countyTaxes.state > VX_states.abv
+
+// 100% confidence, empirically detected
+Ref: VX_countyTaxes.stateName > VX_states.name
+
+// 100% confidence, empirically detected
+Ref: VX_premiumRules.lob > VX_lobs.name
+
+// 80% confidence, empirically detected
+Ref: VX_eligibilityRules.lob > VX_lobs.name
+
+// 100% confidence, empirically detected
+Ref: VX_versions.product > VX_products.name
+
+// 100% confidence, empirically detected
+Ref: VX_versions.lob > VX_lobs.name
+
+// 100% confidence, empirically detected
+Ref: VX_quotes.product > VX_products.name
+
+// 100% confidence, empirically detected
+Ref: VX_quotes.lob > VX_lobs.name
+
+// 100% confidence, empirically detected
+Ref: VX_quotes.county > VX_counties.name
+
+// 100% confidence, empirically detected
+Ref: VX_policies.product > VX_products.name
+
+// 100% confidence, empirically detected
+Ref: VX_policies.lob > VX_lobs.name
+
+// 85% confidence, empirically detected
+Ref: VX_policies.state > VX_states.abv
+
+// 100% confidence, empirically detected
+Ref: VX_users.role > VX_roles.name
+
+// 100% confidence, empirically detected
+Ref: VX_factorChangeLog.factorCode > VX_ratingFactors.code
+
+// 100% confidence, empirically detected
+Ref: VX_factorChangeLog.factorName > VX_ratingFactors.name
+
+// 100% confidence, empirically detected
+Ref: VX_factorChangeLog.lob > VX_lobs.name
+
+// 100% confidence, empirically detected
+Ref: VX_factorChangeLog.state > VX_states.abv
+
+// 100% confidence, empirically detected
+Ref: VX_savedFormulas.lob > VX_lobs.name
+
+// 80% confidence, empirically detected
+Ref: VX_savedFormulas.cob > VX_cob.name
+

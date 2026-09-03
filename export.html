@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Export Configuration — Administration | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/grid.js"></script>
+<script>
+vxShell("Export Configuration", "Export any part of the rating configuration. || For offline review, regulatory filing, backup, or promotion to another environment.",
+  [{ l: "Administration" }, { l: "Export Configuration" }]);
+
+const MODULES = [
+  ["products","Products",VX.products.length],["lobs","Lines of Business",VX.lobs.length],
+  ["cob","Coverages / Class of Business",VX.cob.length],["industryClasses","Industry Classes (NAICS)",VX.industryClasses.length],
+  ["ratingFactors","Rating Factors",VX.ratingFactors.length],["baseRates","Base Rate Tables",VX.baseRates.length],
+  ["lookupTables","Lookup Tables",VX.lookupTables.length],["versions","Rating Versions",VX.versions.length],
+  ["states","States",VX.states.length],["counties","Counties",VX.counties.length],
+  ["territories","Territories",VX.territories.length],["zipcodes","ZIP Codes",VX.zipcodes.length],
+  ["discounts","Discounts",VX.discounts.length],["surcharges","Surcharges",VX.surcharges.length],
+  ["fees","Fees",VX.fees.length],["taxes","Taxes",VX.taxes.length],
+  ["premiumRules","Premium Rules",VX.premiumRules.length],
+  ["eligibilityRules","Eligibility Rules",VX.eligibilityRules.length],["users","Users",VX.users.length],
+  ["roles","Roles",VX.roles.length],["settings","System Settings",VX.settings.length],
+  ["audit","Audit Log",VX.audit.length],
+];
+
+document.getElementById("vxBody").innerHTML = `
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="vx-card vx-anim">
+      <div class="vx-card-head"><div><h2>Select Modules to Export</h2><div class="sub">Choose one or more configuration modules</div></div>
+        <div class="d-flex gap-2"><button class="btn btn-outline-secondary btn-sm" onclick="all(true)">Select All</button>
+        <button class="btn btn-outline-secondary btn-sm" onclick="all(false)">Clear</button></div></div>
+      <div class="row g-2">
+        ${MODULES.map(([k, l, n]) => `<div class="col-md-6"><div class="vx-fld" style="cursor:pointer" onclick="tog('${k}')">
+          <input class="form-check-input M" type="checkbox" data-k="${k}" data-l="${l}" onclick="event.stopPropagation()">
+          <div style="flex:1"><b>${l}</b><small>${vxNum(n)} rows</small></div></div></div>`).join("")}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="vx-card vx-anim">
+      <h2>Export Options</h2>
+      <div class="mb-3"><label>Format</label><select class="form-select form-select-sm" id="fmt">
+        <option>CSV (one file per module)</option><option>XLSX (multi-sheet workbook)</option>
+        <option>JSON (API payload format)</option><option>DBML (schema definition)</option></select></div>
+      <div class="mb-3"><label>Rating Version</label><select class="form-select form-select-sm" id="ver">
+        <option>Active versions only</option><option>All versions (full history)</option>
+        ${[...new Set(VX.versions.map(v => v.version))].slice(0, 6).map(v => `<option>${v}</option>`).join("")}</select></div>
+      <div class="mb-3"><label>Scope</label><select class="form-select form-select-sm" id="scope">
+        <option>All lines of business</option>${vxLobNames().map(n => `<option>${n}</option>`).join("")}</select></div>
+      <div class="mb-3"><label>Purpose</label><select class="form-select form-select-sm" id="purp">
+        <option>Offline review</option><option>Regulatory filing packet</option>
+        <option>Environment promotion (Sandbox → Prod)</option><option>Backup / archive</option></select></div>
+      <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="meta" checked>
+        <label class="form-check-label" for="meta" style="font-size:12.3px">Include metadata (effective dates, versions, audit stamps)</label></div>
+      <div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" id="inact">
+        <label class="form-check-label" for="inact" style="font-size:12.3px">Include inactive / expired records</label></div>
+      <button class="btn btn-primary w-100" onclick="run()"><i class="fa-solid fa-file-export me-1"></i>Generate Export</button>
+      <div id="out" class="mt-3"></div>
+    </div>
+    <div class="vx-card vx-anim vx-anim-d1">
+      <h2>Recent Exports</h2>
+      ${[["Full configuration backup","XLSX","2026-08-01","S. Patel"],["TX filing packet","CSV","2026-07-24","Compliance"],
+         ["Trucking factors v2026.03","JSON","2026-07-18","J. Romero"],["Schema definition","DBML","2026-07-02","Platform"]]
+        .map(([n, f, d, u]) => `<div class="d-flex justify-content-between align-items-center py-2" style="border-bottom:1px solid var(--border)">
+        <div><b style="font-size:12.4px">${n}</b><div style="font-size:11px;color:var(--text-mute)">${d} · ${u}</div></div>
+        <span class="vx-b blue">${f}</span></div>`).join("")}
+    </div>
+  </div>
+</div>`;
+
+function tog(k) { const c = document.querySelector(`.M[data-k="${k}"]`); c.checked = !c.checked; }
+function all(v) { document.querySelectorAll(".M").forEach(c => c.checked = v); }
+function run() {
+  const sel = [...document.querySelectorAll(".M:checked")];
+  if (!sel.length) return vxToast("Nothing selected", "Choose at least one module to export", "warn");
+  const out = document.getElementById("out");
+  out.innerHTML = `<div style="font-size:12.5px;color:var(--text-dim)"><span class="vx-spin" style="vertical-align:-2px"></span> Generating ${sel.length} module${sel.length>1?"s":""}…</div>`;
+  setTimeout(() => {
+    const rows = sel.reduce((a, c) => a + (VX[c.dataset.k] || []).length, 0);
+    out.innerHTML = `<div class="vx-ai"><span class="tag"><i class="fa-solid fa-circle-check"></i>Export ready</span>
+      <b>${sel.length}</b> modules · <b>${vxNum(rows)}</b> rows · ${document.getElementById("fmt").value.split(" ")[0]}<br>
+      <span style="font-size:11.5px;color:var(--text-dim)">${sel.map(s => s.dataset.l).join(", ")}</span>
+      <button class="btn btn-primary btn-sm w-100 mt-2" onclick="dl()"><i class="fa-solid fa-download me-1"></i>Download</button></div>`;
+    vxToast("Export generated", `${sel.length} modules, ${vxNum(rows)} rows`, "ok");
+  }, 900);
+}
+function dl() {
+  const sel = [...document.querySelectorAll(".M:checked")];
+  const first = sel[0];
+  const data = VX[first.dataset.k] || [];
+  if (!data.length) return;
+  const cols = Object.keys(data[0]).map(k => ({ k, l: k }));
+  vxCSV("veridex-" + first.dataset.k, cols, data);
+}
+</script>
+</body>
+</html>

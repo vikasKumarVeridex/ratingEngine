@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Coverages — Configuration | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+<style>
+.tr-p{background:var(--surface-2)}
+.tr-p td{font-weight:650}
+.tr-c td:first-child{padding-left:38px;position:relative}
+.tr-c td:first-child::before{content:"";position:absolute;left:20px;top:0;bottom:50%;border-left:1px solid var(--border);border-bottom:1px solid var(--border);width:10px}
+</style>
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/grid.js"></script>
+<script>
+vxShell("Coverages (Class of Business)", "A coverage IS a class of business. || Read-only: the coverage tree is shared filed reference data. Choose which coverages a product writes on the Products screen.",
+  [{ l: "Products & Rating" }, { l: "Coverages" }]);
+
+let LOB = "All", Q = "", OPEN = {};
+VX.cobParents.forEach(p => OPEN[p.id] = true);
+
+document.getElementById("vxPageActions").innerHTML =
+  `<button class="btn btn-outline-secondary btn-sm" onclick="toggleAll(true)">Expand All</button>
+   <button class="btn btn-outline-secondary btn-sm" onclick="toggleAll(false)">Collapse All</button>
+   <a class="btn btn-outline-secondary btn-sm" href="products.html"><i class="fa-solid fa-cubes me-1"></i>Products</a>`;
+
+document.getElementById("vxBody").innerHTML = `
+  <div class="vx-exp2 vx-anim" id="expCov" style="border-left-color:var(--primary)">
+    <div class="hd"><i class="fa-solid fa-sitemap" style="color:var(--primary);font-size:11.5px"></i><b>Hierarchy</b><span><b>${VX.cobParents.length}</b> primary coverages · <b>${VX.cob.length - VX.cobParents.length}</b> child.</span><button type="button" class="tog" onclick="vxExpToggle(&#39;expCov&#39;)">Why?</button></div>
+    <div class="bd"><p>Every premium row carries a <code>class_of_business_id</code> and a <code>parent_cob_id</code>. Rows with no parent are <b>Primary</b> coverages — what the agent picks. Rows pointing at a parent are <b>Child</b> coverages, which appear once the primary is selected.</p></div>
+  </div>
+
+  <div class="vx-card vx-anim">
+    <div class="vx-tools">
+      <div class="l">
+        <div class="vx-search" style="max-width:250px"><i class="fa-solid fa-magnifying-glass"></i>
+          <input class="form-control form-control-sm" id="q" placeholder="Search coverages..." style="padding-left:32px"></div>
+        <select class="form-select form-select-sm" style="width:auto" id="lob">
+          <option>All</option>${vxLobNames().filter(n=>VX.cob.some(c=>c.lob===n)).map(n=>`<option>${n}</option>`).join("")}</select>
+      </div>
+      <div class="r"><button class="btn btn-outline-secondary btn-sm" onclick="exp()"><i class="fa-solid fa-file-export me-1"></i>Export</button></div>
+    </div>
+    <div class="vx-tw"><table class="vx-t">
+      <thead><tr><th>Coverage / Class of Business</th><th>Level</th><th>Code</th><th>Line of Business</th>
+        <th>Rating Basis</th><th>Unit</th><th>Default Limit</th><th>Deductible</th><th>Status</th>
+        <th>Formula</th><th>Required</th><th>Quotes</th><th style="text-align:right">Actions</th></tr></thead>
+      <tbody id="tb"></tbody></table></div>
+    <div class="vx-tfoot"><span id="cnt"></span></div>
+  </div>`;
+
+function rows() {
+  const out = [];
+  VX.cobParents.forEach(p => {
+    const kids = VX.cob.filter(c => c.parentCobId === p.id);
+    const hit = x => !Q || x.name.toLowerCase().includes(Q) || x.code.toLowerCase().includes(Q);
+    const lobOk = LOB === "All" || p.lob === LOB;
+    if (!lobOk) return;
+    const kidHits = kids.filter(hit);
+    if (!hit(p) && !kidHits.length) return;
+    out.push({ ...p, _kids: kids.length });
+    if (OPEN[p.id]) (Q ? kidHits : kids).forEach(k => out.push(k));
+  });
+  return out;
+}
+
+/* A coverage's formula is addressed the exact same way applySavedFormula()
+   (engine.js) already looks one up at rating time — (lob, coverage name) —
+   so this is a real link into what actually rates the quote, not a new,
+   separate linkage concept. */
+function formulaFor(r) {
+  return (VX.savedFormulas || []).find(f => f.lob === r.lob && f.status === "Active"
+    && (f.cob === r.name || f.cob === (r.parentName || r.name)));
+}
+function eligibilityForLob(r) {
+  return (VX.eligibilityRules || []).filter(e => e.active && (e.lob === "All" || e.lob === r.lob));
+}
+const COV_STATUS = { Active: "green", Draft: "amber", Retired: "gray" };
+function draw() {
+  const list = rows();
+  document.getElementById("tb").innerHTML = list.length ? list.map(r => {
+    const isP = !r.parentCobId;
+    const formula = formulaFor(r);
+    return `<tr class="${isP ? "tr-p" : "tr-c"}" data-id="${r.id}">
+      <td>${isP
+        ? `<i class="fa-solid fa-chevron-${OPEN[r.id] ? "down" : "right"} me-2" style="font-size:9px;cursor:pointer;width:10px" onclick="OPEN[${r.id}]=!OPEN[${r.id}];draw()"></i>
+           <b>${r.name}</b> <span class="vx-b blue" style="margin-left:6px">${r._kids} child</span>`
+        : `${r.name}`}</td>
+      <td><span class="vx-b ${isP ? "purple" : "gray"}">${r.level}</span></td>
+      <td><code style="font-size:11.5px">${r.code}</code></td>
+      <td>${r.lob}</td>
+      <td style="font-size:12.2px">${r.ratingBasis}</td>
+      <td><span class="vx-b cyan" title="${(vxUnit(r.unit)||{}).basis||""}">${r.unit || "—"}</span></td>
+      <td>${r.defaultLimit ? vxMoney(r.defaultLimit) : "—"}</td>
+      <td>${r.deductible ? vxMoney(r.deductible) : "—"}</td>
+      <td><span class="vx-b ${COV_STATUS[r.status] || "gray"}">${r.status || "Active"}</span></td>
+      <td>${formula ? `<a href="formula-builder.html" class="vx-b green" style="text-decoration:none" title="${formula.name}"><i class="fa-solid fa-check"></i> Linked</a>` : '<span class="vx-b gray">None</span>'}</td>
+      <td>${r.mandatory ? '<span class="vx-b green">Required</span>' : '<span class="vx-b gray">Optional</span>'}</td>
+      <td>${vxNum(r.quotes)}</td>
+      <td><div class="vx-ra">
+        <button title="View" onclick="view(${r.id})"><i class="fa-solid fa-eye"></i></button>
+      </div></td></tr>`;
+  }).join("") : `<tr><td colspan="13"><div class="vx-empty"><i class="fa-solid fa-inbox"></i>No coverages match.</div></td></tr>`;
+  document.getElementById("cnt").textContent =
+    `${list.filter(r=>!r.parentCobId).length} primary · ${list.filter(r=>r.parentCobId).length} child shown of ${VX.cob.length} total`;
+}
+
+function toggleAll(v) { VX.cobParents.forEach(p => OPEN[p.id] = v); draw(); }
+function view(id) {
+  const r = VX.cob.find(c => c.id == id);
+  const kids = VX.cob.filter(c => c.parentCobId == id);
+  const formula = formulaFor(r);
+  const elig = eligibilityForLob(r);
+  const unit = vxUnit(r.unit);
+  vxModal(r.name, `
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:14px;font-size:12px;padding:10px 12px;background:var(--surface-2);border-radius:8px">
+      <span class="vx-b purple">${vxTenant().name}</span><i class="fa-solid fa-arrow-right" style="font-size:9px;color:var(--text-mute)"></i>
+      <span class="vx-b blue">${r.lob}</span><i class="fa-solid fa-arrow-right" style="font-size:9px;color:var(--text-mute)"></i>
+      <span class="vx-b cyan">${r.name}</span><i class="fa-solid fa-arrow-right" style="font-size:9px;color:var(--text-mute)"></i>
+      <a href="units.html" class="vx-b gray" style="text-decoration:none">${r.unit || "no unit"}</a><i class="fa-solid fa-arrow-right" style="font-size:9px;color:var(--text-mute)"></i>
+      <a href="versions.html" class="vx-b gray" style="text-decoration:none">${r.version}</a>
+    </div>
+    <div class="row g-3">
+    ${[["Level",r.level],["Code",r.code],["Line of Business",r.lob],["Parent",r.parentName||"— (this is a primary coverage)"],
+       ["Rating Basis",r.ratingBasis],["Unit",r.unit?`${r.unit}${unit?` — ${unit.basis}`:""}`:"—"],
+       ["Default Limit",r.defaultLimit?vxMoney(r.defaultLimit):"—"],["Deductible",r.deductible?vxMoney(r.deductible):"—"],
+       ["Status",r.status||"Active"],["Effective",r.effectiveStart?(r.effectiveStart+(r.effectiveEnd?" – "+r.effectiveEnd:" – open")):"—"],
+       ["Required",r.mandatory?"Yes":"No"],["Source Reference",r.sourceRef],["Quotes",vxNum(r.quotes)]]
+      .map(([l,v])=>`<div class="col-md-6"><label class="d-block">${l}</label><div style="font-size:13.3px">${v}</div></div>`).join("")}
+    <div class="col-md-6"><label class="d-block">Formula</label><div style="font-size:13.3px">
+      ${formula ? `<a href="formula-builder.html">${formula.name} →</a>` : '<span style="color:var(--text-mute)">No active formula attached</span>'}</div></div>
+    <div class="col-md-6"><label class="d-block">Eligibility</label><div style="font-size:13.3px">
+      ${elig.length ? `${elig.length} rule${elig.length===1?"":"s"} apply to ${r.lob} (${elig.filter(e=>e.evaluable).length} evaluable)` : '<span style="color:var(--text-mute)">No rules for this LOB</span>'}</div></div>
+    </div>
+    ${kids.length ? `<h6 style="font-size:12.5px;font-weight:700;margin:16px 0 8px">Child Coverages (${kids.length})</h6>
+      <div class="vx-tw"><table class="vx-t"><tbody>${kids.map(k=>`<tr><td>${k.name}</td>
+      <td><code style="font-size:11.5px">${k.code}</code></td>
+      <td>${k.mandatory?'<span class="vx-b green">Required</span>':'<span class="vx-b gray">Optional</span>'}</td></tr>`).join("")}</tbody></table></div>` : ""}`,
+    [{ t: "Close", c: "secondary" }]);
+}
+function form(rec, parentId) {
+  const isNew = !rec;
+  const r = rec ? { ...rec } : { parentCobId: parentId || null, level: parentId ? "Child" : "Primary", version: "v2026.03", active: true, quotes: 0, childCount: 0 };
+  vxModal(`${isNew ? "Add" : "Edit"} ${r.parentCobId ? "Child" : "Primary"} Coverage`, `<div class="row g-3">
+    <div class="col-md-6"><label>Coverage / Class of Business Name</label><input class="form-control form-control-sm C" data-k="name" value="${r.name||""}"></div>
+    <div class="col-md-6"><label>Code</label><input class="form-control form-control-sm C" data-k="code" value="${r.code||""}"></div>
+    <div class="col-md-6"><label>Line of Business</label><select class="form-select form-select-sm C" data-k="lob">
+      ${vxLobNames().map(n=>`<option ${n===r.lob?"selected":""}>${n}</option>`).join("")}</select></div>
+    <div class="col-md-6"><label>Parent Coverage</label><select class="form-select form-select-sm C" data-k="parentCobId">
+      <option value="">— None (this is a Primary coverage)</option>
+      ${VX.cobParents.map(p=>`<option value="${p.id}" ${p.id==r.parentCobId?"selected":""}>${p.lob} — ${p.name}</option>`).join("")}</select></div>
+    <div class="col-md-6"><label>Rating Basis</label><select class="form-select form-select-sm C" data-k="ratingBasis">
+      ${["Loss Cost × ILF × LCM","Rate × Exposure","Flat Charge","% of Parent Premium","Sublimit of Aggregate","Included in parent"]
+        .map(o=>`<option ${o===r.ratingBasis?"selected":""}>${o}</option>`).join("")}</select></div>
+    <div class="col-md-6"><label>Default Limit</label><input type="number" class="form-control form-control-sm C" data-k="defaultLimit" value="${r.defaultLimit||0}"></div>
+    <div class="col-md-6"><label>Unit</label><select class="form-select form-select-sm C" data-k="unit">
+      ${vxUnitNames().map(n=>`<option ${n===r.unit?"selected":""}>${n}</option>`).join("")}</select></div>
+    <div class="col-md-6"><label>Deductible</label><input type="number" class="form-control form-control-sm C" data-k="deductible" value="${r.deductible||0}"></div>
+    <div class="col-md-6"><label>Status</label><select class="form-select form-select-sm C" data-k="status">
+      ${["Draft","Active","Retired"].map(s=>`<option ${s===(r.status||"Active")?"selected":""}>${s}</option>`).join("")}</select></div>
+    <div class="col-md-6"><label>Effective Start</label><input type="date" class="form-control form-control-sm C" data-k="effectiveStart" value="${r.effectiveStart||""}"></div>
+    <div class="col-md-6"><label>Effective End (blank = open)</label><input type="date" class="form-control form-control-sm C" data-k="effectiveEnd" value="${r.effectiveEnd||""}"></div>
+    <div class="col-md-6"><label class="d-block">Required on every quote</label>
+      <div class="form-check form-switch"><input class="form-check-input C" type="checkbox" data-k="mandatory" ${r.mandatory?"checked":""}></div></div>
+    <div class="col-md-6"><label class="d-block">Active</label>
+      <div class="form-check form-switch"><input class="form-check-input C" type="checkbox" data-k="active" ${r.active?"checked":""}></div></div>
+    </div>
+    <div class="vx-ai mt-3"><span class="tag"><i class="fa-solid fa-wand-magic-sparkles"></i>AI Validation</span>
+    ${r.parentCobId ? "Child coverages inherit their parent's LOB and roll their premium into the parent group on the quote."
+      : "Primary coverages appear in the agent's coverage picker. Add child coverages after saving."}</div>`,
+    [{ t: "Cancel", c: "secondary" }, { t: "Save", c: "primary", fn: () => {
+      document.querySelectorAll(".C").forEach(i => {
+        let v = i.type === "checkbox" ? i.checked : i.value;
+        if (i.dataset.k === "parentCobId") v = v ? +v : null;
+        if (i.dataset.k === "defaultLimit" || i.dataset.k === "deductible") v = +v;
+        r[i.dataset.k] = v;
+      });
+      r.level = r.parentCobId ? "Child" : "Primary";
+      if (r.parentCobId) { const p = VX.cob.find(c => c.id === r.parentCobId); r.parentName = p ? p.name : ""; r.lob = p ? p.lob : r.lob; }
+      if (isNew) { r.id = r.cobId = Date.now(); VX.cob.push(r); }
+      else { const i = VX.cob.findIndex(c => c.id === rec.id); VX.cob[i] = r; }
+      VX.cobParents = VX.cob.filter(c => !c.parentCobId);
+      VX.cobParents.forEach(p => p.childCount = VX.cob.filter(c => c.parentCobId === p.id).length);
+      if (r.parentCobId) OPEN[r.parentCobId] = true;
+      vxToast("Coverage saved", r.name, "ok"); vxAutoSave(); draw();
+    }}]);
+}
+function edit(id) { form(VX.cob.find(c => c.id == id)); }
+function addCov() { form(null, null); }
+function addChild(pid) { form(null, pid); }
+function del(id) {
+  const r = VX.cob.find(c => c.id == id);
+  const kids = VX.cob.filter(c => c.parentCobId == id).length;
+  vxConfirm("Delete coverage?", `Remove <b>${r.name}</b>?${kids ? ` This will also remove its <b>${kids} child coverage${kids>1?"s":""}</b>.` : ""}`,
+    () => { VX.cob = VX.cob.filter(c => c.id != id && c.parentCobId != id);
+      VX.cobParents = VX.cob.filter(c => !c.parentCobId);
+      vxToast("Coverage deleted", r.name, "err"); vxAutoSave(); draw(); }, true);
+}
+function exp() {
+  const cols = [{k:"level",l:"Level"},{k:"name",l:"Coverage"},{k:"code",l:"Code"},{k:"lob",l:"LOB"},
+    {k:"parentName",l:"Parent"},{k:"ratingBasis",l:"Rating Basis"},{k:"defaultLimit",l:"Default Limit"},{k:"mandatory",l:"Required"}];
+  vxCSV("coverages-class-of-business", cols, VX.cob);
+}
+document.getElementById("q").oninput = e => { Q = e.target.value.toLowerCase(); draw(); };
+document.getElementById("lob").onchange = e => { LOB = e.target.value; draw(); };
+draw();
+</script>
+</body>
+</html>

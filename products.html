@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Products — Configuration | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-grid.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-theme-quartz.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/dist/ag-grid-community.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/app-types.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/grid.js"></script>
+<script src="assets/js/ag-grid-adapter.js"></script>
+<script>
+vxShell("Product Management", "Create and publish products. || Each product owns rating versions, coverages and rule sets.", [{l:"Configuration"},{l:"Product Management"}]);
+document.getElementById("vxBody").innerHTML = `
+  <div class="vx-exp2 vx-anim" id="expProd" style="border-left-color:var(--primary)">
+    <div class="hd"><i class="fa-solid fa-route" style="color:var(--primary);font-size:11.5px"></i><b>Rater</b><span>Every product uses the <span class="vx-b blue">Custom</span> engine. Surplus lines only.</span><button type="button" class="tog" onclick="vxExpToggle('expProd')">Why?</button></div>
+    <div class="bd"><p>There is no shared generic form-rater on this platform: a product either has a rater built for it in
+    <code>engine.js</code> or it isn't offered. <b>App Type</b> keeps the mapping back to
+    <code>ams_service.ins_application_type</code> traceable.</p>
+    <p>This is a <b>non-admitted (surplus lines / E&amp;S)</b> platform — every carrier is surplus-lines licensed.</p></div>
+  </div>
+  <div class="vx-card vx-anim"><div id="grid"></div></div>`;
+
+const VSTAT = { Published:"green", Draft:"amber", Scheduled:"blue", Expired:"gray", Archived:"gray" };
+/* Versions belong to the active tenant's partition, and one product can have
+   several — resolve the row's own label to its version record so the grid can
+   show whether the engine a product points at is actually published. */
+function versionsFor(productName) {
+  const tid = (typeof COSMOS !== "undefined") ? COSMOS.tenantId() : null;
+  return VX.versions.filter(v => v.product === productName
+    && (tid == null || v.tenantId == null || v.tenantId === tid));
+}
+function verOf(p) { return versionsFor(p.name).find(v => v.version === p.version) || null; }
+
+/* Coverage tree for the LOB currently chosen in the form. Primary coverages
+   become groups, their children the leaves — the same parent/child model
+   coverages.html renders, rather than a flattened name list. */
+function coverageGroups(cur) {
+  const lob = cur && cur.lob;
+  if (!lob) return [];
+  return VX.cobParents.filter(c => c.lob === lob).map(p => ({
+    label: p.name,
+    badge: p.mandatory ? "required" : "",
+    children: VX.cob.filter(c => c.parentCobId === p.id).map(c => c.name),
+  }));
+}
+
+/* Rating versions for this product, PUBLISHED FIRST, then Scheduled, Draft
+   and the rest — so the engine actually rating quotes is the obvious pick.
+   Falls back to every version in the LOB when the product is brand new and
+   has none of its own yet. */
+const VORDER = ["Published", "Scheduled", "Draft", "Expired", "Archived"];
+function versionOpts(cur) {
+  let vers = cur && cur.name ? versionsFor(cur.name) : [];
+  if (!vers.length && cur && cur.lob) {
+    const prods = VX.products.filter(p => p.lob === cur.lob).map(p => p.name);
+    const seen = new Set();
+    vers = VX.versions.filter(v => prods.includes(v.product))
+      .filter(v => (seen.has(v.version) ? false : (seen.add(v.version), true)));
+  }
+  vers = vers.slice().sort((a, b) => {
+    const d = VORDER.indexOf(a.status) - VORDER.indexOf(b.status);
+    return d !== 0 ? d : (b.effectiveStart || "").localeCompare(a.effectiveStart || "");
+  });
+  const opts = vers.map(v => ({ value: v.version, label: `${v.version} — ${v.status}` }));
+  // keep whatever the record already points at selectable, even if retired
+  if (cur && cur.version && !opts.some(o => o.value === cur.version)) {
+    opts.unshift({ value: cur.version, label: `${cur.version} — not on file` });
+  }
+  return opts.length ? opts : [{ value: "", label: "No rating version yet — create one in Versions" }];
+}
+
+/* ============================================================
+   Product Configuration Upload.
+
+   Deliberately NOT wired through grid.js's shared importModal() — that
+   control is decorative (its file input has no read handler at all) and
+   shared by every vxAgGrid page on the platform, so making it real here
+   would silently change behaviour on Discounts, Fees, Factors and every
+   other grid too. This is its own control, scoped to Products only.
+
+   coverage_class resolves (per vxMapUploadedConfig in core.js) to a rating
+   CLASS CODE — General Liability's classCode or Commercial Trucking's
+   ratingClass — not a VX.cob coverage name, so it is stored on the product
+   as `configClass` rather than pushed into `cob`, which holds coverage
+   names and means something different.
+
+   The payload may optionally name an existing product via `product_code` to
+   update; when it doesn't (or names one that isn't found), a NEW Draft
+   product is created rather than guessing which existing row to overwrite —
+   overwriting the wrong product is the more expensive mistake. Either way,
+   nothing is written until the preview modal below is confirmed. */
+document.getElementById("vxPageActions").innerHTML =
+  `<label class="btn btn-outline-secondary btn-sm" for="prodCfgUpload" style="margin-bottom:0;cursor:pointer">
+     <i class="fa-solid fa-file-arrow-up me-1"></i>Upload Product Configuration</label>
+   <input type="file" id="prodCfgUpload" accept=".json" class="vx-sr">`;
+
+document.getElementById("prodCfgUpload").onchange = async e => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  let raw;
+  try { raw = await vxParseJsonUpload(file); }
+  catch (err) { vxToast("Upload failed", err.message, "err"); return; }
+
+  const mapped = vxMapUploadedConfig(raw);
+  if (!mapped.ok) { vxToast("Configuration not applied", mapped.reason, "err"); return; }
+
+  const code = raw.product_code || raw.code || null;
+  const existing = code ? VX.products.find(p => p.code === code) : null;
+  const action = existing ? "Update" : "Create";
+
+  vxModal(`${action} product from uploaded configuration`, `
+    <div class="vx-tw"><table class="vx-t"><tbody>
+      <tr><td style="width:170px">Action</td><td><b>${action}</b>${existing ? ` — ${existing.name} (${existing.code})` : " — new Draft product"}</td></tr>
+      <tr><td>Line of Business</td><td>${mapped.lobName}</td></tr>
+      <tr><td>Coverage class</td><td>${mapped.coverageClass || "—"}
+        ${mapped.coverageClassWarning ? `<div style="color:var(--warn);font-size:11.5px;margin-top:3px"><i class="fa-solid fa-triangle-exclamation me-1"></i>${mapped.coverageClassWarning}</div>` : ""}</td></tr>
+    </tbody></table></div>`,
+    [{ t: "Cancel", c: "secondary" },
+     { t: action + " Product", c: "primary", fn: () => {
+        if (existing) {
+          existing.lob = mapped.lobName;
+          existing.configClass = mapped.coverageClass || null;
+        } else {
+          const id = Math.max(0, ...VX.products.map(p => p.id)) + 1;
+          VX.products.push({
+            id, code: code || ("UP" + id), name: raw.product_name || (mapped.lobName + " (Uploaded)"),
+            lob: mapped.lobName, cob: [], states: 0, version: "", status: "Draft",
+            owner: "Uploaded Configuration", updated: new Date().toISOString().slice(0, 10),
+            quotes: 0, gwp: 0, appTypeId: null, raterType: "Custom",
+            configClass: mapped.coverageClass || null,
+          });
+        }
+        try { localStorage.setItem("vxProductsState", JSON.stringify(VX.products)); } catch (err) {}
+        vxToast(`Product ${action.toLowerCase()}d`, mapped.lobName + (mapped.coverageClass ? " — " + mapped.coverageClass : ""), "ok");
+        location.reload();
+     }}], "modal-md");
+};
+
+/* ============================================================
+   Export Product JSON — the inverse of Upload Configuration /
+   vxImportProductStudioExport (data.js). Produces the same
+   "insurance-product-studio-product-v1" shape that importer reads, built
+   from this product's REAL, currently-configured data:
+     - the full coverage tree it actually writes (not just top-level covers)
+     - every rating factor on file for its line, COMPLETE — not a curated
+       subset, the point of this button is "everything, not just coverage"
+     - its LOB's eligibility rules
+     - a base premium, only when one is genuinely on file as a program
+       param for the line (never invented)
+   Deliberately excludes the saved FORMULA — a product's formula is
+   authored per tenant in Formula Builder, not something an export/import
+   round-trip should carry; the receiving tenant defines its own. */
+function productExportCoverage(r) {
+  const rows = VX.cob.filter(c => c.lob === r.lob);
+  const selected = new Set(r.cob || []);
+  const included = new Set();
+  const out = [];
+  const addRow = c => {
+    if (included.has(c.id)) return;
+    included.add(c.id);
+    out.push({
+      id: "COV-" + c.code, name: c.name, code: c.code,
+      type: c.parentCobId ? undefined : "Cover",
+      availability: c.mandatory ? "mandatory" : "optional",
+      conditionalOn: c.parentCobId ? c.parentName : undefined,
+      // What this coverage is actually rated per (see units.html) — carried
+      // through explicitly so a re-import doesn't have to guess it back
+      // from the LOB alone; a coverage can use a non-default unit.
+      unit: c.unit || undefined,
+    });
+  };
+  rows.filter(c => selected.has(c.name)).forEach(c => {
+    // A selected child's parent must be in the export too, or the
+    // importer (which resolves conditionalOn within this same list)
+    // can't place it — include the parent even if only the child was
+    // explicitly checked on the product.
+    if (c.parentCobId) { const p = rows.find(x => x.id === c.parentCobId); if (p) addRow(p); }
+    addRow(c);
+  });
+  return out;
+}
+function productExportEligibility(r) {
+  return VX.eligibilityRules.filter(x => x.lob === r.lob).map(x => ({
+    id: "ELG-" + x.code, name: x.name, code: x.code, status: x.active ? "active" : "inactive",
+    outcomeType: x.severity === "decline" ? "hard" : "soft",
+    description: x.desc || "",
+  }));
+}
+function productExportRating(r) {
+  const factors = (typeof COSMOS !== "undefined" ? COSMOS.query("ratingFactors", {}) : VX.ratingFactors)
+    .filter(f => f.lob === r.lob);
+  const groups = {};
+  factors.forEach(f => {
+    const g = f.coverage || f.driver || "Other";
+    const item = {
+      id: "RAT-" + (f.code || f.id), name: f.name,
+      type: f.kind === "Lookup" ? "factor" : "judgment",
+      status: f.wired ? "done" : "declared", value: f.kind === "Lookup" ? "table" : (f.driver || "underwriter"),
+    };
+    // The actual rating table behind a Lookup factor — not just its name.
+    // VX[tableId] is the exact live object engine.js and rate-tables.html
+    // both read (see rate-tables-registry.js's "read straight off VX" note),
+    // so this is the real data, not a re-derived or sampled copy. Every one
+    // of these tables is small enough (max ~410 rows here) to embed in full.
+    if (f.kind === "Lookup" && f.tableId && VX[f.tableId] != null) {
+      item.table = { id: f.tableId, sourceSheet: f.sourceSheet || null, data: VX[f.tableId] };
+    }
+    (groups[g] = groups[g] || []).push(item);
+  });
+  const out = Object.entries(groups).map(([group, items]) => ({ group, items }));
+  // Real minimum policy premiums live in premium-rules.html's own collection
+  // (VX.premiumRules, scope "Policy Premium"); VX.programParams only ever
+  // gets a "Base Premium (Uploaded)" row from a PRIOR import (re-exporting
+  // an already-imported product), so check both rather than inventing one.
+  const baseRule = VX.premiumRules.find(p => p.lob === r.lob && p.scope === "Policy Premium" && p.type === "Minimum" && p.active);
+  const baseParam = VX.programParams.find(p => p.lob === r.lob && /base premium|minimum policy premium/i.test(p.param));
+  const baseName = baseRule ? baseRule.name : (baseParam ? baseParam.param : null);
+  const baseValue = baseRule ? baseRule.value : (baseParam ? baseParam.value : null);
+  if (baseValue != null) {
+    out.unshift({ group: "BASE PREMIUM", items: [{
+      id: "RAT-BASE", name: baseName, type: "base", status: "done",
+      value: "$" + vxNum(baseValue) + "/yr", amount: String(baseValue), configured: true,
+    }] });
+  }
+  return { rating: out, basePremium: baseValue };
+}
+function productExportJson(r) {
+  const rating = productExportRating(r);
+  const now = new Date().toISOString();
+  return {
+    schema: "insurance-product-studio-product-v1",
+    exportedAt: now,
+    productId: r.code, version: r.version || "v1", status: r.status === "Active" ? "active" : "draft",
+    product: {
+      id: r.code, name: r.name, family: r.lob, version: r.version || "v1",
+      status: r.status === "Active" ? "active" : "draft",
+      effectiveFrom: r.updated || now.slice(0, 10), effectiveTo: null,
+      owner: r.owner || "", lastModifiedBy: r.owner || "",
+      segment: r.lob, productType: r.lob, lineOfBusiness: r.lob,
+      carrier: (VX.tenants.find(t => t.id === VX.activeTenantId) || {}).carrier || "",
+      mga: [], code: r.code, description: "Exported from VeriDex Product Management.",
+      jurisdictions: Array.isArray(r.states) ? r.states : [],
+      lastModified: r.updated || now.slice(0, 10), lastModifiedAt: now,
+    },
+    studios: {
+      coverage: productExportCoverage(r),
+      eligibility: productExportEligibility(r),
+      rating: rating.rating,
+    },
+    pricing: { basePremium: rating.basePremium },
+  };
+}
+function downloadProductExportJson(r) {
+  const json = JSON.stringify(productExportJson(r), null, 2);
+  const blob = new Blob([json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = (r.code || r.name || "product") + "-export.json";
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  vxToast("Product exported", r.name + " — coverage, eligibility and every rating factor on file for " + r.lob + " (formula not included; the receiving tenant defines its own).", "ok");
+}
+
+vxAgGrid({ el:"#grid", key:"products", name:"Product",
+
+  cols:[{k:"name",l:"Product"},{k:"code",l:"Code"},{k:"lob",l:"Line of Business"},
+      /* Lead with the application type's NAME — the numeric id is an internal
+         routing key from ams_service, meaningless on its own. It stays as
+         secondary text (and in the tooltip) because it's the only thing that
+         maps a product back to the source system. */
+      {k:"appTypeId",l:"App Type",r:r=>{const at=vxAppType(r.appTypeId);
+        return '<span class="vx-b blue" title="ins_application_type '+r.appTypeId+'">'+(at?at.name:'Unmapped type')+'</span>'
+          +'<div style="font-size:10.5px;color:var(--text-mute);margin-top:2px">'+r.raterType+' rater · id '+r.appTypeId+'</div>';}},
+      {k:"cob",l:"Coverages",r:r=>{const s=r.cob||[];
+        const par=s.filter(n=>VX.cobParents.some(c=>c.name===n)), kid=s.filter(n=>!par.includes(n));
+        return s.length ? par.map(x=>'<span class="vx-b purple me-1">'+x+'</span>').join("")
+          + (kid.length?'<span class="vx-b cyan" title="'+kid.join(', ')+'">+'+kid.length+' child</span>':'')
+          : '<span class="vx-b red">none selected</span>';}},
+      {k:"states",l:"States",r:r=>{const s=Array.isArray(r.states)?r.states:[];
+        return s.length ? '<span class="vx-b blue" title="'+s.join(', ')+'">'+s.length+' states</span>' : "—";}},
+      {k:"version",l:"Rating Engine",r:r=>{const v=verOf(r);
+        return '<a href="versions.html?product='+encodeURIComponent(r.name)+'" class="vx-b '+(v?VSTAT[v.status]||"gray":"red")+'" style="text-decoration:none" title="'+(v?'Status: '+v.status:'No matching rating version on file')+'">'
+          +r.version+(v?' · '+v.status:' · not found')+' <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:9px;margin-left:3px"></i></a>';}},
+      {k:"quotes",l:"Quotes",r:r=>vxNum(r.quotes)},{k:"gwp",l:"GWP",r:r=>vxMoney(r.gwp)},
+      {k:"status",l:"Status",r:r=>'<span class="vx-b '+(r.status==="Active"?"green":r.status==="Draft"?"amber":"gray")+'">'+r.status+'</span>'},
+      {k:"owner",l:"Owner"},{k:"updated",l:"Updated"}],
+  form:[{k:"name",l:"Product Name"},{k:"code",l:"Product Code"},
+      {k:"lob",l:"Line of Business",t:"select",opts:vxLobNames()},
+      /* Pick the application type by name, not by typing its id — the id is
+         an ams_service routing key nobody memorises, and a free number box
+         accepted values that map to no rater at all. */
+      {k:"appTypeId",l:"Application Type",t:"select",
+        opts:Object.entries(VX_APP_TYPES).map(([id,a])=>({value:+id,label:`${a.name} · ${a.lob}`}))},
+      {k:"raterType",l:"Rater Type",t:"select",opts:["Custom"],def:"Custom"},
+      /* Coverages as the real parent/child tree, scoped to the chosen line —
+         the flat list this replaced mixed primaries and children from every
+         LOB together, so you could tick a Cyber child onto a trucking
+         product. Re-renders when the LOB changes. */
+      {k:"cob",l:"Coverages",t:"tree",dependsOn:"lob",groups:coverageGroups,
+        hint:"Expand a primary coverage to choose which of its child coverages this product writes. Ticking a primary selects only that primary — children are picked individually."},
+      /* Published versions first — that's the one actually rating quotes;
+         a Draft can be picked deliberately but shouldn't be the default. */
+      {k:"version",l:"Rating Version",t:"select",dependsOn:"lob",clearOnChange:false,opts:versionOpts,
+        hint:"Published versions are listed first — a Draft rates nothing until it is published."},
+      {k:"states",l:"States Enabled",t:"dropdown",w:6,placeholder:"No states selected",
+        opts:VX.states.map(s=>({value:s.abv,label:`${s.abv} — ${s.name}`})),
+        hint:"Surplus-lines licences are per state; a quote can only be written where the product is enabled."},
+      {k:"status",l:"Status",t:"select",opts:["Active","Draft","Retired"]},{k:"owner",l:"Owner"}],
+  /* A live product is a filed thing: its name, code, LOB, app type and coverage
+     set are what was filed, so they are not editable after creation. Swapping
+     which rating version it points at IS a normal operational change, so that
+     is the one field an edit can touch. Clone / version-history / delete are
+     off for the same reason — a filed product is not duplicated or removed
+     from this screen. */
+  noClone:true, noHist:true, noDelete:true, editOnly:["version"],
+  filters:[{k:"lob",l:"LOB",opts:vxLobNames()},{k:"status",l:"Status",opts:["Active","Draft","Retired"]},{k:"raterType",l:"Rater Type",opts:["Custom"]}],
+  rowActions:[{i:"fa-solid fa-file-export",t:"Export JSON (coverage, complete factors & eligibility — no formula)",fn:r=>downloadProductExportJson(r)}] });
+
+</script>
+</body>
+</html>

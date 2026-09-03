@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Loss Run Analytics — Main | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+<style>
+.lrbar{height:6px;border-radius:4px;background:var(--surface-3);overflow:hidden;min-width:60px}
+.lrbar i{display:block;height:100%;border-radius:4px}
+.lrtabs .nav-link{cursor:pointer}
+</style>
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/grid.js"></script>
+<script>
+vxShell("Loss Run Analytics", "Earned premium vs. incurred losses by state and county. || Shows which lines need a rate action, and who already changed a rating factor in response.",
+  [{ l: "Overview" }, { l: "Loss Run Analytics" }]);
+
+/* ==========================================================================
+   Everything here rolls up from VX.quotes, which is a representative
+   PORTFOLIO SAMPLE, not real claims data — this platform (and the source
+   trucking workbook) has no historical loss-run feed. The banner below says
+   so. Structure and math are real: earned premium and incurred losses are
+   summed straight off the quote records, loss ratio = incurred / earned,
+   and the "target" compared against is the program's real Target Loss
+   Ratio (Trucking 0.60 and Property 0.52 are sourced values; GL/MPL/Cyber
+   are labelled illustrative in Rate Tables' own registry).
+   ========================================================================== */
+const TARGETS = Object.fromEntries(VX.programParams.filter(p => p.param === "Target Loss Ratio").map(p => [p.lob, p]));
+const Q = VX.quotes;
+
+/* Rollups can be restricted to one quote status. Loss ratio on BOUND premium
+   is the figure that actually matters — mixing in declined and expired
+   submissions inflates the denominator with premium never written — so the
+   status filter re-runs the rollup rather than filtering the rolled-up rows,
+   which would leave the ratios computed off the wrong base. */
+/* `f` narrows the underlying QUOTES before the rollup, so loss ratios are
+   computed off the filtered base. Filtering rolled-up rows instead would
+   leave every ratio calculated against the whole book — e.g. "MGA = Anchor"
+   would show Anchor's states but everyone's loss ratio. */
+function rollup(groupFn, f) {
+  f = f || {};
+  const g = {};
+  const src = Q.filter(q =>
+    (!f.status  || q.status  === f.status) &&
+    (!f.state   || q.state   === f.state) &&
+    (!f.lob     || q.lob     === f.lob) &&
+    (!f.carrier || q.carrier === f.carrier) &&
+    (!f.mga     || q.mga     === f.mga) &&
+    (!f.broker  || q.broker  === f.broker));
+  src.forEach(q => {
+    const key = groupFn(q);
+    if (!key) return;
+    if (!g[key]) g[key] = { key, country: q.country || "US", premium: 0, incurred: 0, claims: 0, quotes: 0, lobs: {} };
+    g[key].premium += q.premium; g[key].incurred += q.incurredLosses; g[key].claims += q.claims; g[key].quotes++;
+    g[key].lobs[q.lob] = (g[key].lobs[q.lob] || 0) + q.premium;
+  });
+  return Object.values(g).map(r => {
+    const topLob = Object.entries(r.lobs).sort((a, b) => b[1] - a[1])[0][0];
+    const target = (TARGETS[topLob] || {}).value ?? 0.55;
+    const lr = r.premium ? r.incurred / r.premium : 0;
+    return { ...r, topLob, target, lr, gap: lr - target };
+  });
+}
+// State/province view covers both USA and Canada (cross-border trucking
+// exposure); County view is USA-only, since D.counties has no Canadian
+// equivalent — Canadian quotes simply don't have a county and are excluded
+// from that rollup rather than faked.
+const byState = rollup(q => q.state).sort((a, b) => b.lr - a.lr);
+const byCounty = rollup(q => q.county ? q.county + ", " + q.state : null).sort((a, b) => b.lr - a.lr);
+/* Canadian provinces are treated exactly like states here — one combined
+   list, no country filter. Rating/taxes elsewhere still assume a US state;
+   this dashboard is the only place cross-border exposure is rolled up. */
+const LOB_OPTS = [...new Set(byState.map(r => r.topLob))].sort();
+const STATUS_OPTS  = [...new Set(Q.map(q => q.status))].filter(Boolean).sort();
+const STATE_OPTS   = [...new Set(Q.map(q => q.state))].filter(Boolean).sort();
+const CARRIER_OPTS = [...new Set(Q.map(q => q.carrier))].filter(Boolean).sort();
+const MGA_OPTS     = [...new Set(Q.map(q => q.mga))].filter(Boolean).sort();
+/* Brokers appointed to one MGA — the Broker filter only appears once an MGA
+   is chosen, and lists just that wholesaler's retail agencies. */
+function brokersFor(mga) {
+  return [...new Set(Q.filter(q => !mga || q.mga === mga).map(q => q.broker))].filter(Boolean).sort();
+}
+/* Paging state per tab — these tables run to 50+ rows and were a single
+   scroll box with no sense of how far through you were. */
+const PAGE = { st: 1, ct: 1, size: 15 };
+
+/* -------- LOB rollup (real target per LOB, same TARGETS map as the state view) -------- */
+const byLob = Object.values(Q.reduce((g, q) => {
+  (g[q.lob] = g[q.lob] || { key: q.lob, premium: 0, incurred: 0, claims: 0, quotes: 0 });
+  g[q.lob].premium += q.premium; g[q.lob].incurred += q.incurredLosses; g[q.lob].claims += q.claims; g[q.lob].quotes++;
+  return g;
+}, {})).map(r => {
+  const target = (TARGETS[r.key] || {}).value ?? 0.55;
+  const lr = r.premium ? r.incurred / r.premium : 0;
+  return { ...r, target, lr, gap: lr - target, targetSrc: (TARGETS[r.key] || {}).src || "Illustrative" };
+}).sort((a, b) => b.lr - a.lr);
+
+/* -------- Monthly trend, real per-quote effectiveDate bucketed by month --------
+   The sample portfolio spans roughly Jun 2025 – Jan 2026 (see data.js's dt()
+   helper) — real dates on real records, bucketed here, not a fabricated series. */
+const byMonth = Object.values(Q.reduce((g, q) => {
+  const m = q.effectiveDate.slice(0, 7);
+  (g[m] = g[m] || { key: m, premium: 0, incurred: 0, quotes: 0 });
+  g[m].premium += q.premium; g[m].incurred += q.incurredLosses; g[m].quotes++;
+  return g;
+}, {})).map(r => ({ ...r, lr: r.premium ? r.incurred / r.premium : 0 }))
+  .sort((a, b) => a.key.localeCompare(b.key));
+
+const totalPrem = Q.reduce((s, q) => s + q.premium, 0);
+const totalInc = Q.reduce((s, q) => s + q.incurredLosses, 0);
+const overallLR = totalPrem ? totalInc / totalPrem : 0;
+const increaseStates = byState.filter(s => s.gap > 0.08 && s.quotes >= 3);
+const decreaseStates = byState.filter(s => s.gap < -0.15 && s.quotes >= 3);
+
+function actionOf(gap) { return gap > 0.08 ? "up" : gap < -0.15 ? "down" : "flat"; }
+function lrColor(gap) { return gap > 0.08 ? "var(--bad)" : gap < -0.15 ? "var(--good)" : "var(--warn)"; }
+function lrChip(gap) {
+  if (gap > 0.08) return `<span class="vx-b red"><i class="fa-solid fa-arrow-trend-up me-1"></i>Increase</span>`;
+  if (gap < -0.15) return `<span class="vx-b green"><i class="fa-solid fa-arrow-trend-down me-1"></i>Decrease</span>`;
+  return `<span class="vx-b gray">On target</span>`;
+}
+
+/* -------- AI rate-action suggestions -------- */
+function suggestions() {
+  const out = [];
+  increaseStates.slice(0, 6).forEach(s => {
+    const pct = Math.round(Math.min(s.gap / s.target, 0.35) * 100);
+    out.push({ sev: "danger", state: s.key, action: `Increase ${s.topLob} rates ~${pct}%`,
+      text: `${s.key}: loss ratio ${(s.lr * 100).toFixed(0)}% vs. ${(s.target * 100).toFixed(0)}% target for ${s.topLob} — ${s.claims} claims across ${s.quotes} quotes, ${vxNum(s.incurred)} incurred.` });
+  });
+  decreaseStates.slice(0, 4).forEach(s => {
+    const pct = Math.round(Math.min(Math.abs(s.gap) / s.target, 0.25) * 100);
+    out.push({ sev: "info", state: s.key, action: `Room to decrease ${s.topLob} rates ~${pct}%`,
+      text: `${s.key}: loss ratio ${(s.lr * 100).toFixed(0)}% vs. ${(s.target * 100).toFixed(0)}% target for ${s.topLob} — consistently profitable, competitive opportunity.` });
+  });
+  return out;
+}
+
+document.getElementById("vxBody").innerHTML = `
+  <div class="mb-3 vx-anim" style="border:1px solid var(--border);border-left:3px solid var(--accent);background:var(--primary-soft);border-radius:0 10px 10px 0;padding:11px 15px;font-size:12.3px;line-height:1.6">
+    <i class="fa-solid fa-circle-info me-1" style="color:var(--accent)"></i>
+    <b>Representative portfolio sample, not real claims data.</b> Loss ratios are summed live off the quote portfolio.
+    Trucking (60%) and Property (52%) targets are real sourced values; GL, MPL and Cyber targets are illustrative.
+    Covers <b>${byState.length} states/provinces</b> — Canadian provinces are treated as states here (cross-border
+    trucking exposure); the County view is USA-only, as no Canadian county dataset exists in this platform.</div>
+
+  <div class="vx-card vx-anim mb-3" style="padding:12px 16px">
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-mute)">Scope</span>
+      <select class="form-select form-select-sm" id="pgLob" style="width:auto"><option value="">All lines of business</option>
+        ${LOB_OPTS.map(l => `<option>${l}</option>`).join("")}</select>
+      <select class="form-select form-select-sm" id="pgCarrier" style="width:auto"><option value="">All carriers (IC)</option>
+        ${CARRIER_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
+      <select class="form-select form-select-sm" id="pgMga" style="width:auto"><option value="">All MGAs</option>
+        ${MGA_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
+      <select class="form-select form-select-sm" id="pgBroker" style="width:auto;display:none"><option value="">All brokers</option></select>
+      <select class="form-select form-select-sm" id="pgStatus" style="width:auto"><option value="">All quote statuses</option>
+        ${STATUS_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
+      <button class="btn btn-outline-secondary btn-sm" id="pgClr"><i class="fa-solid fa-filter-circle-xmark me-1"></i>Clear</button>
+      <span id="pgScope" class="ms-auto" style="font-size:11.5px;color:var(--text-mute)"></span>
+    </div>
+  </div>
+
+  <div id="lrStats" class="row g-2 mb-3">
+    <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">Overall Loss Ratio</div>
+      <div class="val" style="color:${lrColor(overallLR - 0.55)}">${(overallLR * 100).toFixed(1)}%</div>
+      <div class="dt flat">$${vxNum(totalInc)} incurred / $${vxNum(totalPrem)} earned</div></div></div>
+    <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">States — Rate Increase Indicated</div>
+      <div class="val" style="color:var(--bad)">${increaseStates.length}</div><div class="dt flat">loss ratio &gt;8pt over target</div></div></div>
+    <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">States — Room to Decrease</div>
+      <div class="val" style="color:var(--good)">${decreaseStates.length}</div><div class="dt flat">loss ratio &gt;15pt under target</div></div></div>
+    <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">Total Claims (sample)</div>
+      <div class="val">${vxNum(Q.reduce((s, q) => s + q.claims, 0))}</div><div class="dt flat">across ${vxNum(Q.length)} quotes</div></div></div>
+  </div>
+
+  <div class="vx-card vx-anim mb-3">
+    <div class="vx-card-head" style="cursor:pointer" onclick="toggleSugg()">
+      <div><h2><i class="fa-solid fa-wand-magic-sparkles me-2" style="color:var(--purple)"></i>Rate Action Suggestions
+        <span class="vx-b amber ms-1" id="suggCount"></span></h2>
+        <div class="sub">From each state's loss-ratio gap against target — a starting point for actuarial review, not a filing</div></div>
+      <i class="fa-solid fa-chevron-down" id="suggChev" style="font-size:12px;color:var(--text-mute);transition:.15s"></i>
+    </div>
+    <div id="aiSugg" style="display:none;margin-top:10px"></div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-lg-6">
+      <div class="vx-card vx-anim" style="height:100%">
+        <h2>Premium &amp; Incurred Losses — Monthly</h2>
+        <div class="sub">Real per-quote effective dates, bucketed by month — line is the resulting loss ratio</div>
+        <canvas id="cTrend" height="220"></canvas>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="vx-card vx-anim" style="height:100%">
+        <h2>Loss Ratio by Line of Business</h2>
+        <div class="sub">Each bar's target line is that LOB's real or illustrative Target Loss Ratio</div>
+        <canvas id="cLob" height="220"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="vx-card vx-anim mb-3">
+    <h2>Top States/Provinces — Furthest From Target</h2>
+    <div class="sub">Loss ratio gap vs. target, worst first — the same states driving the AI suggestions above</div>
+    <canvas id="cGap" height="140"></canvas>
+  </div>
+
+  <ul class="nav nav-tabs lrtabs mb-3">
+    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabState">By State <span class="vx-b blue ms-1">${byState.length}</span></button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabCounty">By County <span class="vx-b blue ms-1">${byCounty.length}</span></button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabChanges">Who Changed What <span class="vx-b amber ms-1">${VX.factorChangeLog.length}</span></button></li>
+  </ul>
+  <div class="tab-content">
+    <div class="tab-pane fade show active" id="tabState">
+      <div class="vx-card vx-anim">
+        <div class="vx-tools mb-2"><div class="l">
+          <div class="vx-search" style="max-width:230px"><i class="fa-solid fa-magnifying-glass"></i>
+            <input class="form-control form-control-sm" id="stq" placeholder="Search state / province..." style="padding-left:32px"></div>
+          <select class="form-select form-select-sm" id="stLob" style="width:auto"><option value="">All lines of business</option>
+            ${LOB_OPTS.map(l => `<option>${l}</option>`).join("")}</select>
+          <select class="form-select form-select-sm" id="stAct" style="width:auto"><option value="">Any rate action</option>
+            <option value="up">Increase indicated</option><option value="flat">On target</option><option value="down">Room to decrease</option></select>
+          <select class="form-select form-select-sm" id="stStatus" style="width:auto"><option value="">All quote statuses</option>
+            ${STATUS_OPTS.map(s => `<option>${s}</option>`).join("")}</select>
+          <select class="form-select form-select-sm" id="stCarrier" style="width:auto"><option value="">All carriers (IC)</option>
+            ${CARRIER_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
+          <select class="form-select form-select-sm" id="stMga" style="width:auto"><option value="">All MGAs</option>
+            ${MGA_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
+          <select class="form-select form-select-sm" id="stBroker" style="width:auto;display:none"><option value="">All brokers</option></select>
+          <button class="btn btn-outline-secondary btn-sm" id="stClr"><i class="fa-solid fa-filter-circle-xmark me-1"></i>Clear</button>
+          <span id="stCount" style="font-size:11.5px;color:var(--text-mute);align-self:center"></span>
+        </div></div>
+        <div class="vx-tw"><table class="vx-t">
+          <thead><tr><th>State / Province</th><th>Primary LOB</th><th style="text-align:right">Quotes</th>
+            <th style="text-align:right">Earned Premium</th><th style="text-align:right">Incurred Losses</th>
+            <th style="text-align:right">Loss Ratio vs Target</th><th>Trend</th></tr></thead>
+          <tbody id="stBody"></tbody></table></div>
+        <div class="vx-tfoot"><span id="stRange"></span><div id="stPager" class="d-flex gap-1"></div></div>
+      </div>
+    </div>
+    <div class="tab-pane fade" id="tabCounty">
+      <div class="vx-card vx-anim">
+        <div class="vx-tools mb-2"><div class="l">
+          <div class="vx-search" style="max-width:230px"><i class="fa-solid fa-magnifying-glass"></i>
+            <input class="form-control form-control-sm" id="ctq" placeholder="Search county..." style="padding-left:32px"></div>
+          <select class="form-select form-select-sm" id="ctLob" style="width:auto"><option value="">All lines of business</option>
+            ${LOB_OPTS.map(l => `<option>${l}</option>`).join("")}</select>
+          <select class="form-select form-select-sm" id="ctAct" style="width:auto"><option value="">Any rate action</option>
+            <option value="up">Increase indicated</option><option value="flat">On target</option><option value="down">Room to decrease</option></select>
+          <select class="form-select form-select-sm" id="ctStatus" style="width:auto"><option value="">All quote statuses</option>
+            ${STATUS_OPTS.map(s => `<option>${s}</option>`).join("")}</select>
+          <select class="form-select form-select-sm" id="ctState" style="width:auto"><option value="">All states</option>
+            ${STATE_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
+          <select class="form-select form-select-sm" id="ctCarrier" style="width:auto"><option value="">All carriers (IC)</option>
+            ${CARRIER_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
+          <select class="form-select form-select-sm" id="ctMga" style="width:auto"><option value="">All MGAs</option>
+            ${MGA_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
+          <select class="form-select form-select-sm" id="ctBroker" style="width:auto;display:none"><option value="">All brokers</option></select>
+          <button class="btn btn-outline-secondary btn-sm" id="ctClr"><i class="fa-solid fa-filter-circle-xmark me-1"></i>Clear</button>
+          <span id="ctCount" style="font-size:11.5px;color:var(--text-mute);align-self:center"></span>
+        </div></div>
+        <div class="vx-tw"><table class="vx-t">
+          <thead><tr><th>County</th><th>Primary LOB</th><th style="text-align:right">Quotes</th>
+            <th style="text-align:right">Earned Premium</th><th style="text-align:right">Incurred Losses</th>
+            <th style="text-align:right">Loss Ratio vs Target</th><th>Trend</th></tr></thead>
+          <tbody id="ctBody"></tbody></table></div>
+        <div class="vx-tfoot"><span id="ctRange"></span><div id="ctPager" class="d-flex gap-1"></div></div>
+      </div>
+    </div>
+    <div class="tab-pane fade" id="tabChanges">
+      <div class="vx-exp2 vx-anim" id="expLr" style="border-left-color:var(--primary)">
+    <div class="hd"><i class="fa-solid fa-user-pen" style="color:var(--primary);font-size:11.5px"></i><b>Factor changes</b><span>Who changed which factor, from what to what, and why.</span><button type="button" class="tog" onclick="vxExpToggle(&#39;expLr&#39;)">Why?</button></div>
+    <div class="bd"><p>Every row names a real factor from the Rating Factors registry, its before/after value, who changed it and why — distinct from the generic system audit log, which doesn't track factor-specific before/after values.</p><p>Rows are cross-checked against the states above: <span class="vx-b red">unaddressed</span> means that state is over target with no matching factor change on file.</p></div>
+  </div>
+      <div class="vx-card vx-anim">
+        <div class="vx-tools mb-2"><div class="l">
+          <div class="vx-search" style="max-width:280px"><i class="fa-solid fa-magnifying-glass"></i>
+            <input class="form-control form-control-sm" id="fcq" placeholder="Search factor, user, state..." style="padding-left:32px"></div>
+          <span id="fcCount" style="font-size:11.5px;color:var(--text-mute);align-self:center"></span>
+        </div></div>
+        <div class="vx-tw" style="max-height:560px;overflow-y:auto"><table class="vx-t">
+          <thead><tr><th>When</th><th>Who</th><th>Factor</th><th>State</th><th style="text-align:right">Change</th><th>Reason</th><th>Status</th></tr></thead>
+          <tbody id="fcBody"></tbody></table></div>
+      </div>
+    </div>
+  </div>`;
+
+document.getElementById("suggCount").textContent = suggestions().length + " suggested";
+document.getElementById("aiSugg").innerHTML = suggestions().length ? suggestions().map(s => `
+  <div class="d-flex gap-2 align-items-start py-2" style="border-bottom:1px solid var(--border)">
+    <span class="vx-b ${s.sev === "danger" ? "red" : "blue"}" style="flex:none;margin-top:2px"><i class="fa-solid ${s.sev === "danger" ? "fa-arrow-trend-up" : "fa-arrow-trend-down"}"></i></span>
+    <div style="flex:1"><b style="font-size:13px">${s.action}</b>
+      <div style="font-size:12px;color:var(--text-dim);margin-top:2px">${s.text}</div></div>
+    <button class="btn btn-outline-secondary btn-sm" onclick="vxToast('Flagged for review','${s.state} staged for actuarial review — not auto-applied','info')">Flag for Review</button>
+  </div>`).join("") : `<div class="vx-empty" style="padding:20px"><i class="fa-solid fa-check"></i>No states meaningfully off target.</div>`;
+
+function rowHtml(r) {
+  const maxAbs = Math.max(...byState.map(x => Math.abs(x.gap)), 0.01);
+
+  return `<tr>
+    <td><b>${r.key}</b></td>
+    <td style="font-size:11.8px"><span class="vx-b gray">${r.topLob.replace(" (MPL)", "")}</span></td>
+    <td style="text-align:right">${r.quotes}</td>
+    <td style="text-align:right">${vxMoney(r.premium)}</td>
+    <td style="text-align:right">${vxMoney(r.incurred)}</td>
+    <td style="text-align:right;white-space:nowrap">
+      <div class="d-flex align-items-center justify-content-end gap-2">
+        <span style="font-size:11.3px;color:var(--text-mute)">${(r.target * 100).toFixed(0)}% tgt</span>
+        <div class="lrbar"><i style="width:${Math.round(Math.abs(r.gap) / maxAbs * 100)}%;background:${lrColor(r.gap)}"></i></div>
+        <b style="color:${lrColor(r.gap)}">${(r.lr * 100).toFixed(1)}%</b>
+      </div></td>
+    <td>${lrChip(r.gap)}</td>
+  </tr>`;
+}
+/* Shared pager. Renders First/Prev/pages/Next/Last and clamps the current
+   page when a filter shrinks the result set under it. */
+function renderPager(prefix, total, onGo) {
+  const pages = Math.max(1, Math.ceil(total / PAGE.size));
+  if (PAGE[prefix] > pages) PAGE[prefix] = pages;
+  const cur = PAGE[prefix];
+  const from = total ? (cur - 1) * PAGE.size + 1 : 0;
+  const to = Math.min(cur * PAGE.size, total);
+  document.getElementById(prefix + "Range").textContent =
+    total ? `Showing ${from}–${to} of ${total}` : "Nothing to show";
+  const btn = (lbl, page, dis, active) =>
+    `<button class="btn btn-sm ${active ? "btn-primary" : "btn-outline-secondary"}" ${dis ? "disabled" : ""} data-pg="${page}">${lbl}</button>`;
+  // a short window around the current page, so 60 counties don't render 60 buttons
+  const win = [];
+  const lo = Math.max(1, cur - 2), hi = Math.min(pages, cur + 2);
+  for (let i = lo; i <= hi; i++) win.push(btn(i, i, false, i === cur));
+  document.getElementById(prefix + "Pager").innerHTML = pages > 1
+    ? btn('<i class="fa-solid fa-angles-left"></i>', 1, cur === 1)
+      + btn('<i class="fa-solid fa-angle-left"></i>', cur - 1, cur === 1)
+      + win.join("")
+      + btn('<i class="fa-solid fa-angle-right"></i>', cur + 1, cur === pages)
+      + btn('<i class="fa-solid fa-angles-right"></i>', pages, cur === pages)
+    : "";
+  document.querySelectorAll(`#${prefix}Pager [data-pg]`).forEach(b =>
+    b.onclick = () => { PAGE[prefix] = +b.dataset.pg; onGo(); });
+}
+
+function filterRows(all, q, lob, act) {
+  return all.filter(r =>
+    (!q || r.key.toLowerCase().includes(q)) &&
+    (!lob || r.topLob === lob) &&
+    (!act || actionOf(r.gap) === act));
+}
+
+/* Collect the quote-level filters for a tab, and reveal the Broker picker
+   only once an MGA is chosen — a broker list spanning every wholesaler is
+   not a useful control, and the appointment is what makes it meaningful. */
+function chainFilters(pfx) {
+  const val = id => { const el = document.getElementById(pfx + id); return el ? el.value : ""; };
+  const mga = val("Mga");
+  const bEl = document.getElementById(pfx + "Broker");
+  if (bEl) {
+    const show = !!mga;
+    bEl.style.display = show ? "" : "none";
+    if (show && bEl.dataset.mga !== mga) {
+      bEl.dataset.mga = mga;
+      const keep = bEl.value;
+      const opts = brokersFor(mga);
+      bEl.innerHTML = `<option value="">All brokers under ${mga}</option>`
+        + opts.map(b => `<option>${b}</option>`).join("");
+      bEl.value = opts.includes(keep) ? keep : "";
+    }
+    if (!show) { bEl.value = ""; bEl.dataset.mga = ""; }
+  }
+  return { status: val("Status"), state: val("State"), lob: val("Lob"),
+           carrier: val("Carrier"), mga, broker: bEl ? bEl.value : "" };
+}
+function activeChain(f) {
+  return [f.status && f.status + " quotes", f.state, f.lob, f.carrier, f.mga, f.broker]
+    .filter(Boolean).join(" · ");
+}
+
+function renderState() {
+  const q = (document.getElementById("stq").value || "").toLowerCase().trim();
+  const act = document.getElementById("stAct").value;
+  const f = chainFilters("st");
+  // any quote-level filter re-runs the rollup so ratios use the filtered base
+  const dirty = f.status || f.state || f.lob || f.carrier || f.mga || f.broker;
+  const all = dirty ? rollup(x => x.state, f).sort((a, b) => b.lr - a.lr) : byState;
+  const rows = filterRows(all, q, "", act);
+  const chain = activeChain(f);
+  document.getElementById("stCount").textContent =
+    `${rows.length} of ${all.length}` + (chain ? ` · ${chain}` : "");
+  renderPager("st", rows.length, renderState);
+  const page = rows.slice((PAGE.st - 1) * PAGE.size, PAGE.st * PAGE.size);
+  document.getElementById("stBody").innerHTML = page.length ? page.map(r => rowHtml(r)).join("")
+    : `<tr><td colspan="7"><div class="vx-empty" style="padding:22px"><i class="fa-solid fa-inbox"></i>
+       No states or provinces match these filters.</div></td></tr>`;
+}
+
+function renderCounty() {
+  const q = (document.getElementById("ctq").value || "").toLowerCase().trim();
+  const act = document.getElementById("ctAct").value;
+  const f = chainFilters("ct");
+  const dirty = f.status || f.state || f.lob || f.carrier || f.mga || f.broker;
+  const all = dirty
+    ? rollup(x => x.county ? x.county + ", " + x.state : null, f).sort((a, b) => b.lr - a.lr)
+    : byCounty;
+  const rows = filterRows(all, q, "", act);
+  const chain = activeChain(f);
+  document.getElementById("ctCount").textContent =
+    `${rows.length} of ${all.length}` + (chain ? ` · ${chain}` : "");
+  renderPager("ct", rows.length, renderCounty);
+  const page = rows.slice((PAGE.ct - 1) * PAGE.size, PAGE.ct * PAGE.size);
+  document.getElementById("ctBody").innerHTML = page.length ? page.map(r => rowHtml(r)).join("")
+    : `<tr><td colspan="7"><div class="vx-empty" style="padding:22px"><i class="fa-solid fa-inbox"></i>
+       No counties match these filters.</div></td></tr>`;
+}
+
+function renderChanges(q) {
+  q = (q || "").toLowerCase().trim();
+  const stateByAbv = Object.fromEntries(byState.map(s => [s.key, s]));
+  const addressedStates = new Set(VX.factorChangeLog.map(c => c.state));
+  const rows = VX.factorChangeLog.filter(c => !q || [c.factorName, c.factorCode, c.user, c.state, c.reason].join(" ").toLowerCase().includes(q));
+  document.getElementById("fcCount").textContent = `${rows.length} of ${VX.factorChangeLog.length}`;
+  document.getElementById("fcBody").innerHTML = rows.length ? rows.map(c => {
+    const st = stateByAbv[c.state];
+    const overTarget = st && st.gap > 0.08;
+    return `<tr>
+      <td style="font-size:11.3px;white-space:nowrap">${c.timestamp}</td>
+      <td style="font-size:11.8px">${c.user.replace("@veridex.io", "")}</td>
+      <td><b style="font-size:12.3px">${c.factorName}</b><div style="font-size:10.5px;color:var(--text-mute)">${c.lob} · <code style="font-size:9.5px">${c.factorCode}</code></div></td>
+      <td>${c.state}</td>
+      <td style="text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums">${c.from} → ${c.to} <span style="color:${c.pctChange > 0 ? "var(--bad)" : "var(--good)"};font-size:11px">(${c.pctChange > 0 ? "+" : ""}${c.pctChange}%)</span></td>
+      <td style="font-size:11.5px">${c.reason}</td>
+      <td>${overTarget ? '<span class="vx-b amber">Still over target</span>' : (st ? '<span class="vx-b green">Resolved</span>' : '<span class="vx-b gray">—</span>')}</td>
+    </tr>`;
+  }).join("") : `<tr><td colspan="7" style="text-align:center;color:var(--text-mute);padding:20px">No changes match "${q}".</td></tr>`;
+}
+
+/* Filter wiring — every control on a tab re-renders that tab's table, and
+   resets it to page 1: staying on page 4 of a freshly-filtered 12-row result
+   would show an empty table. */
+["stq","stLob","stAct","stStatus","stCarrier","stMga","stBroker"].forEach(id => {
+  const el = document.getElementById(id);
+  el[id === "stq" ? "oninput" : "onchange"] = () => { PAGE.st = 1; renderState(); };
+});
+document.getElementById("stClr").onclick = () => {
+  ["stq","stLob","stAct","stStatus","stCarrier","stMga","stBroker"].forEach(id => { const e=document.getElementById(id); if(e) e.value=""; });
+  PAGE.st = 1; renderState();
+};
+["ctq","ctLob","ctAct","ctStatus","ctState","ctCarrier","ctMga","ctBroker"].forEach(id => {
+  const el = document.getElementById(id);
+  el[id === "ctq" ? "oninput" : "onchange"] = () => { PAGE.ct = 1; renderCounty(); };
+});
+document.getElementById("ctClr").onclick = () => {
+  ["ctq","ctLob","ctAct","ctStatus","ctState","ctCarrier","ctMga","ctBroker"].forEach(id => { const e=document.getElementById(id); if(e) e.value=""; });
+  PAGE.ct = 1; renderCounty();
+};
+document.getElementById("fcq").oninput = e => renderChanges(e.target.value);
+
+function toggleSugg() {
+  const b = document.getElementById("aiSugg"), c = document.getElementById("suggChev");
+  const open = b.style.display !== "none";
+  b.style.display = open ? "none" : "block";
+  c.style.transform = open ? "" : "rotate(180deg)";
+}
+
+renderState(); renderCounty(); renderChanges("");
+
+/* -------- charts -------- */
+function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+let charts = [];
+function drawCharts() {
+  charts.forEach(c => c.destroy()); charts = [];
+  const grid = css("--border"), txt = css("--text-dim");
+  vxChartDefaults();
+  const bad = css("--bad"), good = css("--good"), warn = css("--warn"), primary = css("--primary"), accent = css("--accent");
+  // lrColor() returns a literal "var(--x)" string, valid as an inline HTML
+  // style but not as a Canvas fillStyle (Chart.js draws to canvas, which
+  // can't parse CSS var() syntax) — resolve to the actual color here.
+  const lrColorResolved = gap => gap > 0.08 ? bad : gap < -0.15 ? good : warn;
+
+  const monthLabel = m => new Date(m + "-01").toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+  charts.push(new Chart(document.getElementById("cTrend"), {
+    data: { labels: byMonth.map(m => monthLabel(m.key)), datasets: [
+      { type: "bar", label: "Earned Premium", data: byMonth.map(m => m.premium), backgroundColor: primary, borderRadius: 4, barPercentage: .6, yAxisID: "y" },
+      { type: "bar", label: "Incurred Losses", data: byMonth.map(m => m.incurred), backgroundColor: accent, borderRadius: 4, barPercentage: .6, yAxisID: "y" },
+      { type: "line", label: "Loss Ratio", data: byMonth.map(m => m.lr * 100), borderColor: bad, backgroundColor: "transparent",
+        borderWidth: 2, tension: .3, pointRadius: 3, pointBackgroundColor: bad, yAxisID: "y1" },
+    ]},
+    options: { responsive: true, interaction: { mode: "index", intersect: false },
+      plugins: { legend: { position: "bottom", labels: { usePointStyle: true, pointStyle: "circle", boxWidth: 7, padding: 14 } },
+        tooltip: { callbacks: { label: ctx => ctx.dataset.yAxisID === "y1" ? ` ${ctx.dataset.label}: ${ctx.raw.toFixed(1)}%` : ` ${ctx.dataset.label}: ${vxMoney(ctx.raw)}` } } },
+      scales: {
+        x: { grid: { display: false } },
+        y: { grid: { color: grid }, border: { display: false }, ticks: { callback: v => "$" + vxNum(v) } },
+        y1: { position: "right", grid: { display: false }, border: { display: false }, ticks: { callback: v => v + "%" } },
+      } } }));
+
+  charts.push(new Chart(document.getElementById("cLob"), {
+    type: "bar", data: { labels: byLob.map(r => r.key.replace(" (MPL)", "")), datasets: [
+      { label: "Loss Ratio", data: byLob.map(r => +(r.lr * 100).toFixed(1)), backgroundColor: byLob.map(r => lrColorResolved(r.gap)), borderRadius: 4, barPercentage: .55 },
+      { label: "Target", data: byLob.map(r => +(r.target * 100).toFixed(1)), backgroundColor: css("--text-mute"), borderRadius: 4, barPercentage: .55 },
+    ]},
+    options: { indexAxis: "y", responsive: true,
+      plugins: { legend: { position: "bottom", labels: { usePointStyle: true, pointStyle: "circle", boxWidth: 7, padding: 14 } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.raw}%` } } },
+      scales: { x: { grid: { color: grid }, border: { display: false }, ticks: { callback: v => v + "%" } }, y: { grid: { display: false } } } } }));
+
+  const movers = [...byState].sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap)).slice(0, 10).sort((a, b) => a.gap - b.gap);
+  charts.push(new Chart(document.getElementById("cGap"), {
+    type: "bar", data: { labels: movers.map(m => m.key),
+      datasets: [{ label: "Loss ratio gap vs target", data: movers.map(m => +(m.gap * 100).toFixed(1)),
+        backgroundColor: movers.map(m => lrColorResolved(m.gap)), borderRadius: 4, barPercentage: .65 }] },
+    options: { indexAxis: "y", responsive: true, plugins: { legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.raw > 0 ? "+" : ""}${ctx.raw}pt vs target` } } },
+      scales: { x: { grid: { color: grid }, border: { display: false }, ticks: { callback: v => (v > 0 ? "+" : "") + v + "pt" } }, y: { grid: { display: false } } } } }));
+}
+drawCharts();
+document.addEventListener("vx-theme", drawCharts);
+
+/* ---------------------------------------------------------------------------
+   Page-level scope.
+
+   These same filters already existed per-tab, but only inside the State table,
+   which sits below two charts - out of sight, and scoping only that one table
+   while the headline loss ratio above it still showed the whole book. The bar
+   at the top now owns scope: it recomputes the headline cards and mirrors its
+   values down into both tabs, so the page can never show a filtered table
+   under an unfiltered headline.
+   --------------------------------------------------------------------------- */
+function pageScope() {
+  const v = id => { const el = document.getElementById(id); return el ? el.value : ""; };
+  return { lob: v("pgLob"), carrier: v("pgCarrier"), mga: v("pgMga"), broker: v("pgBroker"), status: v("pgStatus") };
+}
+
+function renderHeadline() {
+  const f = pageScope();
+  const qs = Q.filter(q =>
+    (!f.status  || q.status  === f.status) &&
+    (!f.lob     || q.lob     === f.lob) &&
+    (!f.carrier || q.carrier === f.carrier) &&
+    (!f.mga     || q.mga     === f.mga) &&
+    (!f.broker  || q.broker  === f.broker));
+  const prem = qs.reduce((a, q) => a + q.premium, 0);
+  const inc  = qs.reduce((a, q) => a + q.incurredLosses, 0);
+  const lr   = prem ? inc / prem : 0;
+  const st   = rollup(q => q.state, f);
+  const up   = st.filter(x => x.gap > 0.08 && x.quotes >= 3);
+  const down = st.filter(x => x.gap < -0.15 && x.quotes >= 3);
+  const scope = [f.lob, f.carrier, f.mga, f.broker, f.status && f.status + " quotes"].filter(Boolean).join(" \u00b7 ");
+
+  const el = document.getElementById("lrStats");
+  if (el) el.innerHTML = `
+    <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">Overall Loss Ratio</div>
+      <div class="val" style="color:${lrColor(lr - 0.55)}">${(lr * 100).toFixed(1)}%</div>
+      <div class="dt flat">$${vxNum(inc)} incurred / $${vxNum(prem)} earned</div></div></div>
+    <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">States \u2014 Rate Increase Indicated</div>
+      <div class="val" style="color:var(--bad)">${up.length}</div><div class="dt flat">loss ratio &gt;8pt over target</div></div></div>
+    <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">States \u2014 Room to Decrease</div>
+      <div class="val" style="color:var(--good)">${down.length}</div><div class="dt flat">loss ratio &gt;15pt under target</div></div></div>
+    <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">Total Claims (sample)</div>
+      <div class="val">${vxNum(qs.reduce((a, q) => a + q.claims, 0))}</div>
+      <div class="dt flat">across ${vxNum(qs.length)} quotes</div></div></div>`;
+
+  const sc = document.getElementById("pgScope");
+  if (sc) sc.textContent = scope ? "Showing: " + scope : "Whole book \u00b7 " + vxNum(qs.length) + " quotes";
+}
+
+/* Push page scope down into the per-tab filters so the tables below match the
+   headline, then let each tab's own renderer run exactly as before. */
+function applyScopeToTabs() {
+  const f = pageScope();
+  [["st", renderState], ["ct", renderCounty]].forEach(([p, fn]) => {
+    const set = (sfx, val) => { const el = document.getElementById(p + sfx); if (el && el.value !== val) el.value = val; };
+    set("Lob", f.lob); set("Carrier", f.carrier); set("Mga", f.mga); set("Status", f.status);
+    // the broker list is built lazily per MGA, so refresh it before setting
+    chainFilters(p);
+    set("Broker", f.broker);
+    try { fn(); } catch (e) { /* tab not built yet */ }
+  });
+}
+
+function onScopeChange() {
+  // Broker only makes sense under a chosen MGA - same rule the tab filters use
+  const mga = document.getElementById("pgMga").value;
+  const b = document.getElementById("pgBroker");
+  if (b) {
+    b.style.display = mga ? "" : "none";
+    if (!mga) b.value = "";
+    else if (b.dataset.mga !== mga) {
+      b.dataset.mga = mga;
+      b.innerHTML = `<option value="">All brokers under ${mga}</option>`
+        + brokersFor(mga).map(x => `<option>${x}</option>`).join("");
+    }
+  }
+  renderHeadline();
+  applyScopeToTabs();
+}
+
+["pgLob", "pgCarrier", "pgMga", "pgBroker", "pgStatus"].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.onchange = onScopeChange;
+});
+const pgClr = document.getElementById("pgClr");
+if (pgClr) pgClr.onclick = () => {
+  ["pgLob", "pgCarrier", "pgMga", "pgBroker", "pgStatus"].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = "";
+  });
+  onScopeChange();
+};
+renderHeadline();
+
+</script>
+</body>
+</html>

@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Glossary — Rating | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+<style>
+.gterm{border-bottom:1px solid var(--border);padding:12px 0}
+.gterm:last-child{border-bottom:none}
+.gterm b{font-size:13.5px}
+.gterm .gab{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--text-mute);margin-left:8px}
+.gterm p{margin:4px 0 0;font-size:12.8px;color:var(--text-dim);line-height:1.6}
+.gterm .gex{margin-top:5px;font-size:11.5px;color:var(--text-mute)}
+.gnav a{display:block;padding:5px 8px;border-radius:6px;font-size:12.3px;color:var(--text-dim)}
+.gnav a:hover{background:var(--surface-2);color:var(--text)}
+</style>
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script>
+vxShell("Glossary", "Plain-language definitions. || For the rating and underwriting terms used across this platform.", [{ l: "Rules & Forms" }, { l: "Glossary" }]);
+
+const GROUPS = [
+  { key: "platform", title: "Platform & Workflow", icon: "fa-diagram-project", terms: [
+    { t: "LOB", ab: "Line of Business", d: "A category of insurance product — Commercial Trucking, General Liability, Commercial Property, Professional Liability (MPL), Cyber, Umbrella/Excess. Everything else in the platform is scoped under one." },
+    { t: "COB", ab: "Class of Business", d: "A specific coverage within a LOB — e.g. Trucking's Auto Liability, Physical Damage and Motor Truck Cargo, or Cyber's Liability, Breach Response, Cyber Crime and Business Loss. Some COBs have child coverages under them (a parent/child tree)." },
+    { t: "Product", d: "A sellable insurance program — e.g. \"Digital Trucking Program.\" A product belongs to one LOB, carries a set of COBs, and points at one current Rating Version." },
+    { t: "Rating Version", ab: "aka \"Rating Engine\"", d: "One dated, versioned snapshot of a product's rating logic — its factors, formulas and rules as of a specific effective date. Only one version can be Published per product at a time; older ones become Expired but stay queryable for in-force policies." },
+    { t: "App Type", ab: "Application Type", d: "The real system's routing key (ams_service.ins_application_type) that decides which rater a submission uses. Not the same as LOB — e.g. app_type 483 is specifically Commercial Trucking's per-vehicle engine." },
+    { t: "Rater Type", d: "Every product on this platform is Custom — a dedicated calculation engine built for that application type. There is no shared generic form-rater here: a product either has an engine written for it or it isn't offered. (The real system also had Generic and Legacy raters; the legacy app types 501–507 are hard-blocked server-side with \"this program is no longer available, please use digital rater\".)" },
+    { t: "Draft / Scheduled / Published / Expired / Archived", d: "A Rating Version's lifecycle. New versions start Draft and rate nothing. Publishing makes one version live — or Scheduled, if its effective date is in the future — and retires the prior Published version to Expired. Archived versions are kept only for lookup. Only a Published version rates new business." },
+    { t: "Readiness / Tested", d: "Whether every formula attached to a Draft version has actually been run through Evaluate Formula at least once. Publishing with untested formulas attached requires an explicit override." },
+    { t: "Attachment", d: "The link between one formula and one product's rating version. A single formula can have several attachments — e.g. the same Auto Liability formula attached to two different trucking products at once." },
+  ]},
+  { key: "portfolio", title: "Portfolio & Reporting", icon: "fa-chart-line", terms: [
+    { t: "GWP", ab: "Gross Written Premium", d: "Total premium written before deducting ceded reinsurance or commissions — the top-line revenue figure. Shown on Products, the Dashboard and Analytics." },
+    { t: "Earned Premium", d: "The portion of written premium that belongs to coverage already provided. A 12-month policy written on 1 January has earned about half its premium by 1 July; the rest is still unearned. Loss ratios are measured against earned, not written, premium." },
+    { t: "Incurred Losses", d: "Paid claims plus case reserves on claims still open — what the claims are ultimately expected to cost, not just what has been paid out so far. The numerator of the loss ratio on Loss Run Analytics." },
+    { t: "Loss Ratio", d: "Incurred Losses \u00f7 Earned Premium, as a percentage. The core measure of whether a book of business is priced adequately: above the target loss ratio means the rates are too low for the losses being seen. Drives the rate-action flags on Loss Run Analytics." },
+    { t: "Bind Rate", d: "The share of quotes that actually became policies. A low bind rate alongside a low loss ratio usually means pricing is above the market; a high bind rate with a high loss ratio means the opposite." },
+  ]},
+  { key: "general", title: "General Rating Factors", icon: "fa-calculator", terms: [
+    { t: "Base Loss Cost", d: "The starting, unloaded expected-loss rate for a risk — before any of the multiplicative factors below are applied. Usually sourced from ISO or a filed loss-cost table, by state and territory." },
+    { t: "LCM", ab: "Loss Cost Multiplier", d: "A single carrier-selected factor that converts a pure loss cost into a gross rate, loading in expenses, profit and contingencies. Example: 1.67 means the carrier charges 67% above the raw loss cost." },
+    { t: "ILF", ab: "Increased Limits Factor", d: "How much more a higher liability limit costs relative to a base (\"basic\") limit — e.g. a $1M limit might carry an ILF of 2.06 versus 1.00 at $100K." },
+    { t: "Basic Limit", d: "The reference limit (often $100,000) that loss costs and ILFs are built around before scaling up to the limit actually being sold." },
+    { t: "Deductible Factor", d: "A credit or debit applied for choosing a deductible other than the filing's base deductible — higher deductibles usually apply a factor below 1.0 (a credit)." },
+    { t: "Class Factor / Primary / Secondary Class", d: "A multiplier reflecting the specific risk classification — e.g. a vehicle's ISO primary class code, or a general liability class code — relative to the class the base rate was built for." },
+    { t: "Territory / Base Rate", d: "Loss costs vary by geography. A territory groups similar-risk ZIP codes or counties under one base rate before other factors apply." },
+    { t: "Schedule Rating / IRPM", ab: "Individual Risk Premium Modification", d: "An underwriter's judgment-based credit or debit (commonly ±25%) for characteristics a formula rate doesn't capture well — housekeeping, management quality, unique hazards." },
+    { t: "Experience Mod", d: "A factor derived from an account's own historical losses relative to what's expected for its size and class — good history earns a credit, bad history a debit. Usually credibility-weighted (see below) so small accounts aren't swung too hard by a single claim." },
+    { t: "Credibility", d: "How much weight an account's own loss history deserves versus the class-average rate, based on how much exposure (car-years, payroll, etc.) that history represents. More history = more credibility = more weight on the account's own experience." },
+    { t: "Account-Level Factor", d: "A single combined credit/debit applied once per policy (not per vehicle or per coverage) — usually the sum of several underwriting characteristics like years in business, safety rating, and prior loss frequency, clamped to a min/max band." },
+    { t: "Minimum Premium", d: "The lowest premium a policy can be written for, regardless of how low the formula otherwise calculates — a floor, applied after everything else." },
+    { t: "TIV", ab: "Total Insured Value", d: "The full replacement value being insured — for Property, typically Building + Business Personal Property." },
+  ]},
+  { key: "trucking", title: "Commercial Trucking", icon: "fa-truck", terms: [
+    { t: "AL / PD / Cargo", ab: "Auto Liability / Physical Damage / Motor Truck Cargo", d: "Trucking's three core coverages. AL covers injury/property damage liability; PD (often called APD) covers damage to the insured's own vehicles; Cargo covers freight being hauled." },
+    { t: "APD", ab: "Automobile Physical Damage", d: "Another name for the Physical Damage coverage — collision and comprehensive damage to owned or scheduled vehicles." },
+    { t: "OCN Factor", d: "A factor banded by a vehicle's stated value (not its class) that adjusts liability rates for higher- or lower-value units within the same vehicle type." },
+    { t: "Fleet Size Factor", d: "A discount or surcharge based on how many vehicles of the same type are being rated together — larger, more predictable fleets often earn a credit." },
+    { t: "Radius Factor / Radius of Operation", d: "How far vehicles typically travel from their garaging location — Local, Intermediate, Statewide, Regional, Long Haul. Longer radius generally costs more for both Liability and Physical Damage, at different rates." },
+    { t: "NAICS Factor", ab: "North American Industry Classification System", d: "A factor based on the insured's declared industry code — what kind of freight/business the fleet is actually used for." },
+    { t: "Tort Limitation Factor", d: "An adjustment for a state's tort system (e.g. no-fault vs. full tort) — 1.00 in nearly every state on file today, with New Jersey's tort-election options being the notable exception." },
+    { t: "Rating Class", d: "The commodity or operation type being hauled — Dry Van, Flatbed, Tanker, Livestock, Towing, etc. — each with its own risk-based factor." },
+    { t: "Dashcam Factor", d: "A credit for verified dashcam usage (larger credit for a preferred/monitored vendor) or a debit for none installed." },
+    { t: "CDL Experience Discount", d: "A fleet-wide discount based on what share of the top-ranked drivers (up to one per rated vehicle) hold 3+ years of CDL experience." },
+    { t: "Driver Class Factor", d: "A factor reflecting the quality of the drivers assigned to the fleet's vehicles, based on age, violation points and accident history — averaged across the best-ranked drivers up to the number of rated units." },
+    { t: "OOS Rate", ab: "Out-of-Service Rate", d: "The share of a carrier's roadside vehicle or driver inspections (FMCSA) that resulted in an out-of-service order — a safety signal that feeds the Account-Level Factor." },
+    { t: "ICC Filing", ab: "Interstate Commerce Commission", d: "Whether the carrier has (or is required to have) an ICC/MC operating authority filing — missing one when required carries a debit." },
+    { t: "SSIC", ab: "Sub-line/Statistical Sub-Coverage Code", d: "The real system's internal code prefix for a coverage (e.g. \"SSIC AL\" for Auto Liability) — appears in source-system data as a coverage identifier." },
+  ]},
+  { key: "property", title: "Commercial Property", icon: "fa-building", terms: [
+    { t: "COPE", d: "Construction, Occupancy, Protection, Exposure — the four classic underwriting dimensions used to rate a property risk." },
+    { t: "Protection Class / PPC", ab: "Public Protection Classification", d: "A 1–10 rating of a location's fire protection (hydrant distance, fire department response, water supply) — lower numbers (better protection) earn a credit." },
+    { t: "Wind/Hail Zone", d: "A geographic banding for wind and hail exposure, used to load or credit the base rate in catastrophe-prone areas." },
+  ]},
+  { key: "mpl", title: "Professional Liability (MPL) & Cyber", icon: "fa-user-shield", terms: [
+    { t: "Hazard Group", d: "A risk tier assigned to a professional class of business, reflecting its typical claim severity and frequency." },
+    { t: "ALAE", ab: "Allocated Loss Adjustment Expense", d: "Claim-handling costs (legal defense, investigation) that can be tracked to a specific claim. Whether ALAE erodes the policy limit (\"within limits\") or is paid on top (\"outside limits\") changes the effective coverage — and the rate." },
+    { t: "Claims-Made / Year in Program (YIP)", d: "Claims-made policies only respond to claims made during the policy period (for incidents on or after a retroactive date) — a newer account in its first \"year in program\" is priced differently than a long-tenured one with an established retroactive date." },
+    { t: "Retention", d: "The insured's own deductible-equivalent on a claims-made or cyber policy — the amount they bear before the policy responds." },
+    { t: "Aggregate Limit", d: "The maximum the policy will pay in total across all claims in a policy period, as opposed to a per-claim limit." },
+    { t: "MFA", ab: "Multi-Factor Authentication", d: "In Cyber underwriting, whether an applicant enforces MFA across its systems — a major factor in both eligibility and rate, since it's one of the strongest predictors of breach frequency." },
+    { t: "Insuring Agreement", d: "One distinct coverage grant within a Cyber policy — e.g. Privacy & Security, Breach Response, Cyber Crime, Business Loss — each can be selected and limited independently." },
+  ]},
+];
+
+/* Every exact variable name that appears in the Formula Builder's palette,
+   cross-referenced to which coverage(s) use it — so a term seen while
+   dragging tokens can be looked up by its literal name, not just its
+   plain-English concept above. */
+const COB_LABEL = { __ACCOUNT__: "Account-Level" };
+const VARS_REF = [
+  ["ALAEFactor", "Loads or credits the rate depending on whether ALAE is inside or outside the policy limit.", ["Professional Liability"]],
+  ["APDDeductibleFactor", "Credit for the Physical Damage deductible chosen.", ["Physical Damage"]],
+  ["APDPackageFactor", "Credit for bundling Liability and Physical Damage on the same vehicle.", ["Physical Damage"]],
+  ["APDRadiusFactor", "Radius-of-operation adjustment specific to Physical Damage.", ["Physical Damage"]],
+  ["APDRate", "Base physical damage rate, looked up by the vehicle's stated value.", ["Physical Damage"]],
+  ["APDStateFactor", "State-specific adjustment to the Physical Damage rate.", ["Physical Damage"]],
+  ["AccountFactor", "The policy's combined Account-Level credit/debit.", ["Auto Liability", "Physical Damage", "__ACCOUNT__"]],
+  ["AdjILF", "Increased Limits Factor after adjusting for the retention selected.", ["Professional Liability"]],
+  ["AggregateLimitFactor", "Factor for the aggregate limit selected.", ["Liability", "Breach Response", "Cyber Crime", "Business Loss"]],
+  ["BaseLossCost", "The starting, unloaded expected-loss rate before factors are applied.", ["Auto Liability", "__ACCOUNT__"]],
+  ["BaseRate", "A generic starting rate before factors are applied, used where no dedicated loss-cost table exists yet.", ["Liquor Liability", "Business Auto", "Inland Marine", "Liability", "Breach Response", "Cyber Crime", "Business Loss"]],
+  ["BaseRateDeviation", "A carrier-selected deviation applied to the filed base rate.", ["Liability", "Breach Response", "Cyber Crime", "Business Loss"]],
+  ["BaseRatePer100", "Property's base rate per $100 of insured value.", ["Property"]],
+  ["BasicLimitLossCost", "Loss cost at the program's basic (reference) limit, before scaling to the limit sold.", ["General Liability", "Professional Liability"]],
+  ["CDLExpDiscFactor", "Discount for the share of top-ranked drivers holding 3+ years of CDL experience.", ["Auto Liability", "Physical Damage"]],
+  ["CargoDeductibleFactor", "Deductible adjustment for Cargo — placeholder, no sourced deductible table yet.", ["Motor Truck Cargo"]],
+  ["CargoLimit", "The Cargo limit of insurance selected.", ["Motor Truck Cargo"]],
+  ["CargoRadiusFactor", "Radius-of-operation adjustment for Cargo.", ["Motor Truck Cargo"]],
+  ["CargoRatePer100", "Placeholder cargo rate per $100 of limit — not sourced from a filed manual.", ["Motor Truck Cargo"]],
+  ["ClaimsMadeFactor", "Adjustment for claims-made status and year in program.", ["Professional Liability"]],
+  ["ClassFactor", "A generic classification factor for the risk being rated.", ["General Liability", "Liquor Liability", "Business Auto", "Inland Marine", "__ACCOUNT__"]],
+  ["ConstructionFactor", "Adjustment for the building's construction type (frame, masonry, fire-resistive, etc.).", ["Property"]],
+  ["DashcamFactor", "Credit for verified dashcam usage, larger for a preferred/monitored vendor.", ["Auto Liability", "Physical Damage"]],
+  ["DeductibleFactor", "Credit or debit for the property deductible chosen.", ["Property"]],
+  ["DriverClassFactor", "Reflects the quality of the fleet's assigned drivers (age, points, accidents).", ["Auto Liability", "Physical Damage"]],
+  ["ExperienceMod", "Credibility-weighted factor from the account's own loss history.", ["General Liability", "__ACCOUNT__"]],
+  ["FleetSizeFactor", "Discount or surcharge based on how many like-type vehicles are rated together.", ["Auto Liability"]],
+  ["HazardGroupFactor", "Risk tier assigned to the professional class of business.", ["Professional Liability"]],
+  ["ILF", "Increased Limits Factor — cost of a higher limit relative to the basic limit.", ["Auto Liability", "__ACCOUNT__"]],
+  ["IRPM", "Individual Risk Premium Modification — underwriter judgment credit/debit.", ["Property"]],
+  ["IncreasedLimitsFactor", "General Liability's version of the Increased Limits Factor.", ["General Liability"]],
+  ["IndustryClassFactor", "Cyber factor for the insured's industry classification.", ["Liability", "Breach Response", "Cyber Crime", "Business Loss"]],
+  ["LCM", "Loss Cost Multiplier — converts a pure loss cost into a gross rate.", ["Auto Liability", "General Liability", "Liquor Liability", "Business Auto", "Inland Marine", "Property", "Professional Liability", "__ACCOUNT__"]],
+  ["LiabDeductibleFactor", "Subtracted from the ILF to reflect the liability deductible chosen.", ["Auto Liability"]],
+  ["LossExperienceFactor", "Adjustment for the account's professional-liability loss experience.", ["Professional Liability"]],
+  ["MFAControlsFactor", "Credit for enforced multi-factor authentication.", ["Liability", "Breach Response", "Cyber Crime", "Business Loss"]],
+  ["MilesDrivenFactor", "Adjustment for annual mileage, banded by radius category.", ["Auto Liability", "Physical Damage"]],
+  ["NAICSFactor", "Adjustment for the insured's declared industry (NAICS) code.", ["Auto Liability"]],
+  ["OCNFactor", "Liability adjustment banded by the vehicle's stated value.", ["Auto Liability"]],
+  ["OccupancyFactor", "Adjustment for how the insured building is occupied/used.", ["Property"]],
+  ["PrimaryClassFactor", "Adjustment for the vehicle's primary ISO class code.", ["Auto Liability"]],
+  ["ProtectionClassFactor", "Adjustment for the location's fire-protection class (PPC).", ["Property"]],
+  ["RadiusFactor", "Liability adjustment for radius of operation.", ["Auto Liability"]],
+  ["RatingClassFactor", "Adjustment for the commodity/operation type being hauled.", ["Auto Liability", "Physical Damage"]],
+  ["RetentionFactor", "Adjustment for the retention (deductible-equivalent) selected.", ["Liability", "Breach Response", "Cyber Crime", "Business Loss"]],
+  ["RevenueBandFactor", "Cyber factor banded by the insured's annual revenue.", ["Liability", "Breach Response", "Cyber Crime", "Business Loss"]],
+  ["ScheduleRatingFactor", "Underwriter schedule-rating credit/debit for Cyber.", ["Liability", "Breach Response", "Cyber Crime", "Business Loss"]],
+  ["ScheduleRatingMod", "General schedule-rating credit/debit.", ["General Liability", "__ACCOUNT__"]],
+  ["SecondaryClassFactor", "Adjustment for the vehicle's secondary ISO class code.", ["Auto Liability"]],
+  ["StateModFactor", "State-specific modification to the Professional Liability rate.", ["Professional Liability"]],
+  ["TortLimitationFactor", "Adjustment for the state's tort system — 1.00 in nearly every state on file.", ["Auto Liability"]],
+  ["TotalInsuredValue", "Building value plus Business Personal Property value.", ["Property"]],
+  ["TrailerPhysDamFactor", "Physical damage adjustment for the trailer type towed.", ["Physical Damage"]],
+  ["TrendFactor", "Loss trend applied to bring historical costs to the effective period.", ["__ACCOUNT__"]],
+  ["UWModFactor", "Underwriter credit/debit on the Professional Liability rate.", ["Professional Liability"]],
+  ["VehicleAgeFactor", "Adjustment for the vehicle's model-year age.", ["Auto Liability"]],
+  ["VehicleValue", "The stated value of the vehicle, used to rate Physical Damage.", ["Physical Damage"]],
+  ["WindHailFactor", "Adjustment for wind/hail catastrophe zone.", ["Property"]],
+];
+
+document.getElementById("vxBody").innerHTML = `
+<div class="row g-3">
+  <div class="col-lg-9">
+    <div class="vx-card vx-anim">
+      <h2><i class="fa-solid fa-book me-2 text-primary"></i>Glossary</h2>
+      <div class="sub">Search or browse by category — every term below is used somewhere on this platform.</div>
+      <input class="form-control form-control-sm mb-3" id="gq" placeholder="Search terms...">
+      <div id="gbody"></div>
+
+      <h2 id="g-vars" style="margin-top:8px"><i class="fa-solid fa-square-root-variable me-2 text-primary"></i>Formula Variables</h2>
+      <div class="sub">Every exact variable name in the Formula Builder's palette — look one up by the name you actually see when dragging tokens.</div>
+      <div class="vx-tw"><table class="vx-t">
+        <thead><tr><th>Variable</th><th>Meaning</th><th>Used in</th></tr></thead>
+        <tbody id="gvars"></tbody>
+      </table></div>
+    </div>
+  </div>
+  <div class="col-lg-3">
+    <div class="vx-card vx-anim" style="position:sticky;top:74px">
+      <h2>Jump to</h2>
+      <div class="gnav">${GROUPS.map(g => `<a href="#g-${g.key}"><i class="fa-solid ${g.icon} me-2"></i>${g.title}</a>`).join("")}<a href="#g-vars"><i class="fa-solid fa-square-root-variable me-2"></i>Formula Variables</a></div>
+    </div>
+  </div>
+</div>`;
+
+function renderVars(filter) {
+  const q = (filter || "").toLowerCase().trim();
+  const rows = VARS_REF.filter(([n, d]) => !q || n.toLowerCase().includes(q) || d.toLowerCase().includes(q));
+  document.getElementById("gvars").innerHTML = rows.length ? rows.map(([n, d, used]) => `<tr>
+      <td><code style="font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--primary)">${n}</code></td>
+      <td style="font-size:12.3px;color:var(--text-dim)">${d}</td>
+      <td>${used.map(u => `<span class="vx-b gray me-1" style="margin-bottom:2px;display:inline-block">${COB_LABEL[u] || u}</span>`).join("")}</td>
+    </tr>`).join("") : `<tr><td colspan="3" style="text-align:center;color:var(--text-mute);padding:16px">No variables match "${filter}".</td></tr>`;
+}
+
+function render(filter) {
+  renderVars(filter);
+  const q = (filter || "").toLowerCase().trim();
+  const html = GROUPS.map(g => {
+    const terms = g.terms.filter(x => !q || x.t.toLowerCase().includes(q) || (x.ab || "").toLowerCase().includes(q) || x.d.toLowerCase().includes(q));
+    if (!terms.length) return "";
+    return `<div id="g-${g.key}" class="mb-3">
+      <h6 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-mute);margin:18px 0 6px"><i class="fa-solid ${g.icon} me-2"></i>${g.title}</h6>
+      ${terms.map(x => `<div class="gterm"><b>${x.t}</b>${x.ab ? `<span class="gab">${x.ab}</span>` : ""}<p>${x.d}</p></div>`).join("")}
+    </div>`;
+  }).join("");
+  document.getElementById("gbody").innerHTML = html || `<div class="vx-empty"><i class="fa-solid fa-magnifying-glass"></i>No terms match "${filter}".</div>`;
+}
+document.getElementById("gq").oninput = e => render(e.target.value);
+render("");
+</script>
+</body>
+</html>

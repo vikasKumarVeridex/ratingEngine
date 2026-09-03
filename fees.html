@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fees — Pricing | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-grid.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-theme-quartz.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/dist/ag-grid-community.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/grid.js"></script>
+<script src="assets/js/ag-grid-adapter.js"></script>
+<script>
+vxShell("Fees", "A fixed dollar amount, or a percentage of a chosen basis. || Percentage fees can be capped with a minimum and maximum.",
+  [{ l: "Pricing & Taxes" }, { l: "Fees" }]);
+
+const BASES = ["—","Premium Before Fees","Coverage Premium","Premium + Taxes"];
+const CHARGE = ["Per Policy","Per Driver","Per Vehicle","Per Location","Per Installment"];
+
+const nFixed = VX.fees.filter(f=>f.valueType==="Fixed").length;
+const nPct = VX.fees.filter(f=>f.valueType==="Percent").length;
+
+document.getElementById("vxBody").innerHTML = `
+  <div class="row g-3 mb-1">
+    <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Fixed Fees</div>
+      <div class="val">${nFixed}</div><div class="dt flat">dollar amount × quantity</div></div>
+      <div class="ic" style="background:var(--cat-1)"><i class="fa-solid fa-dollar-sign"></i></div></div></div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Percentage Fees</div>
+      <div class="val">${nPct}</div><div class="dt flat">% of a premium basis</div></div>
+      <div class="ic" style="background:var(--cat-2)"><i class="fa-solid fa-percent"></i></div></div></div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Capped Fees</div>
+      <div class="val">${VX.fees.filter(f=>f.minFee||f.maxFee).length}</div><div class="dt flat">with min / max bounds</div></div>
+      <div class="ic" style="background:var(--cat-5)"><i class="fa-solid fa-arrows-up-down"></i></div></div></div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Taxable Fees</div>
+      <div class="val">${VX.fees.filter(f=>f.taxable).length}</div><div class="dt flat">taxed with premium</div></div>
+      <div class="ic" style="background:var(--cat-4)"><i class="fa-solid fa-receipt"></i></div></div></div>
+  </div>
+
+  <div class="vx-exp2 vx-anim" id="expFee" style="border-left-color:var(--primary)">
+    <div class="hd"><i class="fa-solid fa-circle-info" style="color:var(--primary);font-size:11.5px"></i><b>How fees apply</b><span><b>Fixed</b> × charge quantity. <b>Percent</b> of basis, clamped to min/max.</span><button type="button" class="tog" onclick="vxExpToggle(&#39;expFee&#39;)">Why?</button></div>
+    <div class="bd"><p><b>Fixed</b> — the dollar amount is multiplied by the charge quantity (per policy, per driver, per vehicle, per location). Example: Driver Surcharge $85 × 2 surcharged drivers = $170.</p><p><b>Percent</b> — the rate is applied to the selected basis, then clamped to the min/max if set. Example: Broker Fee 8% of Premium Before Fees, min $250 / max $2,500.</p></div>
+  </div>
+
+  <div class="vx-card vx-anim"><div id="grid"></div></div>`;
+
+vxAgGrid({ el:"#grid", key:"fees", name:"Fee", size:12,
+  cols:[
+    {k:"name",l:"Fee"},{k:"code",l:"Code"},{k:"lob",l:"LOB"},
+    {k:"valueType",l:"Type",r:r=>'<span class="vx-b '+(r.valueType==="Percent"?"cyan":"blue")+'">'+
+      '<i class="fa-solid fa-'+(r.valueType==="Percent"?"percent":"dollar-sign")+' me-1"></i>'+r.valueType+'</span>'},
+    {k:"value",l:"Value",r:r=>r.valueType==="Percent"
+      ? '<b>'+r.value+'%</b>'
+      : '<b>'+vxMoney(r.value)+'</b>'},
+    {k:"percentOf",l:"Applied To",r:r=>r.valueType==="Percent"
+      ? r.percentOf
+      : '<span style="color:var(--text-mute)">'+r.chargeType+'</span>'},
+    {k:"minFee",l:"Min / Max",r:r=>{
+      if(r.valueType!=="Percent") return '<span style="color:var(--text-mute)">—</span>';
+      const mn=r.minFee?vxMoney(r.minFee):"—", mx=r.maxFee?vxMoney(r.maxFee):"—";
+      return (r.minFee||r.maxFee)?`<span class="vx-b amber">${mn} / ${mx}</span>`:'<span style="color:var(--text-mute)">uncapped</span>';}},
+    {k:"chargeType",l:"Charged"},
+    {k:"taxable",l:"Taxable",r:r=>r.taxable?'<span class="vx-b amber">Yes</span>':'<span class="vx-b gray">No</span>'},
+    {k:"active",l:"Status",r:r=>'<span class="vx-b '+(r.active?"green":"gray")+'">'+(r.active?"Active":"Inactive")+'</span>'}],
+  form:[
+    {k:"name",l:"Fee Name"},{k:"code",l:"Fee Code"},
+    {k:"lob",l:"Line of Business",t:"select",opts:["All"].concat(vxLobNames())},
+    {k:"valueType",l:"Fee Type",t:"select",opts:["Fixed","Percent"]},
+    {k:"value",l:"Value  (dollars if Fixed · percent if Percent)",t:"number",step:"0.01"},
+    {k:"percentOf",l:"Percent Applied To  (Percent fees only)",t:"select",opts:BASES},
+    {k:"minFee",l:"Minimum Fee $  (0 = no minimum)",t:"number"},
+    {k:"maxFee",l:"Maximum Fee $  (0 = no maximum)",t:"number"},
+    {k:"chargeType",l:"Charge Quantity  (Fixed fees only)",t:"select",opts:CHARGE},
+    {k:"basis",l:"Description",t:"textarea"},
+    {k:"taxable",l:"Taxable (taxed with premium)",t:"check"},
+    {k:"active",l:"Active",t:"check"}],
+  filters:[{k:"valueType",l:"Type",opts:["Fixed","Percent"]},
+           {k:"lob",l:"LOB",opts:["All"].concat(vxLobNames())},
+           {k:"chargeType",l:"Charged",opts:CHARGE}],
+  extraView:[{k:"basis",l:"Description"}]
+});
+</script>
+</body>
+</html>

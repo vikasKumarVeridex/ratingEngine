@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tenants — Administration | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-grid.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-theme-quartz.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/dist/ag-grid-community.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/grid.js"></script>
+<script src="assets/js/ag-grid-adapter.js"></script>
+<script>
+vxShell("Tenants", "Carriers subscribing to VeriDex. || Each tenant has its own branding, plan tier, seat count and enabled lines of business.",
+  [{ l: "Administration" }, { l: "Tenants" }]);
+
+/* Real parent/child coverage tree for the Add/Edit Tenant form — same
+   component products.html's own Coverages field uses (ag-grid-adapter.js's
+   `t:"tree"`), spanning every LOB rather than one product's single line,
+   since a tenant can write several. Unscoped by the tenant's own `lobs`
+   selection deliberately: the flat multi-selects this replaces were
+   unscoped too (every coverage class on the platform, not filtered to
+   ticked LOBs), and `lobs` is itself a checkbox-group field with no single
+   element `dependsOn` can listen to — scoping this to it would either
+   silently fail to wire or need a real second mechanism, neither of which
+   this request asked for. */
+function tenantCoverageGroups() {
+  return VX.cobParents.map(p => ({
+    label: p.name, badge: p.lob,
+    children: VX.cob.filter(c => c.parentCobId === p.id).map(c => c.name),
+  }));
+}
+/* The tree field saves one combined array (parent and child names mixed).
+   Every other consumer on this platform — the grid's two columns, extraView,
+   the seed-time derivation in data.js — still expects two separate fields,
+   so this splits the combined save back into them rather than migrating
+   every reader to a new shape for one form. */
+function splitCoverageSelection(rec) {
+  const all = rec.coverageClasses || [];
+  const parentNames = new Set(VX.cobParents.map(c => c.name));
+  rec.childClasses = all.filter(n => !parentNames.has(n));
+  rec.coverageClasses = all.filter(n => parentNames.has(n));
+}
+
+const PLAN = { Enterprise: "purple", Growth: "blue", Trial: "amber" };
+const totalSeats = VX.tenants.reduce((a, t) => a + t.seats, 0);
+
+document.getElementById("vxBody").innerHTML = `
+  <div class="row g-2 mb-3">
+    <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Tenants</div>
+      <div class="val">${VX.tenants.length}</div><div class="dt flat">${VX.tenants.filter(t=>t.status==="Active").length} active · ${VX.tenants.filter(t=>t.status==="Trial").length} trial</div></div>
+      <div class="ic" style="background:var(--cat-1)"><i class="fa-solid fa-building"></i></div></div></div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Licensed Seats</div>
+      <div class="val">${totalSeats}</div><div class="dt flat">across all tenants</div></div>
+      <div class="ic" style="background:var(--cat-2)"><i class="fa-solid fa-users"></i></div></div></div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Enterprise Plans</div>
+      <div class="val">${VX.tenants.filter(t=>t.plan==="Enterprise").length}</div><div class="dt flat">of ${VX.tenants.length} tenants</div></div>
+      <div class="ic" style="background:var(--cat-4)"><i class="fa-solid fa-crown"></i></div></div></div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Currently Working In</div>
+      <div class="val" style="font-size:16px;line-height:1.5">${vxTenant().name}</div><div class="dt flat">switch from the top bar</div></div>
+      <div class="ic" style="background:${vxTenant().accent}"><i class="fa-solid fa-circle-check"></i></div></div></div>
+  </div>
+
+  <div class="vx-exp2 vx-anim" id="expTen" style="border-left-color:var(--primary)">
+    <div class="hd"><i class="fa-solid fa-shield-halved" style="color:var(--primary);font-size:11.5px"></i><b>Isolation</b><span>Tenant data is partitioned on <code>/tenantId</code>. Rate tables and geography are shared.</span><button type="button" class="tog" onclick="vxExpToggle('expTen')">Why?</button></div>
+    <div class="bd"><p>Switching tenant changes which lines of business, products, rating factors, versions, quotes, discounts,
+    surcharges and fees load. Every grid reads through the partition boundary in <code>API.list</code>, so no screen
+    can show another tenant's rows, and a record created here is written into the active tenant's partition only.</p>
+    <p><b>Shared reference data:</b> the extracted rate tables (loss costs, ILFs, class factors), geography and the
+    coverage tree are deliberately <i>not</i> partitioned — they are filed/reference data every tenant rates against
+    in this prototype. That is a design choice, stated here rather than implied.</p></div>
+  </div>
+
+  ${vxNotWiredBanner('Documents are stored in-browser — there is no live Cosmos DB account behind this.',
+    '<code>assets/js/cosmos-model.js</code> defines the real container, partition-key and query design; see <a href="db-schema.html">Data Model</a>.')}
+
+  <div class="vx-card vx-anim"><div id="grid"></div></div>`;
+
+/* Provision a newly-created tenant.
+   Adding a tenant row on its own produced a dead end: the tenant appeared in
+   the switcher, but every screen inside it was empty, because products,
+   rating factors, versions and units are all partitioned on /tenantId and
+   nothing had been written into the new partition. This clones the starter
+   configuration for exactly the lines the admin ticked — the same clone the
+   seed-time "coverage guarantee" pass in data.js performs for the built-in
+   tenants, applied at runtime for one added here. */
+/* A newly onboarded tenant starts genuinely blank — a bare "Draft, not yet
+   built" entry per enabled LOB, nothing else. Earlier this cloned VeriDex's
+   own LOB stats (sourceSheets, engine, products count) plus its products,
+   rating factors, units, discounts/surcharges/fees wholesale into every new
+   tenant, "so the screen doesn't look empty" — which meant every new tenant
+   showed a copy of VeriDex's own platform data on day one. Real config now
+   comes from either a Product Studio JSON import (vxImportProductStudioExport
+   in data.js) or manual build-out, never from auto-cloning another tenant's
+   rows. Matches the same blank
+   shape data.js's tenant-partitioning pass now rebuilds on every load (see
+   the SEEDED_TENANT_IDS note there) so "just added" and "after reload" agree. */
+function provisionTenant(t) {
+  const lobs = t.lobs || [];
+  if (!lobs.length) return;
+  const nextId = arr => Math.max(0, ...arr.map(x => +x.id || 0)) + 1;
+
+  lobs.forEach(name => {
+    if (VX.lobs.some(l => l.tenantId === t.id && l.name === name)) return;
+    const src = VX.lobs.find(l => l.name === name);
+    VX.lobs.push({
+      id: nextId(VX.lobs), code: src ? src.code : name.replace(/[^A-Za-z]/g, "").slice(0, 6).toUpperCase(),
+      name, desc: src ? src.desc : "",
+      sourceSheets: 0, engine: "No calculation engine — not yet built", status: "Draft", products: 0,
+      tenantId: t.id,
+    });
+  });
+}
+
+vxAgGrid({ el:"#grid", key:"tenants", name:"Tenant", size:12,
+  cols:[
+    {k:"name",l:"Tenant",r:r=>`<span style="display:inline-flex;align-items:center;gap:8px">
+      <span style="width:9px;height:9px;border-radius:50%;background:${r.accent};flex:none"></span><b>${r.name}</b>
+      ${r.id===VX.activeTenantId?'<span class="vx-b green">current</span>':''}</span>`},
+    {k:"code",l:"Code",r:r=>`<code style="font-size:11px">${r.code}</code>`},
+    {k:"carrier",l:"Carrier Entity"},
+    {k:"plan",l:"Plan",r:r=>'<span class="vx-b '+(PLAN[r.plan]||"gray")+'">'+r.plan+'</span>'},
+    {k:"seats",l:"Seats"},
+    {k:"lobs",l:"Enabled LOBs",r:r=>(r.lobs||[]).map(l=>'<span class="vx-b cyan me-1">'+l.replace(" (MPL)","")+'</span>').join("")||"—"},
+    {k:"states",l:"Licensed States",r:r=>{const s=r.states||[];
+      return s.length ? `<span class="vx-b blue" title="${s.join(', ')}">${s.length} states</span>` : "—";}},
+    {k:"_classes",l:"Coverage Classes",sort:false,r:r=>{
+      const p=(r.coverageClasses||[]).length, c=(r.childClasses||[]).length;
+      return p ? `<span class="vx-b purple" title="${(r.coverageClasses||[]).join(', ')}">${p} primary</span>
+        <span class="vx-b cyan ms-1" title="${(r.childClasses||[]).join(', ')}">${c} child</span>` : "—";}},
+    {k:"status",l:"Status",r:r=>'<span class="vx-b '+(r.status==="Active"?"green":"amber")+'">'+r.status+'</span>'},
+    {k:"since",l:"Customer Since"}],
+  /* Full class lists belong in the row detail, not as two more always-on
+     columns — the grid is already 9 wide and AG Grid virtualises anything
+     past the viewport, so extra columns just hide off-screen. */
+  extraView:[
+    {k:"coverageClasses",l:"Coverage Classes (primary)",r:r=>(r.coverageClasses||[]).map(x=>'<span class="vx-b purple me-1 mb-1 d-inline-block">'+x+'</span>').join("")||"—"},
+    {k:"childClasses",l:"Child Coverage Classes",r:r=>(r.childClasses||[]).map(x=>'<span class="vx-b cyan me-1 mb-1 d-inline-block">'+x+'</span>').join("")||"—"},
+    {k:"_statesFull",l:"Licensed States (all)",r:r=>(r.states||[]).map(x=>'<span class="vx-b gray me-1 mb-1 d-inline-block">'+x+'</span>').join("")||"—"}],
+  form:[
+    {k:"name",l:"Tenant Name"},{k:"code",l:"Tenant Code"},{k:"carrier",l:"Carrier Entity"},
+    {k:"plan",l:"Plan",t:"select",opts:["Enterprise","Growth","Trial"]},
+    {k:"seats",l:"Licensed Seats",t:"number"},
+    {k:"status",l:"Status",t:"select",opts:["Active","Trial","Suspended"]},
+    {k:"since",l:"Customer Since",t:"date"},
+    {k:"accent",l:"Brand Accent (hex)",def:"#4a90d9"},
+    /* Multi-selects, in the Tenant -> LOB -> Coverage -> Child Coverage order
+       the rest of the platform navigates in. Options are de-duplicated:
+       VX.lobs is partitioned per tenant, so a raw map repeats every line once
+       per tenant that bought it. */
+    {k:"states",l:"Licensed States (surplus lines)",t:"multi",opts:VX.states.map(s=>s.abv)},
+    {k:"lobs",l:"Enabled Lines of Business",t:"multi",opts:vxLobNames()},
+    /* One real parent/child tree, not two unrelated flat lists — ticking a
+       child auto-ticks its parent (a child coverage cannot be written
+       without the primary it rolls up into), matching the same coverage
+       hierarchy every other picker on this platform uses. Stores every
+       ticked name (parent and child together); onAfterSave below splits it
+       back into coverageClasses/childClasses so the grid columns and the
+       seed-time derivation this platform already has keep working unchanged. */
+    {k:"coverageClasses",l:"Coverage Classes",t:"tree",groups:tenantCoverageGroups,
+      hint:"Ticking a child coverage also ticks its parent."}],
+  filters:[{k:"plan",l:"Plan",opts:["Enterprise","Growth","Trial"]},{k:"status",l:"Status",opts:["Active","Trial","Suspended"]}],
+  /* A tenant is only real once its partition has configuration in it. */
+  onAfterSave:(rec,isNew)=>{
+    splitCoverageSelection(rec);
+    if(isNew){ provisionTenant(rec);
+    vxToast("Tenant provisioned", `${(rec.lobs||[]).length} line(s) of business configured — switch to ${rec.name} to work in it`, "ok"); }
+    persistTenants(); },
+  rowActions:[{i:"fa-right-to-bracket",t:"Work in this tenant",fn:r=>vxSetTenant(r.id)}] });
+
+/* Real write-back, not the vxAutoSave() toast's visual illusion of one. A
+   created/edited tenant persists via onAfterSave above; delete and clone are
+   generic vxAgGrid row actions with no save hook of their own, so those two
+   API calls are wrapped here — scoped to this page only, not the shared grid
+   engine, since tenants are the one collection actually asked to persist
+   this way. Without this, deleting a tenant "worked" for the rest of the
+   session and then quietly reappeared on the next reload — the seed array
+   winning back over a delete that only ever happened in memory. */
+["remove", "clone"].forEach(fn => {
+  const orig = API[fn].bind(API);
+  API[fn] = (key, id, ...rest) => orig(key, id, ...rest).then(res => {
+    if (key === "tenants") {
+      if (fn === "remove") cascadeDeleteTenant(id);
+      persistTenants();
+    }
+    return res;
+  });
+});
+function persistTenants() {
+  try { localStorage.setItem("vxTenantsState", JSON.stringify(VX.tenants)); } catch (e) {}
+}
+/* Deleting a tenant has to actually mean gone — not "gone from the tenant
+   list, but its product still shows on products.html and still rates
+   quotes." Only products/versions/savedFormulas need this: they are the only
+   tenant-owned collections that persist independently of D.tenants (see the
+   note by loadPersisted("vxProductsState", ...) etc. in data.js). Rating
+   factors, units, discounts/surcharges/fees and per-tenant LOB documents have
+   no persistence of their own — the tenant-partitioning pass in data.js
+   rebuilds all of those from scratch off D.tenants on every load, so once
+   the tenant itself is gone, those simply stop being regenerated. Nothing
+   extra to clean up for them. */
+function cascadeDeleteTenant(tenantId) {
+  VX.products = VX.products.filter(p => p.tenantId !== tenantId);
+  VX.versions = VX.versions.filter(v => v.tenantId !== tenantId);
+  VX.savedFormulas = VX.savedFormulas.filter(f => f.tenantId !== tenantId);
+  try {
+    localStorage.setItem("vxProductsState", JSON.stringify(VX.products));
+    localStorage.setItem("vxVersionsState", JSON.stringify(VX.versions));
+    localStorage.setItem("vxSavedFormulas", JSON.stringify(VX.savedFormulas));
+  } catch (e) {}
+  // The tenants grid's own generic delete handler already calls reload() on
+  // ITSELF after this promise resolves — nothing else needs refreshing here,
+  // since this page renders only the tenants grid, not products/versions.
+}
+</script>
+</body>
+</html>

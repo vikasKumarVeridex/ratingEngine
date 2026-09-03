@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Unit Configuration — Configuration | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-grid.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-theme-quartz.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/dist/ag-grid-community.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/grid.js"></script>
+<script src="assets/js/ag-grid-adapter.js"></script>
+<script>
+vxShell("Unit Configuration", "What a coverage or factor is rated per. || Tenant-configurable, not a fixed list. Coverages and factors reference these by name, so adding one here makes it selectable everywhere a unit picker is shown.",
+  [{ l: "Configuration" }, { l: "Unit Configuration" }]);
+
+document.getElementById("vxBody").innerHTML = `
+  <div class="vx-exp2 vx-anim" id="expUnit" style="border-left-color:var(--primary)">
+    <div class="hd"><i class="fa-solid fa-ruler-combined" style="color:var(--primary);font-size:11.5px"></i><b>Tenant-defined</b><span>Add units here rather than picking from a fixed platform list.</span><button type="button" class="tog" onclick="vxExpToggle(&#39;expUnit&#39;)">Why?</button></div>
+    <div class="bd"><p>Every coverage's <b>Unit</b> field (see <a href="coverages.html">Coverages</a>) and every rating factor's exposure basis reads from this list. Built-in units ship with every tenant; anything else is this tenant's own.</p></div>
+  </div>
+  <div class="vx-card vx-anim"><div id="grid"></div></div>`;
+
+vxAgGrid({ el: "#grid", key: "units", name: "Unit", size: 12,
+  cols: [
+    { k: "name", l: "Unit" },
+    { k: "basis", l: "Rating Basis" },
+    { k: "appliesToLob", l: "Applies To", r: r => r.appliesToLob === "All"
+        ? '<span class="vx-b blue">All Lines</span>' : `<span class="vx-b cyan">${r.appliesToLob}</span>` },
+    { k: "builtIn", l: "Source", r: r => r.builtIn
+        ? '<span class="vx-b gray">Built-in</span>' : '<span class="vx-b purple">Tenant-added</span>' },
+  ],
+  form: [
+    { k: "name", l: "Unit Name" },
+    { k: "basis", l: "Rating Basis (e.g. \"Per $1,000 of revenue\")" },
+    { k: "appliesToLob", l: "Applies To", t: "select", opts: ["All", ...vxLobNames()] },
+  ],
+  filters: [{ k: "appliesToLob", l: "Applies To", opts: ["All", ...new Set(VX.units.map(u => u.appliesToLob))] }],
+});
+</script>
+</body>
+</html>

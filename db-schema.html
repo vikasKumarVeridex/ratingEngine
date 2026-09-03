@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Data Model — Developer | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+<style>
+.dmlist{max-height:calc(100vh - 300px);overflow-y:auto}
+.dmitem{border:1px solid var(--border);border-radius:9px;padding:8px 11px;margin-bottom:6px;cursor:pointer;transition:.12s;background:var(--surface)}
+.dmitem:hover{border-color:var(--primary);background:var(--primary-soft)}
+.dmitem.on{border-color:var(--primary);background:var(--primary-soft)}
+.dmitem b{font-size:12.4px;display:block;line-height:1.3;font-family:'IBM Plex Mono',monospace}
+.dmitem small{font-size:10.4px;color:var(--text-mute);display:block;margin-top:2px}
+.dmgrp{font-size:9.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--text-mute);margin:14px 0 6px}
+.dmgrp:first-child{margin-top:0}
+.dmmeta{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.dmmeta div{background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:9px 12px}
+.dmmeta .k{font-size:9.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--text-mute);display:block;margin-bottom:3px}
+.dmmeta .v{font-size:12.5px;font-weight:600;line-height:1.35}
+.reflink{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:3px 9px;border-radius:20px;background:var(--primary-soft);color:var(--primary);cursor:pointer;margin:2px 4px 2px 0;text-decoration:none}
+.reflink:hover{filter:brightness(1.1)}
+</style>
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/schema-data.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/grid.js"></script>
+<script>
+vxShell("Data Model", "Every table this platform’s data is built from. || Columns, what references what, and where each is actually used. Generated from the live data, not hand-typed.",
+  [{ l: "Products & Rating" }, { l: "Data Model" }]);
+
+const SCHEMA = window.VX_SCHEMA || [];
+const KINDLABEL = { table: "Table", matrix: "Matrix / band table", map: "Lookup map", list: "Simple list" };
+const KINDCHIP = { table: "blue", matrix: "purple", map: "amber", list: "gray" };
+const unused = SCHEMA.filter(e => e.usage.length === 0);
+
+document.getElementById("vxBody").innerHTML = `
+  <div class="vx-exp2 vx-anim" id="expDbs" style="border-left-color:var(--primary)">
+    <div class="hd"><i class="fa-solid fa-diagram-project" style="color:var(--primary);font-size:11.5px"></i><b>Generated, not authored</b><span>Introspected from live data. <a href="assets/data-model.dbml" target="_blank">DBML export →</a></span><button type="button" class="tog" onclick="vxExpToggle(&#39;expDbs&#39;)">Why?</button></div>
+    <div class="bd"><p>Columns and types come from introspecting the live data; "used by" comes from grepping every page for real <code>VX.&lt;table&gt;</code> references. References between tables are <b>empirically detected</b> — at least 80% of a column's values found in another table's name/code — not declared foreign keys, since nothing in this codebase enforces real ones.</p><p>Paste the DBML export into <a href="https://dbdiagram.io" target="_blank">dbdiagram.io</a> for a visual ERD.</p></div>
+  </div>
+
+  <div class="dmmeta">
+    <div><span class="k">Entities</span><span class="v">${SCHEMA.length}</span></div>
+    <div><span class="k">Tables</span><span class="v">${SCHEMA.filter(e => e.kind === "table").length}</span></div>
+    <div><span class="k">Detected references</span><span class="v">${SCHEMA.reduce((s, e) => s + (e.refs || []).length, 0)}</span></div>
+    <div><span class="k">Not used anywhere</span><span class="v" style="color:${unused.length ? "var(--bad)" : "var(--good)"}">${unused.length}</span></div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-4">
+      <div class="vx-card vx-anim">
+        <h2>Entities <span class="vx-b blue">${SCHEMA.length}</span></h2>
+        <div class="sub">Grouped by kind</div>
+        <input class="form-control form-control-sm mb-2" id="dmq" placeholder="Search tables, columns, purpose...">
+        <div class="dmlist" id="dmList"></div>
+      </div>
+    </div>
+    <div class="col-lg-8"><div id="dmDetail"></div></div>
+  </div>`;
+
+let current = SCHEMA.find(e => e.key === "products") || SCHEMA[0];
+
+function renderList(filter) {
+  const q = (filter || "").toLowerCase().trim();
+  const hits = SCHEMA.filter(e => !q || [e.key, e.purpose, ...e.columns.map(c => c.name)].join(" ").toLowerCase().includes(q));
+  const order = ["table", "matrix", "map", "list"];
+  const byKind = {};
+  hits.forEach(e => { (byKind[e.kind] = byKind[e.kind] || []).push(e); });
+  document.getElementById("dmList").innerHTML = order.filter(k => byKind[k]).map(k => `
+      <div class="dmgrp">${KINDLABEL[k]} <span style="font-weight:600">(${byKind[k].length})</span></div>
+      ${byKind[k].sort((a, b) => a.key.localeCompare(b.key)).map(e => `
+        <div class="dmitem ${current && e.key === current.key && e.prefix === current.prefix ? "on" : ""}" data-k="${e.prefix}.${e.key}">
+          <b>${e.prefix}.${e.key}</b>
+          <small>${e.rowCount ?? "—"} rows${e.usage.length === 0 ? " · <span style='color:var(--bad)'>unused</span>" : ""}${e.refs && e.refs.length ? " · " + e.refs.length + " ref" + (e.refs.length === 1 ? "" : "s") : ""}</small>
+        </div>`).join("")}`).join("")
+    || `<div class="vx-empty" style="padding:22px"><i class="fa-solid fa-magnifying-glass"></i>No entities match "${filter}".</div>`;
+  document.querySelectorAll("[data-k]").forEach(el => el.onclick = () => {
+    const [prefix, key] = el.dataset.k.split(".");
+    current = SCHEMA.find(e => e.prefix === prefix && e.key === key);
+    renderList(document.getElementById("dmq").value); renderDetail();
+  });
+}
+
+function jumpTo(prefix, key) {
+  const t = SCHEMA.find(e => e.prefix === prefix && e.key === key);
+  if (!t) return;
+  current = t; renderList(document.getElementById("dmq").value); renderDetail();
+  document.getElementById("dmDetail").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function renderDetail() {
+  const e = current;
+  const inbound = SCHEMA.filter(x => (x.refs || []).some(r => r.table === e.key));
+  document.getElementById("dmDetail").innerHTML = `
+    <div class="vx-card vx-anim">
+      <div class="vx-card-head">
+        <div><h2><code style="font-size:16px">${e.prefix}.${e.key}</code></h2>
+          <div class="sub">${KINDLABEL[e.kind]} · ${e.rowCount ?? "—"} ${e.kind === "table" ? "rows" : "entries"}</div></div>
+      </div>
+
+      ${e.purpose
+        ? `<div class="vx-ai mb-3" style="padding:10px 14px;font-size:12.3px;line-height:1.55">${e.purpose}</div>`
+        : `<div class="mb-3" style="border:1px solid var(--border);border-left:3px solid var(--warn);background:rgba(198,137,15,.08);border-radius:0 10px 10px 0;padding:10px 14px;font-size:12.3px">
+             <i class="fa-solid fa-triangle-exclamation me-1" style="color:var(--warn)"></i>
+             No inline documentation was found above this table's definition — purpose is inferred only from its name and columns below.</div>`}
+
+      ${e.usage.length === 0 ? `<div class="mb-3" style="border:1px solid var(--border);border-left:3px solid var(--bad);background:rgba(210,69,69,.09);border-radius:0 10px 10px 0;padding:10px 14px;font-size:12.3px">
+        <i class="fa-solid fa-ban me-1" style="color:var(--bad)"></i><b>Not referenced anywhere else in the platform.</b>
+        Defined but never read by any page or the engine — likely dead data, or feeds a feature not yet wired up.</div>` : ""}
+
+      <h6 style="font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--text-mute);margin:14px 0 7px">Columns</h6>
+      <div class="vx-tw mb-3"><table class="vx-t">
+        <thead><tr><th>Column</th><th>Type</th><th>References</th></tr></thead>
+        <tbody>${e.columns.map(c => {
+          const ref = (e.refs || []).find(r => r.column === c.name);
+          return `<tr><td><code style="font-size:11.5px">${c.name}</code></td>
+            <td><span class="vx-b gray" style="font-size:10px">${c.type}</span></td>
+            <td>${ref ? `<a class="reflink" onclick="jumpTo('${ref.table === e.key ? e.prefix : (SCHEMA.find(x=>x.key===ref.table)||{}).prefix}','${ref.table}')">
+                <i class="fa-solid fa-arrow-right" style="font-size:9px"></i> ${ref.table}.${ref.field}
+                <span style="opacity:.7">${ref.pct}%</span></a>` : '<span style="color:var(--text-mute)">—</span>'}</td>
+          </tr>`;
+        }).join("")}</tbody>
+      </table></div>
+
+      ${inbound.length ? `<h6 style="font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--text-mute);margin:14px 0 7px">Referenced by</h6>
+        <div class="mb-3">${inbound.map(x => {
+          const r = x.refs.find(rr => rr.table === e.key);
+          return `<a class="reflink" onclick="jumpTo('${x.prefix}','${x.key}')"><i class="fa-solid fa-arrow-left" style="font-size:9px"></i> ${x.prefix}.${x.key}.${r.column} <span style="opacity:.7">${r.pct}%</span></a>`;
+        }).join("")}</div>` : ""}
+
+      <h6 style="font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--text-mute);margin:14px 0 7px">Used by</h6>
+      ${e.usage.length
+        ? `<div style="font-size:12px;line-height:2.1">${e.usage.map(f => `<code style="font-size:11px;background:var(--surface-2);padding:2px 7px;border-radius:5px;margin-right:5px">${f}</code>`).join("")}</div>`
+        : `<div style="font-size:12px;color:var(--text-mute)">No usage found.</div>`}
+    </div>`;
+}
+
+document.getElementById("dmq").oninput = e => renderList(e.target.value);
+renderList(""); renderDetail();
+</script>
+</body>
+</html>

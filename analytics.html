@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reports & Analytics — Main | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/grid.js"></script>
+<script>
+vxShell("Reports & Analytics", "Portfolio, distribution and configuration analytics. || Across all products, states, agencies and rating versions.",
+  [{ l: "Overview" }, { l: "Reports & Analytics" }]);
+
+document.getElementById("vxPageActions").innerHTML =
+  `<select class="form-select form-select-sm" style="width:auto" id="period">
+     <option>Last 12 months</option><option>Year to date</option><option>Last quarter</option></select>
+   <button class="btn btn-outline-secondary btn-sm" onclick="vxToast('Report exported','Analytics pack exported to PDF','ok')"><i class="fa-solid fa-file-export me-1"></i>Export Pack</button>`;
+
+const Q = VX.quotes;
+const byLob = vxLobNames().map(n => ({ k: n, v: Q.filter(q => q.lob === n).length }));
+// US only — a handful of quotes carry Canadian province codes (cross-border
+// trucking exposure); charting them as if they were US states would silently
+// mislabel real geography. loss-runs.html already separates by q.country;
+// this chart is titled "States" so it stays US-only rather than mixing in.
+const byState = Object.entries(Q.filter(q => (q.country || "US") === "US")
+  .reduce((a, q) => (a[q.state] = (a[q.state] || 0) + 1, a), {})).sort((a, b) => b[1] - a[1]).slice(0, 10);
+const byAgent = Object.entries(Q.reduce((a, q) => (a[q.agent] = (a[q.agent] || 0) + q.premium, a), {})).sort((a, b) => b[1] - a[1]);
+const byStatus = Object.entries(Q.reduce((a, q) => (a[q.status] = (a[q.status] || 0) + 1, a), {}));
+const bands = [[0,5000],[5000,15000],[15000,30000],[30000,60000],[60000,1e9]];
+const bandLbl = ["<$5k","$5–15k","$15–30k","$30–60k","$60k+"];
+const byBand = bands.map(([a,b]) => Q.filter(q => q.premium >= a && q.premium < b).length);
+const verUse = VX.versions.filter(v => v.quotesRated > 0).sort((a,b)=>b.quotesRated-a.quotesRated).slice(0, 8);
+
+const card = (t, s, id, h) => `<div class="vx-card vx-anim"><h2>${t}</h2><div class="sub">${s}</div><canvas id="${id}" height="${h||150}"></canvas></div>`;
+
+document.getElementById("vxBody").innerHTML = `
+<div class="row g-3 mb-1">
+  <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Total Quotes</div><div class="val">${vxNum(Q.length)}</div><div class="dt up"><i class="fa-solid fa-arrow-up"></i> 8.1%</div></div><div class="ic" style="background:var(--cat-1)"><i class="fa-solid fa-file-invoice"></i></div></div></div>
+  <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Bind Rate</div><div class="val">${(Q.filter(q=>q.status==="Bound").length/Q.length*100).toFixed(1)}%</div><div class="dt up"><i class="fa-solid fa-arrow-up"></i> 2.4pt</div></div><div class="ic" style="background:var(--cat-3)"><i class="fa-solid fa-handshake"></i></div></div></div>
+  <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Total Premium Quoted</div><div class="val">${vxMoney(Q.reduce((a,q)=>a+q.premium,0))}</div><div class="dt up"><i class="fa-solid fa-arrow-up"></i> 6.4%</div></div><div class="ic" style="background:var(--cat-2)"><i class="fa-solid fa-sack-dollar"></i></div></div></div>
+  <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Referral Rate</div><div class="val">${(Q.filter(q=>q.status==="Referred").length/Q.length*100).toFixed(1)}%</div><div class="dt down"><i class="fa-solid fa-arrow-down"></i> 1.1pt</div></div><div class="ic" style="background:var(--cat-5)"><i class="fa-solid fa-user-clock"></i></div></div></div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-8">${card("Premium & Quote Volume Trend","Trailing 12 months across all products","a1",90)}</div>
+  <div class="col-lg-4">${card("Quote Status Distribution","Conversion funnel","a2",170)}</div>
+  <div class="col-lg-6">${card("Quotes by Line of Business","Volume by LOB","a3",140)}</div>
+  <div class="col-lg-6">${card("Top 10 States by Quote Volume","Geographic distribution","a4",140)}</div>
+  <div class="col-lg-6">${card("Premium Distribution","Quote count by premium band","a5",140)}</div>
+  <div class="col-lg-6">${card("Rating Version Usage","Quotes rated per version","a6",140)}</div>
+  <div class="col-lg-7">
+    <div class="vx-card vx-anim"><h2>Agency Performance</h2><div class="sub">Premium written and bind rate by producing agency</div>
+      <div class="vx-tw"><table class="vx-t"><thead><tr><th>Agency</th><th>Quotes</th><th>Bound</th><th>Bind Rate</th><th>Premium</th></tr></thead><tbody>
+        ${byAgent.map(([a, p]) => { const q = Q.filter(x => x.agent === a), b = q.filter(x => x.status === "Bound").length;
+          return `<tr><td><b>${a}</b></td><td>${q.length}</td><td>${b}</td>
+          <td><span class="vx-b ${b/q.length>.4?"green":b/q.length>.25?"amber":"red"}">${(b/q.length*100).toFixed(0)}%</span></td>
+          <td><b>${vxMoney(p)}</b></td></tr>`; }).join("")}
+      </tbody></table></div></div>
+  </div>
+  <div class="col-lg-5">
+    <div class="vx-card vx-anim"><h2>Top Rating Factors by Impact</h2><div class="sub">Average absolute deviation from neutral across rated quotes</div>
+      <div class="vx-tw"><table class="vx-t"><thead><tr><th>Factor</th><th>LOB</th><th>Impact</th></tr></thead><tbody>
+        ${[["Primary Class Factor","Trucking","±0.62×",92],["Secondary Class Factor","Trucking","±0.48×",74],
+           ["Hazard Group Factor","MPL","±0.45×",70],["Construction Type","Property","±0.38×",60],
+           ["Increased Limits Factor","All","±0.31×",50],["MFA Controls","Cyber","±0.28×",44],
+           ["Account Factor","Trucking","±0.22×",34],["Dashcam Factor","Trucking","±0.13×",21]]
+          .map(([n,l,v,w]) => `<tr><td style="font-size:12.3px">${n}</td><td><span class="vx-b gray">${l}</span></td>
+          <td><div style="display:flex;align-items:center;gap:7px"><div style="flex:1;height:6px;background:var(--surface-3);border-radius:4px;overflow:hidden">
+          <div style="width:${w}%;height:100%;background:var(--primary)"></div></div><span style="font-size:11.5px;white-space:nowrap">${v}</span></div></td></tr>`).join("")}
+      </tbody></table></div></div>
+  </div>
+  <div class="col-lg-6">
+    <div class="vx-card vx-anim"><h2>Configuration Change Activity</h2><div class="sub">Changes by area over the last 120 days</div>
+      <canvas id="a7" height="150"></canvas></div>
+  </div>
+  <div class="col-lg-6">
+    <div class="vx-card vx-anim"><h2>AI Suggestion Adoption</h2><div class="sub">Recommendations issued vs. applied</div>
+      <canvas id="a8" height="150"></canvas></div>
+  </div>
+</div>`;
+
+let C = [];
+function css(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+/* Resolved lazily inside draw(): the tokens are only readable once the
+   stylesheet has applied, and this runs at parse time. */
+let PAL = [];
+function draw() {
+  C.forEach(c => c.destroy()); C = [];
+  PAL = vxChartPalette();
+  const grid = css("--border");
+  vxChartDefaults();
+  const opt = (leg) => ({ responsive:true, plugins:{ legend: leg===false?{display:false}:{ position:"bottom", labels:{ usePointStyle:true, pointStyle:"circle", boxWidth:7, padding:13, font:{size:10.5} } } },
+    scales:{ x:{ grid:{display:false} }, y:{ grid:{color:grid}, border:{display:false} } } });
+  const optNoScale = { responsive:true, plugins:{ legend:{ position:"bottom", labels:{ usePointStyle:true, pointStyle:"circle", boxWidth:7, padding:11, font:{size:10.5} } } } };
+
+  C.push(new Chart(a1, { type:"line", data:{ labels:VX.dashboard.months, datasets:[
+    { label:"Premium ($000s)", data:VX.dashboard.premiumTrend, borderColor:vxCat(1), backgroundColor:vxCatAlpha(1,.13), fill:true, tension:.35, borderWidth:2, pointRadius:0 },
+    { label:"Quotes", data:VX.dashboard.requestTrend.map(v=>v/8), borderColor:vxCat(3), tension:.35, borderWidth:2, borderDash:[5,4], pointRadius:0 }]}, options:opt() }));
+
+  C.push(new Chart(a2, { type:"doughnut", data:{ labels:byStatus.map(s=>s[0]), datasets:[{ data:byStatus.map(s=>s[1]), backgroundColor:PAL, borderWidth:0 }]}, options:{ cutout:"60%", ...optNoScale } }));
+
+  C.push(new Chart(a3, { type:"bar", data:{ labels:byLob.map(b=>b.k.replace(" (MPL)","")), datasets:[{ label:"Quotes", data:byLob.map(b=>b.v), backgroundColor:vxCat(1), borderRadius:5 }]}, options:opt(false) }));
+
+  C.push(new Chart(a4, { type:"bar", data:{ labels:byState.map(s=>s[0]), datasets:[{ label:"Quotes", data:byState.map(s=>s[1]), backgroundColor:vxCat(2), borderRadius:5 }]}, options:opt(false) }));
+
+  C.push(new Chart(a5, { type:"bar", data:{ labels:bandLbl, datasets:[{ label:"Quotes", data:byBand, backgroundColor:vxCat(3), borderRadius:5 }]}, options:opt(false) }));
+
+  C.push(new Chart(a6, { type:"bar", data:{ labels:verUse.map(v=>v.version), datasets:[{ label:"Quotes Rated", data:verUse.map(v=>v.quotesRated), backgroundColor:vxCat(4), borderRadius:5 }]},
+    options:{ indexAxis:"y", ...opt(false) } }));
+
+  const areas = Object.entries(VX.audit.reduce((a,x)=>(a[x.area]=(a[x.area]||0)+1,a),{})).sort((a,b)=>b[1]-a[1]).slice(0,7);
+  C.push(new Chart(a7, { type:"bar", data:{ labels:areas.map(a=>a[0]), datasets:[{ label:"Changes", data:areas.map(a=>a[1]), backgroundColor:vxCat(5), borderRadius:5 }]},
+    options:{ indexAxis:"y", ...opt(false) } }));
+
+  C.push(new Chart(a8, { type:"line", data:{ labels:VX.dashboard.months, datasets:[
+    { label:"Issued", data:[12,15,11,18,22,19,25,28,24,31,29,34], borderColor:vxCat(4), tension:.35, borderWidth:2, pointRadius:0 },
+    { label:"Applied", data:[6,8,7,11,14,12,17,20,16,22,21,26], borderColor:vxCat(3), backgroundColor:vxCatAlpha(3,.12), fill:true, tension:.35, borderWidth:2, pointRadius:0 }]}, options:opt() }));
+}
+draw();
+document.addEventListener("vx-theme", draw);
+document.getElementById("period").onchange = e => { vxToast("Period changed", "Analytics recalculated for " + e.target.value, "info"); draw(); };
+</script>
+</body>
+</html>

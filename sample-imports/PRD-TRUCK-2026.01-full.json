@@ -1,0 +1,103 @@
+{
+  "schema": "insurance-product-studio-product-v1",
+  "exportedAt": "2026-09-02T00:00:00.000Z",
+  "productId": "PRD-TRUCK-901",
+  "version": "2026.01",
+  "status": "draft",
+  "product": {
+    "id": "PRD-TRUCK-901",
+    "name": "Sample Trucking Program",
+    "family": "Commercial Trucking",
+    "version": "2026.01",
+    "status": "draft",
+    "effectiveFrom": "01-Sept-2026",
+    "effectiveTo": null,
+    "owner": "Sample Export",
+    "lastModifiedBy": "Sample Export",
+    "segment": "Auto Liability",
+    "productType": "Commercial Trucking",
+    "lineOfBusiness": "Commercial Trucking",
+    "carrier": "Sample Test Carrier",
+    "mga": ["Sample MGA"],
+    "code": "COM-2026-901",
+    "description": "Sample product export for testing tenant onboarding via Upload Configuration. Coverage tree, eligibility rules and factor names are real (mirrored from this platform's own Commercial Trucking seed data); this file's own product/carrier identity is a placeholder for import testing.",
+    "jurisdictions": ["TX", "OK", "GA", "FL", "AZ"],
+    "lastModified": "01-Sept-2026",
+    "lastModifiedAt": "2026-09-02T00:00:00.000Z"
+  },
+  "studios": {
+    "coverage": [
+      { "id": "COV-AL", "name": "Auto Liability", "code": "AL", "type": "Cover", "availability": "mandatory" },
+      { "id": "COV-AL-BI", "name": "Bodily Injury", "code": "AL-BI", "availability": "mandatory", "conditionalOn": "Auto Liability" },
+      { "id": "COV-AL-PD", "name": "Property Damage", "code": "AL-PD", "availability": "mandatory", "conditionalOn": "Auto Liability" },
+      { "id": "COV-AL-UM", "name": "Uninsured Motorist", "code": "AL-UM", "availability": "optional", "conditionalOn": "Auto Liability" },
+      { "id": "COV-AL-UIM", "name": "Underinsured Motorist", "code": "AL-UIM", "availability": "optional", "conditionalOn": "Auto Liability" },
+      { "id": "COV-AL-MED", "name": "Medical Payments", "code": "AL-MED", "availability": "optional", "conditionalOn": "Auto Liability" },
+      { "id": "COV-AL-PIP", "name": "Personal Injury Protection", "code": "AL-PIP", "availability": "optional", "conditionalOn": "Auto Liability" },
+      { "id": "COV-AL-HAL", "name": "Hired Auto Liability", "code": "AL-HAL", "availability": "optional", "conditionalOn": "Auto Liability" },
+      { "id": "COV-AL-NOAL", "name": "Non-Owned Auto Liability", "code": "AL-NOAL", "availability": "optional", "conditionalOn": "Auto Liability" },
+
+      { "id": "COV-PD", "name": "Physical Damage", "code": "PD", "type": "Cover", "availability": "optional" },
+      { "id": "COV-PD-COMP", "name": "Comprehensive", "code": "PD-COMP", "availability": "optional", "conditionalOn": "Physical Damage" },
+      { "id": "COV-PD-COLL", "name": "Collision", "code": "PD-COLL", "availability": "optional", "conditionalOn": "Physical Damage" },
+      { "id": "COV-PD-SP", "name": "Specified Perils", "code": "PD-SP", "availability": "optional", "conditionalOn": "Physical Damage" },
+      { "id": "COV-PD-TI", "name": "Trailer Interchange", "code": "PD-TI", "availability": "optional", "conditionalOn": "Physical Damage" },
+      { "id": "COV-PD-GKL", "name": "Garagekeepers Legal Liability", "code": "PD-GKL", "availability": "optional", "conditionalOn": "Physical Damage" },
+
+      { "id": "COV-CARGO", "name": "Motor Truck Cargo", "code": "CARGO", "type": "Cover", "availability": "optional" },
+      { "id": "COV-CG-OWN", "name": "Owned Cargo", "code": "CG-OWN", "availability": "optional", "conditionalOn": "Motor Truck Cargo" },
+      { "id": "COV-CG-REF", "name": "Refrigeration Breakdown", "code": "CG-REF", "availability": "optional", "conditionalOn": "Motor Truck Cargo" },
+      { "id": "COV-CG-DEB", "name": "Debris Removal", "code": "CG-DEB", "availability": "optional", "conditionalOn": "Motor Truck Cargo" },
+      { "id": "COV-CG-FRT", "name": "Earned Freight", "code": "CG-FRT", "availability": "optional", "conditionalOn": "Motor Truck Cargo" }
+    ],
+    "eligibility": [
+      { "id": "ELG-HAZMAT", "name": "Hazmat Restriction", "status": "active", "code": "EL_HAZMAT",
+        "conditions": [{ "field": "hazmat_placard", "op": "==", "value": "true" }], "outcomeType": "soft",
+        "description": "Hazmat requires umbrella referral above $1M CSL" },
+      { "id": "ELG-FLEETMIN", "name": "Fleet Size Minimum", "status": "active", "code": "EL_FLEETMIN",
+        "conditions": [{ "field": "power_units", "op": ">=", "value": "3" }], "outcomeType": "soft",
+        "description": "Minimum 3 power units for fleet rating" },
+      { "id": "ELG-RADIUS", "name": "Radius of Operation", "status": "active", "code": "EL_RADIUS",
+        "conditions": [{ "field": "radius_miles", "op": ">", "value": "500" }], "outcomeType": "soft",
+        "description": "Beyond 500mi radius requires DOT compliance review" },
+      { "id": "ELG-DOUBLES", "name": "Pulls Doubles", "status": "active", "code": "EL_DOUBLES",
+        "conditions": [{ "field": "pulls_doubles", "op": "==", "value": "true" }], "outcomeType": "soft",
+        "description": "Pulling double trailers requires underwriter review" },
+      { "id": "ELG-TRIPLES", "name": "Pulls Triples", "status": "active", "code": "EL_TRIPLES",
+        "conditions": [{ "field": "pulls_triples", "op": "==", "value": "true" }], "outcomeType": "soft",
+        "description": "Pulling triple trailers requires underwriter review" },
+      { "id": "ELG-UNSECURED", "name": "Unsecured Loads", "status": "active", "code": "EL_UNSECURED",
+        "conditions": [{ "field": "unsecured_loads", "op": "==", "value": "true" }], "outcomeType": "soft",
+        "description": "Hauling unsecured loads requires underwriter review" },
+      { "id": "ELG-OVERSIZE", "name": "Oversize / Overweight Loads", "status": "active", "code": "EL_OVERSIZE",
+        "conditions": [{ "field": "oversize_load", "op": "==", "value": "true" }], "outcomeType": "soft",
+        "description": "Oversize or overweight loads require underwriter review" },
+      { "id": "ELG-WASTE", "name": "Waste / Refuse Materials", "status": "active", "code": "EL_WASTE",
+        "conditions": [{ "field": "hauls_waste", "op": "==", "value": "true" }], "outcomeType": "soft",
+        "description": "Hauling waste or refuse materials requires underwriter review" }
+    ],
+    "rating": [
+      { "group": "BASE PREMIUM", "items": [
+        { "id": "RAT-BASE", "name": "Minimum Policy Premium", "type": "base", "status": "done", "value": "$2,500/yr", "amount": "2500", "configured": true }
+      ]},
+      { "group": "Auto Liability", "items": [
+        { "id": "RAT-BASE_LC", "name": "Territory Base Loss Cost", "type": "factor", "status": "done", "value": "table" },
+        { "id": "RAT-VEH_PRIMARY", "name": "Primary Class Factor", "type": "factor", "status": "done", "value": "table" },
+        { "id": "RAT-VEH_AGE", "name": "Vehicle Age Factor", "type": "factor", "status": "done", "value": "table" },
+        { "id": "RAT-VEH_RADIUS", "name": "Liability Radius Factor", "type": "factor", "status": "done", "value": "table" },
+        { "id": "RAT-VEH_NAICS", "name": "NAICS Industry Factor", "type": "factor", "status": "done", "value": "table" },
+        { "id": "RAT-VEH_FLEET", "name": "Fleet Size Factor", "type": "factor", "status": "done", "value": "table" }
+      ]},
+      { "group": "Physical Damage", "items": [
+        { "id": "RAT-APD_RATE", "name": "APD Rate by Stated Value", "type": "factor", "status": "done", "value": "table" },
+        { "id": "RAT-APD_TRAILER", "name": "Trailer PhysDam Factor", "type": "factor", "status": "done", "value": "table" }
+      ]},
+      { "group": "Account Level", "items": [
+        { "id": "RAT-ACCT_FACTOR", "name": "Account-Level Factor", "type": "judgment", "status": "done", "value": "underwriter" },
+        { "id": "RAT-DRV_CLASS", "name": "Driver Class Factor", "type": "factor", "status": "done", "value": "table" },
+        { "id": "RAT-EXP_MOD", "name": "Experience Mod", "type": "judgment", "status": "done", "value": "bureau-computed" }
+      ]}
+    ]
+  },
+  "pricing": { "basePremium": 2500 }
+}

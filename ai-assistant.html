@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Assistant — Rating | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/grid.js"></script>
+<script>
+vxShell("AI Configuration Assistant", "Configure the rating platform in natural language. || Every proposed change is previewed as a diff and requires explicit approval before it is staged.",
+  [{ l: "Intelligence" }, { l: "AI Config Assistant" }]);
+
+const EX = [
+  "Create a new Cyber product for California",
+  "Add a 7% surcharge for Florida",
+  "Copy Texas Trucking configuration to Oklahoma",
+  "Increase Property rates by 5%",
+  "Create a new Class of Business for drone operators",
+  "Import a new rating workbook",
+  "Which factors expire in the next 30 days?",
+  "Show me the highest-impact factors on Trucking premium",
+];
+
+/* Pattern-matched intent responses — deterministic, prototype-only */
+function respond(q) {
+  const s = q.toLowerCase();
+  if (/create.*(product)/.test(s)) {
+    const st = (s.match(/\b(california|texas|florida|new york|georgia)\b/) || [,"all states"])[1];
+    return { text: `I'll create a new Cyber product scoped to ${st}. It will inherit the Cyber rating engine (Base Rate × Aggregate Risk Mod × ILF × Schedule Rating) and the 4 standard insuring-agreement groups. Review the proposed configuration below.`,
+      diff: [["Product Name","—","VeriDex CyberShield — " + st,"add"],["Product Code","—","CYBER-" + st.slice(0,2).toUpperCase(),"add"],
+        ["Line of Business","—","Cyber","add"],["Rating Engine","—","Base Rate × Agg Risk × ILF × Sched","add"],
+        ["Classes of Business","—","Liability, Breach Response, Cyber Crime, Business Loss","add"],
+        ["Initial Version","—","v2026.08 (Draft)","add"],["Status","—","Draft","add"]],
+      impact: "Creates 1 product and 1 draft rating version. No in-force policies affected." };
+  }
+  if (/surcharge/.test(s)) {
+    const pct = (s.match(/(\d+)\s*%/) || [,"7"])[1];
+    const st = (s.match(/\b(florida|texas|california|new york|georgia)\b/) || [,"Florida"])[1];
+    return { text: `I'll add a ${pct}% state surcharge for ${st}. It will apply to the post-account-factor premium, before fees and taxes, consistent with how existing surcharges are sequenced.`,
+      diff: [["Surcharge Name","—",st + " State Surcharge","add"],["Code","—","SUR_" + st.slice(0,2).toUpperCase(),"add"],
+        ["Applies To","—","Account","add"],["Value","—","+" + pct + "%","add"],
+        ["Applies After","—","Account Factor","add"],["Effective Date","—","2026-09-01","add"]],
+      impact: `Affects an estimated <b>${Math.floor(Math.random()*40+18)} in-force policies</b> in ${st}. Average premium impact: <b>+${pct}%</b> (~${vxMoney(Math.random()*900+340)}/policy).` };
+  }
+  if (/cop(y|ies)|clone/.test(s)) {
+    return { text: "I'll clone the Texas Trucking configuration into Oklahoma. Territory definitions, ZIP mappings and loss costs differ by state, so those will be created as placeholders requiring your review before publish.",
+      diff: [["Base Rate rows","0","42 (copied from TX)","add"],["Territory definitions","0","6 (placeholder — needs OK ISO territories)","warn"],
+        ["ZIP mappings","0","0 (must load OK ZIP table — 2,140 rows)","warn"],
+        ["Rating factors","0","187 (copied)","add"],["Tax configuration","—","OK: 2.35% premium tax","add"],
+        ["Filing status","—","Not Filed","warn"]],
+      impact: "Creates 229 configuration rows in a new draft version. <b>3 items require manual review</b> before this can be published." };
+  }
+  if (/increase|decrease|raise|lower/.test(s) && /rate|premium/.test(s)) {
+    const pct = (s.match(/(\d+)\s*%/) || [,"5"])[1];
+    const lob = /propert/.test(s) ? "Commercial Property" : /truck/.test(s) ? "Commercial Trucking" : /cyber/.test(s) ? "Cyber" : "Commercial Property";
+    const n = VX.baseRates.filter(b => b.lob === lob).length;
+    return { text: `I'll apply a ${pct}% across-the-board increase to all ${lob} base rates. This is a rate-level change and will require a filing in most states before it can be published.`,
+      diff: [["Base rate rows affected", n, n + " (all +" + pct + "%)", "mod"],
+        ["Example: TX T1", vxMoney(4128), vxMoney(4128 * (1 + pct/100)), "mod"],
+        ["Example: CA T2", vxMoney(4890), vxMoney(4890 * (1 + pct/100)), "mod"],
+        ["New version", "v2026.01", "v2026.08 (Draft)", "add"],
+        ["Filing required", "—", "Yes — 46 states", "warn"]],
+      impact: `Affects <b>${VX.quotes.filter(q => q.lob === lob && q.status === "Bound").length} bound quotes</b>. Estimated annual GWP impact: <b>+${vxMoney(VX.products.filter(p=>p.lob===lob).reduce((a,p)=>a+p.gwp,0) * pct/100)}</b>.` };
+  }
+  if (/class of business|cob/.test(s)) {
+    return { text: "I'll create a new Class of Business for drone/UAV operators. Based on similar aviation-adjacent classes I recommend Hazard Group 4 and an initial class factor of 1.55.",
+      diff: [["Class Code","—","488999-D","add"],["Name","—","Drone / UAV Commercial Operations","add"],
+        ["Line of Business","—","General Liability","add"],["Hazard Group","—","4 — High Risk (1.45×)","add"],
+        ["Class Factor","—","1.550","add"],["Eligibility","—","Requires FAA Part 107 certification","add"]],
+      impact: "Adds 1 class. No existing policies affected. Class becomes selectable in the Quote Portal immediately after publish." };
+  }
+  if (/import|workbook|xlsb|excel/.test(s)) {
+    return { text: "I can import a new rating workbook. Five workbooks are already migrated (97 worksheets total). Upload the file and I'll map each worksheet to a factor table, flag structural differences against the existing schema, and stage everything in a draft version.",
+      diff: [["Workbooks currently imported","5","6","add"],["Expected new sheets","—","Detected on upload","info"],
+        ["Auto-mapped factor tables","—","Pending upload","info"],["Target version","—","New draft","add"]],
+      impact: "Nothing is changed until you review the sheet-to-table mapping. <a href='import.html'>Open the Import Workbook page →</a>" };
+  }
+  if (/expir/.test(s)) {
+    const rows = VX.ratingFactors.filter(f => f.active).slice(0, 6);
+    return { text: `I found <b>${rows.length} rating factors</b> with effective-date windows closing in the next 30 days. These will fall back to defaults if not extended before expiry.`,
+      table: rows.map(f => [f.code, f.name, f.lob, f.version]),
+      impact: "Recommend extending expiration dates or publishing replacement values before 2026-09-04." };
+  }
+  if (/highest|impact|driver|top/.test(s)) {
+    return { text: "Based on sensitivity analysis across the last 428 Trucking quotes, these factors move premium the most. Values shown are the average absolute deviation from neutral (1.00×).",
+      table: [["VEH_PRIMARY","Primary Class Factor","±0.62×","Highest — dominates the liability chain"],
+        ["VEH_SECONDARY","Secondary Class Factor","±0.48×","Use/radius classification"],
+        ["COV_ILF","Increased Limits Factor","±0.31×","Driven by selected limit"],
+        ["ACCT_FACTOR","Account Factor","±0.22×","Clamped 0.85–1.50"],
+        ["VEH_DASHCAM","Dashcam Factor","±0.13×","No-dashcam surcharge is 1.20×"]],
+      impact: "Consider tightening underwriting guidance around Primary Class assignment — it carries the widest premium spread." };
+  }
+  return { text: `I can help configure products, LOBs, classes of business, rating factors, base rates, discounts, surcharges, fees, taxes, underwriting rules and forms — all in natural language. Every change is previewed before it's staged. Try one of the examples below, or describe what you'd like to change.`,
+    suggest: true };
+}
+
+document.getElementById("vxBody").innerHTML = `
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="vx-card vx-anim">
+      <div class="vx-card-head"><div><h2>Assistant</h2><div class="sub">Connected to ${VX.meta.tenant} · Sandbox · changes stage to draft only</div></div>
+        <button class="btn btn-outline-secondary btn-sm" onclick="CHAT=[];boot()"><i class="fa-solid fa-rotate-left me-1"></i>Reset</button></div>
+      <div class="vx-chat" id="chat"></div>
+      <div class="d-flex gap-2 mt-3">
+        <input class="form-control" id="msg" placeholder="Describe a configuration change…" autocomplete="off">
+        <button class="btn btn-primary" id="send"><i class="fa-solid fa-paper-plane"></i></button>
+      </div>
+      <div class="d-flex flex-wrap gap-2 mt-2">${EX.slice(0,4).map(e => `<button class="vx-tok" onclick="ask('${e.replace(/'/g,"\\'")}')">${e}</button>`).join("")}</div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="vx-card vx-anim">
+      <h2><i class="fa-solid fa-file-arrow-up me-1"></i>Upload a Rating Sheet</h2>
+      <div class="sub">Pick the line of business, then the rater workbook. The assistant derives the full factor configuration for that line and stages it into ${VX.meta.tenant}.</div>
+      <label>Line of Business</label>
+      <select class="form-select form-select-sm mb-2" id="upLob">
+        ${vxLobNames(true).map(n => `<option>${n}</option>`).join("")}
+      </select>
+      <label>Rating sheet</label>
+      <input type="file" class="form-control form-control-sm" id="upFile" accept=".xlsb,.xlsx,.xls,.csv">
+      <div style="font-size:10.8px;color:var(--text-mute);margin-top:5px">
+        Reference workbooks already on file:
+        ${VX.workbooks.map(w => `<div>· <code style="font-size:10.2px">${w.name}</code></div>`).join("")}
+      </div>
+      <div id="upResult" class="mt-2"></div>
+    </div>
+    <div class="vx-card vx-anim">
+      <h2>Example Commands</h2><div class="sub">Click to try</div>
+      ${EX.map(e => `<div class="vx-fld" style="cursor:pointer" onclick="ask('${e.replace(/'/g,"\\'")}')">
+        <i class="fa-solid fa-comment-dots gr"></i><div><b style="font-size:12.3px">${e}</b></div></div>`).join("")}
+    </div>
+    <div class="vx-card vx-anim vx-anim-d1">
+      <h2>Staged Changes</h2><div class="sub">Pending your publish</div>
+      <div id="staged"><div style="font-size:12.3px;color:var(--text-mute)">No changes staged this session.</div></div>
+    </div>
+  </div>
+</div>`;
+
+let CHAT = [], STAGED = [];
+const chatEl = document.getElementById("chat");
+
+function bubble(role, html) {
+  return `<div class="vx-msg ${role === "user" ? "u" : "a"}">
+    <div class="av">${role === "user" ? "VK" : '<i class="fa-solid fa-wand-magic-sparkles"></i>'}</div>
+    <div class="bub">${html}</div></div>`;
+}
+function paint() {
+  chatEl.innerHTML = CHAT.map(m => bubble(m.r, m.h)).join("");
+  chatEl.scrollTop = chatEl.scrollHeight;
+}
+function boot() {
+  CHAT = [{ r: "ai", h: `Hello Vikas — I'm your configuration assistant. I have access to <b>${VX.products.length} products</b>, <b>${VX.lobs.length} lines of business</b>, <b>${vxNum(VX.ratingFactors.length)} rating factors</b> and <b>${VX.lookupTables.length} lookup tables</b> across every line of business.<br><br>Describe a change and I'll show you a preview before anything is staged.` }];
+  paint();
+}
+function ask(q) {
+  document.getElementById("msg").value = q;
+  send();
+}
+function send() {
+  const i = document.getElementById("msg");
+  const q = i.value.trim();
+  if (!q) return;
+  i.value = "";
+  CHAT.push({ r: "user", h: q });
+  CHAT.push({ r: "ai", h: `<span class="vx-spin" style="width:13px;height:13px;vertical-align:-2px"></span> Analyzing configuration…` });
+  paint();
+
+  setTimeout(() => {
+    CHAT.pop();
+    const r = respond(q);
+    let h = r.text;
+    if (r.diff) {
+      h += `<div class="vx-tw mt-2" style="border-radius:8px"><table class="vx-t"><thead><tr><th>Attribute</th><th>Current</th><th>Proposed</th></tr></thead><tbody>
+        ${r.diff.map(d => `<tr><td style="font-size:12px">${d[0]}</td><td style="font-size:12px;color:var(--text-mute)">${d[1]}</td>
+          <td style="font-size:12px;color:${d[3]==="warn"?"var(--warn)":d[3]==="mod"?"var(--primary)":"var(--good)"};font-weight:600">
+          ${d[3]==="warn"?'<i class="fa-solid fa-triangle-exclamation me-1"></i>':""}${d[2]}</td></tr>`).join("")}</tbody></table></div>`;
+    }
+    if (r.table) {
+      h += `<div class="vx-tw mt-2" style="border-radius:8px"><table class="vx-t"><tbody>
+        ${r.table.map(row => `<tr>${row.map(c => `<td style="font-size:12px">${c}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+    }
+    if (r.impact) h += `<div class="vx-ai mt-2" style="padding:10px 12px"><span class="tag"><i class="fa-solid fa-chart-line"></i>Impact Analysis</span>${r.impact}</div>`;
+    if (r.diff) h += `<div class="d-flex gap-2 mt-2"><button class="btn btn-primary btn-sm" onclick="stage(this,'${q.replace(/'/g,"\\'").slice(0,40)}')">Apply to Draft</button>
+      <button class="btn btn-outline-secondary btn-sm" onclick="this.closest('.bub').querySelectorAll('button').forEach(b=>b.disabled=true);vxToast('Discarded','No changes were staged','info')">Discard</button></div>`;
+    if (r.suggest) h += `<div class="d-flex flex-wrap gap-2 mt-2">${EX.slice(4).map(e => `<button class="vx-tok" onclick="ask('${e.replace(/'/g,"\\'")}')">${e}</button>`).join("")}</div>`;
+    CHAT.push({ r: "ai", h });
+    paint();
+  }, 780);
+}
+function stage(btn, label) {
+  btn.closest(".bub").querySelectorAll("button").forEach(b => b.disabled = true);
+  btn.outerHTML = '<span class="vx-b green"><i class="fa-solid fa-check me-1"></i>Staged to draft</span>';
+  STAGED.push(label);
+  document.getElementById("staged").innerHTML = STAGED.map((s, i) =>
+    `<div class="d-flex justify-content-between align-items-center py-2" style="border-bottom:1px solid var(--border);font-size:12.3px">
+      <span>${s}…</span><span class="vx-b amber">Draft</span></div>`).join("") +
+    `<button class="btn btn-primary btn-sm w-100 mt-2" onclick="vxToast('Publish requires approval','Staged changes routed to Rating Administrator for sign-off','info')">
+      <i class="fa-solid fa-cloud-arrow-up me-1"></i>Publish ${STAGED.length} Change${STAGED.length>1?"s":""}</button>`;
+  vxToast("Change staged", "Added to draft version — not yet live", "ok"); vxAutoSave();
+}
+/* ---------- Rating sheet upload → factor configuration ----------
+   IMPORTANT, and stated in the UI rather than hidden: a browser cannot read
+   an .xlsb. The factor tables this platform rates on were extracted offline
+   (Excel/pyxlsb) and shipped in data.js / rate-data-full.js. So this does not
+   pretend to parse the file. It matches the upload against the rater
+   workbooks already on file for that line, and derives the factor
+   configuration from the tables that extraction actually produced — real row
+   counts, ranges and source sheets, not invented ones. An unrecognised file
+   is reported as such instead of being silently "parsed". */
+function matchWorkbook(lob, filename) {
+  const known = VX.workbooks.filter(w => w.lob === lob);
+  if (!known.length) return null;
+  const norm = s => String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
+  const f = norm(filename);
+  // score on shared significant tokens, so "..._MPL_Rater_2024_12-13_4.xlsb"
+  // still matches the MPL workbook despite the hash prefix
+  let best = null, bestScore = 0;
+  known.forEach(w => {
+    const toks = String(w.name).toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length > 3);
+    const score = toks.filter(t => f.includes(t)).length;
+    if (score > bestScore) { best = w; bestScore = score; }
+  });
+  return bestScore >= 2 ? best : null;
+}
+
+function factorConfigFor(lob) {
+  const rows = (typeof COSMOS !== "undefined" ? COSMOS.query("ratingFactors", {}) : VX.ratingFactors)
+    .filter(f => f.lob === lob);
+  const seen = new Set();
+  return rows.filter(f => (seen.has(f.code) ? false : (seen.add(f.code), true)));
+}
+
+function renderUpload() {
+  const lob = document.getElementById("upLob").value;
+  const file = document.getElementById("upFile").files[0];
+  const el = document.getElementById("upResult");
+  if (!file) { el.innerHTML = ""; return; }
+
+  const wb = matchWorkbook(lob, file.name);
+  const factors = factorConfigFor(lob);
+  const kb = (file.size / 1024 / 1024).toFixed(2);
+
+  if (!wb) {
+    el.innerHTML = `
+      <div style="border:1px solid var(--border);border-left:3px solid var(--warn);background:rgba(241,180,76,.08);border-radius:0 10px 10px 0;padding:10px 13px;font-size:12px;line-height:1.55">
+        <i class="fa-solid fa-triangle-exclamation me-1" style="color:var(--warn)"></i>
+        <b>${file.name}</b> (${kb} MB) doesn't match a rater already on file for ${lob}.<br>
+        A workbook can't be parsed in the browser — the factor tables this platform rates on were extracted
+        offline. Send this sheet through the extraction step first, or pick a line whose rater is already loaded.
+      </div>`;
+    return;
+  }
+
+  const tableBacked = factors.filter(f => f.rowCount);
+  const verified = factors.filter(f => f.verified);
+  const rowsTotal = tableBacked.reduce((a, f) => a + (f.rowCount || 0), 0);
+
+  el.innerHTML = `
+    <div class="vx-ai" style="padding:10px 13px;font-size:12px;line-height:1.55">
+      <i class="fa-solid fa-circle-check me-1" style="color:var(--good)"></i>
+      Matched <b>${wb.name}</b> — ${wb.sheets} sheets, ${wb.rows}, imported ${wb.imported}.
+    </div>
+    <div class="vx-tw mt-2" style="max-height:230px;overflow:auto"><table class="vx-t">
+      <thead><tr><th>Factor</th><th>Source sheet</th><th style="text-align:right">Values</th><th>State</th></tr></thead>
+      <tbody>${factors.map(f => `<tr>
+        <td><b style="font-size:11.8px">${f.name}</b>
+          <div style="font-size:10.2px;color:var(--text-mute)">${f.driver === "—" ? "fixed" : f.driver}</div></td>
+        <td><code style="font-size:10.2px">${f.sourceSheet || "—"}</code></td>
+        <td style="text-align:right">${f.rowCount ? vxNum(f.rowCount) : (f.defaultValue != null ? "1 fixed" : "—")}</td>
+        <td>${f.verified ? '<span class="vx-b green">verified</span>' : '<span class="vx-b amber">approx</span>'}</td>
+      </tr>`).join("")}</tbody></table></div>
+    <div style="font-size:11.3px;color:var(--text-dim);margin-top:7px">
+      <b>${factors.length}</b> factors · <b>${tableBacked.length}</b> table-backed (${vxNum(rowsTotal)} rows)
+      · <b>${verified.length}</b> verified against the filed workbook.
+      ${verified.length < factors.length
+        ? `<br><span style="color:var(--warn)">${factors.length - verified.length} are working approximations, not yet reconciled line-by-line to this sheet.</span>` : ""}
+    </div>
+    <button class="btn btn-primary btn-sm w-100 mt-2" id="upStage">
+      <i class="fa-solid fa-wand-magic-sparkles me-1"></i>Stage this configuration for ${lob}</button>`;
+
+  document.getElementById("upStage").onclick = e => {
+    const b = e.currentTarget;
+    b.disabled = true;
+    b.outerHTML = '<span class="vx-b green d-block text-center mt-2" style="padding:7px"><i class="fa-solid fa-check me-1"></i>Staged to draft</span>';
+    STAGED.push(`${lob} factor configuration from ${wb.name} — ${factors.length} factors`);
+    document.getElementById("staged").innerHTML = STAGED.map(s =>
+      `<div class="d-flex justify-content-between align-items-center py-2" style="border-bottom:1px solid var(--border);font-size:12.3px">
+        <span>${s}</span><span class="vx-b amber">Draft</span></div>`).join("") +
+      `<button class="btn btn-primary btn-sm w-100 mt-2" onclick="vxToast('Publish requires approval','Staged changes routed to Rating Administrator for sign-off','info')">
+        <i class="fa-solid fa-cloud-arrow-up me-1"></i>Publish ${STAGED.length} Change${STAGED.length>1?"s":""}</button>`;
+    CHAT.push({ r: "ai", h: `Staged the <b>${lob}</b> factor configuration derived from <b>${wb.name}</b> — ${factors.length} factors, ${tableBacked.length} backed by lookup tables. It lands in <b>${vxTenant().name}</b> as a draft; publish from Rating Versions.` });
+    paint();
+    vxToast("Configuration staged", `${factors.length} ${lob} factors staged as draft`, "ok");
+    vxAutoSave();
+  };
+}
+document.getElementById("upFile").onchange = renderUpload;
+document.getElementById("upLob").onchange = renderUpload;
+
+document.getElementById("send").onclick = send;
+document.getElementById("msg").onkeydown = e => { if (e.key === "Enter") send(); };
+boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quotes — Main | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-grid.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-theme-quartz.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/dist/ag-grid-community.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/grid.js"></script>
+<script src="assets/js/ag-grid-adapter.js"></script>
+<script>
+vxShell("Quotes", "All rating requests processed by the engine. || Across every consuming application.", [{l:"Quoting"},{l:"Quotes"}]);
+document.getElementById("vxBody").innerHTML = `<div class="vx-card vx-anim"><div id="grid"></div></div>`;
+vxAgGrid({ el:"#grid", key:"quotes", name:"Quote",
+  size:12,
+  cols:[{k:"quoteNo",l:"Quote #"},{k:"insured",l:"Insured"},{k:"product",l:"Product"},{k:"lob",l:"LOB"},{k:"state",l:"State"},
+      {k:"agent",l:"Agency"},{k:"premium",l:"Premium",r:r=>'<b>'+vxMoney(r.premium)+'</b>'},
+      {k:"status",l:"Status",r:r=>'<span class="vx-b '+({Bound:"green",Quoted:"blue",Declined:"red",Referred:"amber",Expired:"gray"}[r.status])+'">'+r.status+'</span>'},
+      {k:"effectiveDate",l:"Effective"},{k:"underwriter",l:"Underwriter"},
+      {k:"version",l:"Version",r:r=>'<span class="vx-b gray">'+r.version+'</span>'}],
+  form:[{k:"insured",l:"Insured Name"},{k:"product",l:"Product",t:"select",opts:[...new Set(VX.products.map(p=>p.name))]},
+      {k:"state",l:"State",t:"select",opts:VX.states.map(s=>s.abv)},{k:"agent",l:"Agency"},
+      {k:"premium",l:"Premium",t:"number"},{k:"status",l:"Status",t:"select",opts:["Quoted","Bound","Declined","Referred","Expired"]},
+      {k:"effectiveDate",l:"Effective Date",t:"date"},{k:"underwriter",l:"Underwriter"}],
+  filters:[{k:"status",l:"Status",opts:["Quoted","Bound","Declined","Referred","Expired"]},{k:"lob",l:"LOB",opts:vxLobNames()}] });
+
+</script>
+</body>
+</html>

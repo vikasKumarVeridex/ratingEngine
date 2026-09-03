@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dashboard — Main | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/grid.js"></script>
+<script src="assets/js/config-health.js"></script>
+<script>
+vxShell("Dashboard", "Rating activity and configuration health. || Live for the active tenant.", [{ l: "Dashboard" }]);
+const d = VX.dashboard;
+/* d.activeVersions / d.productCount / d.factorCount were computed ONCE at
+   seed time from the full, unpartitioned VX.versions/products/ratingFactors
+   — platform-wide totals, blind to which tenant is active. A newly onboarded
+   tenant (Ironclad, or a genuinely blank one) showed VeriDex's own counts
+   here, not its own real (and often zero) ones. Recomputed live off the same
+   COSMOS.query scoping every tenant-owned grid on this platform already
+   uses, so a blank tenant now honestly shows 0, not someone else's numbers. */
+const tenantVersions = (typeof COSMOS !== "undefined") ? COSMOS.query("versions", {}) : VX.versions;
+const tenantProducts = (typeof COSMOS !== "undefined") ? COSMOS.query("products", {}) : VX.products;
+const tenantFactors = (typeof COSMOS !== "undefined") ? COSMOS.query("ratingFactors", {}) : VX.ratingFactors;
+const tenantLobs = (typeof COSMOS !== "undefined") ? COSMOS.query("lobs", {}) : VX.lobs;
+d.activeVersions = tenantVersions.filter(v => v.status === "Published").length;
+d.productCount = tenantProducts.length;
+d.factorCount = tenantFactors.length;
+d.gwp = tenantProducts.reduce((a, p) => a + (p.gwp || 0), 0);
+const tenantLobCount = new Set(tenantLobs.map(l => l.name)).size;
+const sev = { warning: ["amber","fa-triangle-exclamation"], danger: ["red","fa-circle-exclamation"], info: ["blue","fa-circle-info"] };
+
+document.getElementById("vxPageActions").innerHTML =
+  `<a href="coverages.html" class="btn btn-outline-secondary btn-sm"><i class="fa-solid fa-sitemap me-1"></i>Coverages</a>
+   <a href="quote-portal.html" class="btn btn-primary btn-sm"><i class="fa-solid fa-flask me-1"></i>Sandbox Quote</a>`;
+
+/* Every card is an entry point, so each one links to the screen that owns the
+   number it shows. `href` is optional — a card without a destination stays a
+   plain card rather than pretending to be clickable. */
+const stat = (l, v, dt, cls, ic, bg, href) => {
+  const body = `<div class="vx-stat vx-anim${href ? " link" : ""}">
+  <div><div class="lbl">${l}</div><div class="val">${v}</div><div class="dt ${cls}">${dt}</div></div>
+  <div class="ic" style="background:${bg}"><i class="fa-solid ${ic}"></i></div>
+  ${href ? '<i class="fa-solid fa-arrow-right go"></i>' : ""}</div>`;
+  return `<div class="col-6 col-lg-3">${href ? `<a href="${href}" class="vx-stat-a">${body}</a>` : body}</div>`;
+};
+
+document.getElementById("vxBody").innerHTML = `
+<div id="actionBar"></div>
+<div class="row g-3 mb-1" id="portfolioStats"></div>
+<div class="row g-3 mb-1">
+  ${stat("Active Rating Versions", d.activeVersions, "Across " + d.productCount + " products", "flat", "fa-code-branch", "var(--cat-1)", "versions.html")}
+  ${stat("Pending Changes", d.pendingChanges, "Awaiting review &amp; publish", "flat", "fa-hourglass-half", "var(--cat-5)", "versions.html")}
+  ${stat("Rating Factors", vxNum(d.factorCount), `Configured across ${tenantLobCount} LOB${tenantLobCount === 1 ? "" : "s"}`, "flat", "fa-sliders", "var(--cat-2)", "factors.html")}
+  ${stat("Config Changes (30d)", d.configChanges30d, '<i class="fa-solid fa-arrow-up"></i> 22 vs prior 30d', "up", "fa-clock-rotate-left", "var(--cat-4)", "audit.html")}
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="vx-card vx-anim vx-anim-d1">
+      <div class="vx-card-head"><div><h2>Premium &amp; Rating Request Trend</h2><div class="sub">Trailing 12 months — GWP in $000s vs. total rating API calls</div></div>
+        <select class="form-select form-select-sm" style="width:auto" id="trendSel"><option>All Products</option>${VX.products.map(p=>`<option>${p.name}</option>`).join("")}</select></div>
+      <canvas id="c1" height="96"></canvas>
+    </div>
+    <div class="vx-card vx-anim vx-anim-d2">
+      <div class="vx-card-head"><div><h2>Quotes by Line of Business</h2><div class="sub">Volume and bound conversion by LOB this quarter</div></div>
+        <a href="analytics.html" class="btn btn-outline-secondary btn-sm">Full Analytics <i class="fa-solid fa-arrow-right ms-1"></i></a></div>
+      <canvas id="c2" height="104"></canvas>
+    </div>
+    <div class="vx-card vx-anim">
+      <h2>Recent Activity</h2><div class="sub">Latest configuration changes across the platform</div>
+      <div class="vx-tw"><table class="vx-t"><thead><tr><th>Time</th><th>User</th><th>Area</th><th>Action</th><th>Version</th></tr></thead>
+      <tbody>${VX.audit.slice(0,7).map(a=>`<tr><td style="white-space:nowrap">${a.timestamp}</td>
+        <td>${a.user.includes("ai")?'<i class="fa-solid fa-robot me-1" style="color:var(--purple)"></i>':""}${a.user.split("@")[0]}</td>
+        <td>${a.area}</td><td>${a.detail}</td><td><span class="vx-b gray">${a.version}</span></td></tr>`).join("")}</tbody></table></div>
+      <div class="text-end mt-2"><a href="audit.html" style="font-size:12.5px">View full audit history <i class="fa-solid fa-arrow-right ms-1"></i></a></div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="vx-card vx-anim vx-anim-d1">
+      <h2>Premium Distribution by LOB</h2><div class="sub">Share of gross written premium</div>
+      <canvas id="c3" height="180"></canvas>
+    </div>
+    <div class="vx-card vx-anim vx-anim-d3">
+      <h2>Configuration Warnings</h2><div class="sub">Issues to review before next publish</div>
+      ${d.warnings.map(w=>`<div class="d-flex gap-2 mb-2 align-items-start">
+        <span class="vx-b ${sev[w.sev][0]}"><i class="fa-solid ${sev[w.sev][1]}"></i></span>
+        <div style="font-size:12.7px;line-height:1.5">${w.text}</div></div>`).join("")}
+    </div>
+    <div class="vx-card vx-anim">
+      <h2>Rating Data Loaded</h2><div class="sub">By line of business</div>
+      ${VX.workbooks.map(w=>`<div class="d-flex justify-content-between align-items-center py-2" style="border-bottom:1px solid var(--border);font-size:12.5px">
+        <div><b style="font-size:12.5px">${w.lob}</b><div style="color:var(--text-mute);font-size:11px">${w.rows} rating rows</div></div>
+        <span class="vx-b green">${w.status}</span></div>`).join("")}
+      <div class="text-end mt-2"><a href="lookup-tables.html" style="font-size:12.5px">View lookup tables <i class="fa-solid fa-arrow-right ms-1"></i></a></div>
+    </div>
+  </div>
+</div>`;
+
+/* ---------- Action-first header ----------
+   Pick a line of business to get its real Configuration Health, its most
+   recent Draft version, and three actions scoped to it. With nothing
+   picked it shows the portfolio-wide aggregate rather than inventing a
+   "current version" that doesn't exist. */
+const LOB_OPTS = [...new Set(VX.lobs.filter(l => l.status === "Active").map(l => l.name))];
+const MGA_OPTS = [...new Set(VX.quotes.map(q => q.mga))].filter(Boolean).sort();
+let selLob = sessionStorage.getItem("vxDashLob") || "";
+let selMga = sessionStorage.getItem("vxDashMga") || "";
+
+/* The quotes behind the portfolio row and the two quote-driven charts.
+   The stat cards used to read fixed totals off VX.dashboard, which would have
+   sat unchanged next to a filtered chart — so they are computed from the same
+   filtered set instead. Configuration counts (versions, factors, pending
+   changes) are deliberately NOT filtered: an MGA doesn't own rating
+   configuration, so narrowing them by MGA would be meaningless. */
+function filteredQuotes() {
+  return VX.quotes.filter(q => (!selLob || q.lob === selLob) && (!selMga || q.mga === selMga));
+}
+function renderPortfolio() {
+  const Q = filteredQuotes();
+  const prem = Q.reduce((a, q) => a + q.premium, 0);
+  const bound = Q.filter(q => q.status === "Bound");
+  const boundPrem = bound.reduce((a, q) => a + q.premium, 0);
+  const scope = [selLob, selMga].filter(Boolean).join(" · ") || "whole book";
+  document.getElementById("portfolioStats").innerHTML =
+    stat("Quotes", vxNum(Q.length), scope, "flat", "fa-file-invoice", "var(--cat-2)", "loss-runs.html") +
+    stat("Premium Quoted", vxMoney(prem), scope, "flat", "fa-sack-dollar", "var(--cat-1)", "loss-runs.html") +
+    stat("Bound Premium", vxMoney(boundPrem), `${bound.length} of ${Q.length} quotes bound`,
+      "flat", "fa-handshake", "var(--cat-3)", "loss-runs.html") +
+    stat("Avg Premium", vxMoney(Q.length ? Math.round(prem / Q.length) : 0),
+      Q.length ? "per quote" : "no quotes in this slice", "flat", "fa-chart-line", "var(--cat-4)", "loss-runs.html");
+}
+
+function latestDraft(lob) {
+  const prods = VX.products.filter(p => p.lob === lob).map(p => p.name);
+  return VX.versions.filter(v => prods.includes(v.product) && v.status === "Draft")
+    .sort((a, b) => (b.effectiveStart || "").localeCompare(a.effectiveStart || ""))[0] || null;
+}
+function healthColor(s) { return s >= 90 ? "var(--good)" : s >= 75 ? "var(--warn)" : "var(--bad)"; }
+
+function renderActionBar() {
+  const h = selLob ? computeHealth(selLob) : computeHealthAll();
+  const issues = h.checks ? h.checks.filter(c => c.status !== "ok") : [];
+  const draft = selLob ? latestDraft(selLob) : null;
+  const lobSelect = `<select class="form-select form-select-sm" id="dashLob" style="width:auto;min-width:210px">
+      <option value="">All lines of business</option>
+      ${LOB_OPTS.map(l => `<option ${l === selLob ? "selected" : ""}>${l}</option>`).join("")}</select>`;
+
+  document.getElementById("actionBar").innerHTML = `
+    <div class="vx-card vx-anim mb-3" style="padding:11px 14px">
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        ${lobSelect}
+        <select class="form-select form-select-sm" id="dashMga" style="width:auto;min-width:170px">
+          <option value="">All MGAs</option>
+          ${MGA_OPTS.map(m => `<option ${m === selMga ? "selected" : ""}>${m}</option>`).join("")}</select>
+        <span class="dashsep"></span>
+        <span class="hintdot" title="Configuration health${h.byLob ? " — " + h.byLob.map(r => r.lob.replace(" (MPL)", "") + " " + r.score + "%").join(", ") : ""}"
+          style="font-size:12px;color:var(--text-dim)">Health
+          <b style="font-size:16px;color:${healthColor(h.score)};margin-left:4px">${h.score}%</b></span>
+        <span class="dashsep"></span>
+        <span style="font-size:12px;color:var(--text-dim)">Draft
+          <b style="margin-left:4px;color:var(--text)">${draft ? `${draft.version} <span class="vx-b amber">Draft</span>`
+            : (selLob ? '<span style="color:var(--text-mute);font-weight:400">none</span>'
+                      : '<span style="color:var(--text-mute);font-weight:400">pick a LOB</span>')}</b></span>
+        <div class="ms-auto d-flex gap-2 flex-wrap">
+          <button class="btn btn-outline-secondary btn-sm" id="fixBtn" ${issues.length ? "" : "disabled"}>
+            <i class="fa-solid fa-screwdriver-wrench me-1"></i>Fix Issues${issues.length ? ` <span class="vx-b amber ms-1">${issues.length}</span>` : ""}</button>
+          <a class="btn btn-outline-secondary btn-sm" href="quote-portal.html${selLob ? "?lob=" + encodeURIComponent(selLob) : ""}"><i class="fa-solid fa-flask me-1"></i>Test Rating</a>
+          ${draft
+            ? `<a class="btn btn-primary btn-sm" href="versions.html?publish=${draft.id}"><i class="fa-solid fa-rocket me-1"></i>Publish ${draft.version}</a>`
+            : `<a class="btn btn-outline-secondary btn-sm" href="versions.html" title="${selLob ? "No draft version to publish for this line of business — create one first" : "Pick a line of business to publish its draft"}"><i class="fa-solid fa-rocket me-1"></i>Publish</a>`}
+        </div>
+      </div>
+      ${issues.length ? `<div id="issueList" style="display:none;margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
+        ${issues.map(c => `<div class="d-flex align-items-start gap-2 py-2" style="border-bottom:1px solid var(--border)">
+          <i class="fa-solid ${c.status === "bad" ? "fa-circle-xmark" : "fa-triangle-exclamation"}" style="color:${c.status === "bad" ? "var(--bad)" : "var(--warn)"};margin-top:3px"></i>
+          <div style="flex:1"><b style="font-size:12.7px">${c.label}</b>
+            <div style="font-size:11.8px;color:var(--text-dim);margin-top:2px">${c.detail}</div></div>
+          <a href="${c.fixHref}" class="btn btn-outline-secondary btn-sm">Open</a></div>`).join("")}
+        </div>` : ""}
+
+    </div>`;
+
+  document.getElementById("dashLob").onchange = e => {
+    selLob = e.target.value; sessionStorage.setItem("vxDashLob", selLob);
+    renderActionBar(); renderPortfolio(); draw();
+  };
+  document.getElementById("dashMga").onchange = e => {
+    selMga = e.target.value; sessionStorage.setItem("vxDashMga", selMga);
+    renderActionBar(); renderPortfolio(); draw();
+  };
+  const fb = document.getElementById("fixBtn");
+  if (fb && issues.length) fb.onclick = () => {
+    const list = document.getElementById("issueList");
+    list.style.display = list.style.display === "none" ? "block" : "none";
+  };
+}
+renderActionBar();
+renderPortfolio();
+
+/* charts */
+let charts = [];
+function css(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function draw(){
+  charts.forEach(c=>c.destroy()); charts=[];
+  const grid = css("--border"), txt = css("--text-dim");
+  vxChartDefaults();
+  const P = vxChartPalette();
+
+  charts.push(new Chart(document.getElementById("c1"), { type:"line", data:{ labels:d.months, datasets:[
+    { label:"GWP ($000s)", data:d.premiumTrend, borderColor:P[0], backgroundColor:"rgba(26,188,156,.12)", fill:true },
+    { label:"Rating Requests", data:d.requestTrend.map(v=>v/2), borderColor:P[1], backgroundColor:"transparent", borderDash:[5,4] }]},
+    options:{ responsive:true, plugins:{ legend:{ position:"bottom", labels:{ usePointStyle:true, pointStyle:"circle", boxWidth:7, padding:16 } } },
+      scales:{ x:{ grid:{ display:false } }, y:{ grid:{ color:grid }, border:{ display:false } } } }}));
+
+  // both quote-driven charts read the same filtered set as the stat row
+  const FQ = filteredQuotes();
+  const byLob = vxLobNames().map(n=>({ l:n, q: FQ.filter(q=>q.lob===n).length,
+    b: FQ.filter(q=>q.lob===n && q.status==="Bound").length }));
+  charts.push(new Chart(document.getElementById("c2"), { type:"bar", data:{ labels:byLob.map(b=>b.l.replace(" (MPL)","")), datasets:[
+    { label:"Quoted", data:byLob.map(b=>b.q), backgroundColor:P[1], barPercentage:.7 },
+    { label:"Bound", data:byLob.map(b=>b.b), backgroundColor:P[0], barPercentage:.7 }]},
+    options:{ responsive:true, plugins:{ legend:{ position:"bottom", labels:{ usePointStyle:true, pointStyle:"circle", boxWidth:7, padding:16 } } },
+      scales:{ x:{ grid:{ display:false } }, y:{ grid:{ color:grid }, border:{ display:false } } } }}));
+
+  /* Premium share now comes from QUOTES, not from each product's static gwp
+     field — otherwise this chart ignored the LOB/MGA filter sitting directly
+     above it, and showed a different premium basis from the card beside it. */
+  const gwp = vxLobNames().map(n=>FQ.filter(q=>q.lob===n).reduce((a,q)=>a+q.premium,0));
+  charts.push(new Chart(document.getElementById("c3"), { type:"doughnut",
+    data:{ labels:vxLobNames().map(n=>n.replace(" (MPL)","")), datasets:[{ data:gwp,
+      backgroundColor:P, borderWidth:0 }]},
+    options:{ cutout:"62%", plugins:{ legend:{ position:"bottom", labels:{ usePointStyle:true, pointStyle:"circle", boxWidth:7, padding:11, font:{size:10.5} } } } }}));
+}
+draw();
+document.addEventListener("vx-theme", draw);
+document.getElementById("trendSel").onchange = e => { vxToast("Filter applied", "Trend filtered to " + e.target.value, "info"); draw(); };
+</script>
+</body>
+</html>

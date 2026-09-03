@@ -1,0 +1,1104 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quote JSON — Main | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+<style>
+.jt{width:100%;min-height:520px;font-family:ui-monospace,Consolas,monospace;font-size:11.6px;
+  line-height:1.55;border:1px solid var(--border);border-radius:8px;padding:12px 13px;
+  background:var(--surface-2);color:var(--text);resize:vertical;tab-size:2}
+.jt:focus{outline:2px solid var(--primary);outline-offset:0;background:var(--surface)}
+.jt.out{background:var(--surface-2)}
+.jbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:8px}
+.jbar .t{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-mute)}
+.maprow{display:grid;grid-template-columns:1fr 16px 1fr;gap:8px;align-items:center;
+  padding:5px 0;border-bottom:1px solid var(--border);font-size:11.4px}
+.maprow:last-child{border-bottom:none}
+.maprow code{font-size:11px;background:none;padding:0;color:var(--text-dim)}
+.maprow b{font-size:11.2px}
+.maprow i.a{color:var(--text-mute);font-size:9px;text-align:center}
+.unmapped{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--text-dim);
+  line-height:1.9}
+.unmapped span{background:var(--surface-3);padding:1px 6px;border-radius:4px;margin-right:4px;
+  display:inline-block;white-space:nowrap}
+</style>
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/rate-data-full.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/app-types.js"></script>
+<script src="assets/js/engine.js"></script>
+<script src="assets/js/eligibility.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script>
+vxShell("Quote JSON",
+  "Paste a submission payload, get a rated quote back. || Exercises the same engine path the underwriting service uses — the AMS application-type contract in, a rating result out.",
+  [{ l: "Main" }, { l: "Quote JSON" }]);
+
+/* ==========================================================================
+   AMS submission payload  ->  ENGINE input
+
+   The payload is the real ams_service shape for application type 483 (Digital
+   Trucking). It carries far more than rating needs — servicing, documents,
+   endorsement bookkeeping, UI state. The adapter maps what rating reads and
+   REPORTS what it ignored, because a silent adapter is how integrations drift:
+   a field gets added upstream, nothing here reads it, and nobody finds out
+   until a premium is wrong.
+   ========================================================================== */
+
+const MAPPED = [];      // [sourcePath, targetField, value]
+const WARN = [];
+
+function pick(o, path) {
+  return path.split(".").reduce((a, k) => (a == null ? a : a[k]), o);
+}
+function map(src, path, target, transform) {
+  const raw = pick(src, path);
+  const v = transform ? transform(raw) : raw;
+  if (v !== undefined && v !== null && v !== "") MAPPED.push([path, target, v]);
+  return v;
+}
+
+/* Radius id -> the engine's radius class. ams sends an integer; the rater's
+   own radius table is labelled, so the mapping is explicit rather than
+   positional. */
+/* Radius id -> our radius class. Only id 2 is CONFIRMED: a production payload
+   carrying radius 2 rated at 0.95, which is the Local-200 row. The rest are
+   ordered by the filed ladder and flagged unverified — an unconfirmed id warns
+   rather than silently picking a band. */
+const RADIUS_BY_ID = { 1: "local_200", 2: "local_200", 3: "local_intermediate",
+                       4: "12_western", 5: "48_states", 6: "long_haul" };
+const RADIUS_CONFIRMED = new Set([2]);
+
+/* miles_driven on the payload is a BAND ORDINAL, not a mileage. The payload
+   carried 4 and rated at 1.03, which is band 4 (75,001-100,000). Read as a
+   literal 4 miles it lands in band 1 (0.95) — an 8% understatement. Mapped to
+   a representative mileage inside the band so the existing lookup lands right. */
+const MILES_BAND_MID = { 1: 12500, 2: 37500, 3: 62500, 4: 87500, 5: 112500, 6: 137500, 7: 200000 };
+const RATING_CLASS_BY_ID = {
+  1: "Dry Van or Box - Single Trailer", 2: "Refrigerated - Single Trailer",
+  3: "Flatbed - Single Trailer", 4: "Tanker - Single Trailer",
+  5: "Dry Van or Box - Single Trailer",
+};
+
+function ageFromDob(dob) {
+  if (!dob) return 40;
+  const d = new Date(dob);
+  if (isNaN(d)) return 40;
+  return Math.max(18, Math.floor((Date.now() - d.getTime()) / 31557600000));
+}
+
+/* out-of-service percentage -> the band the account factor table is keyed on */
+function oosBand(pct, bands) {
+  const n = parseFloat(pct);
+  if (isNaN(n)) return bands[0];
+  return bands.find(b => n <= b.max).label;
+}
+
+/* Application type -> which line rates it. Taken from VX_APP_TYPES so the two
+   cannot drift; an app type with no engine calculator is listed explicitly
+   rather than falling through to whatever happens to be first. */
+const APPTYPE_LOB = {
+  483: "TRUCK",   // Digital Trucking Program (ISO per-vehicle)
+  492: "PROP",    // Commercial Property
+  496: "GL",      // GL Package (incl. Liquor Liability)
+  499: "GL",      // General Liability
+  497: "MPL",     // MPL Select
+  1102: "CYBER",  // Cyber
+  495: null,      // Excess / Umbrella — no calculator is registered for it
+  491: "WC",      // Workers' Compensation Program — admitted, not surplus lines (see D.lobs)
+};
+
+function num(v, d) { const n = Number(v); return isNaN(n) || v === "" || v == null ? d : n; }
+
+/* ---- Commercial Trucking (app type 483) ---- */
+function adaptTruck(p) {
+  const cov = p.coveragesInfo || {};
+  const cob = [];
+  if (cov.al_check || pick(p, "genInfo.al_check")) cob.push("Auto Liability");
+  if (cov.pd === "Yes" || cov.pd_check) cob.push("Physical Damage");
+  if (cov.cargo === "Yes" || cov.cargo_check) cob.push("Cargo");
+  if (cob.length) MAPPED.push(["coveragesInfo.al_check / pd / cargo", "cob[]", cob.join(", ")]);
+  else WARN.push("No coverage selected on the payload — nothing to rate.");
+
+  const si = p.serviceInspectionInfo || {};
+
+  const i = {
+    cob,
+    state: map(p, "insuredInfo.insured_garaging_state", "state") || "TX",
+    garageZip: map(p, "insuredInfo.insured_garaging_zip", "garageZip"),
+    county: map(p, "insuredInfo.insured_garaging_county", "county"),
+
+    liabLimit: map(p, "coveragesInfo.liability", "liabLimit", Number) || 1000000,
+    liabDeductible: map(p, "coveragesInfo.al_deductions", "liabDeductible", Number) || 0,
+    apdDeductible: map(p, "coveragesInfo.pd_high_deductible", "apdDeductible", Number)
+                || map(p, "coveragesInfo.pd_deductible_amount", "apdDeductible", Number) || 0,
+    cargoLimit: map(p, "coveragesInfo.cargo_limit", "cargoLimit", Number) || 0,
+    naicsCode: map(p, "coveragesInfo.naics_code", "naicsCode", v => v == null ? null : String(v)) || "484230",
+
+    radiusClass: map(p, "radiusOfOperationsInfo.radius", "radiusClass", v => {
+      if (v != null && !RADIUS_CONFIRMED.has(+v)) {
+        WARN.push(`Radius id ${v} is mapped by assumption — only id 2 (Local-200) is confirmed against a rated payload.`);
+      }
+      return RADIUS_BY_ID[v] || "local_intermediate";
+    }),
+    ratingClass: map(p, "coveragesInfo.rating_class", "ratingClass",
+      v => RATING_CLASS_BY_ID[v] || "Dry Van or Box - Single Trailer"),
+    dashcam: map(p, "coveragesInfo.dashcam", "dashcam", v => v === "Yes" ? "YES - Preferred Vendor" : "NO"),
+
+    yearsInBusiness: map(p, "genInfo.business_yrs_exp", "yearsInBusiness", Number) || 0,
+    iccFiling: map(p, "insuredInfo.icc_filings_yes_no", "iccFiling", v => (v || "").toLowerCase() === "yes" ? "yes" : "no"),
+    policyType: map(p, "genInfo.policytype", "policyType", v => v === "New" ? "New Business" : v),
+    renewalEligible: "no",
+
+    /* Field names confirmed against ams-service's own stored procedure
+       (_coverageinfo->>'driver_criteria' / 'broadend_pollution_form' /
+       'defence_add_back'); the JSON PATH into a real submission (which
+       section carries coverageinfo) is not independently confirmed the way
+       icc_filings_yes_no above is, so mapped under coveragesInfo to match
+       this adapter's own convention for its sibling fields (dashcam,
+       rating_class), defaulting to "no" rather than assumed. */
+    driverCriteria1Year: map(p, "coveragesInfo.driver_criteria", "driverCriteria1Year", v => v === "1Year" ? "yes" : "no") || "no",
+    broadenedPollution: map(p, "coveragesInfo.broadend_pollution_form", "broadenedPollution", v => v === "Yes" ? "yes" : "no") || "no",
+    defenseAddback: map(p, "coveragesInfo.defence_add_back", "defenseAddback", v => v === "Yes" ? "yes" : "no") || "no",
+
+    carrierSafetyRating: map(p, "filingInfo.safer_factor", "carrierSafetyRating",
+      v => +v === 1 ? "Satisfactory" : "Conditional"),
+    fmcsaAlerts: map(p, "filingInfo.FMCSA_alert", "fmcsaAlerts", Number) || 0,
+
+    oosVehiclesBand: oosBand(si.account_percent_si,
+      [{ max: 10, label: "<=10%" }, { max: 20, label: ">10% and <=20%" }, { max: 999, label: ">20%" }]),
+    oosDriversBand: oosBand(si.account_percent_driver,
+      [{ max: 4, label: "<=4%" }, { max: 8, label: ">4% and <=8%" }, { max: 999, label: ">8%" }]),
+    lossFreqBand: ">24% and <=26%",
+    priorClaims: 0, priorIncurredLosses: 0, experienceMonths: 36,
+
+    alPollution: map(p, "uwReviewInfo.al_pollution", "alPollution"),
+    billType: map(p, "genInfo.billtype", "billType"),
+    uwCreditDebit: map(p, "uwReviewInfo.uw_credit_debit_factor", "uwCreditDebit", Number),
+
+    vehicles: (p.vehicles || []).map((v, n) => ({
+      n: n + 1,
+      primaryClass: String(v.primary_code || "321"),
+      vehType: v.no_of_ppt_units > 0 ? "Private Passenger Types" : "Trucks, Tractors And Trailers",
+      year: +v.year || 2022,
+      value: +v.stated_value || +v.al_value || 0,
+      alValue: v.al_value != null ? +v.al_value : undefined,
+      miles: MILES_BAND_MID[+v.miles_driven] != null ? MILES_BAND_MID[+v.miles_driven] : (+v.miles_driven || 0),
+      garageState: v.state_code || v.state,
+      garageZip: v.zip,
+      units: +v.no_of_units || 1,
+      trailer: "None", trailerValue: 0,
+      covLiab: v.Liability === "Yes",
+      covApd: v.pd_opted === "Yes",
+      ownership: v.ownership || undefined,
+      useType: pick(p, "vehicleInfo.usetype") || undefined,
+    })),
+
+    drivers: (p.drivers || []).filter(d => !d.exclude).map((d, n) => ({
+      n: n + 1,
+      age: ageFromDob(d.dob),
+      cdlYears: (d.experience !== "" && d.experience != null) ? +d.experience
+              : (d.tenure !== "" && d.tenure != null && +d.tenure > 0) ? +d.tenure
+              : undefined,
+      licState: d.licensestate,
+      violations: (d.violations || []).length,
+      cls: (d.violations || []).length === 0 ? "A — Clean" : "B — Minor",
+    })),
+  };
+  MAPPED.push(["vehicles[]", "vehicles[]", `${i.vehicles.length} unit(s)`]);
+  MAPPED.push(["drivers[]", "drivers[]",
+    `${i.drivers.length} rated, ${(p.drivers || []).filter(d => d.exclude).length} excluded`]);
+  return i;
+}
+
+/* ---- General Liability (496, 499) ---- */
+function adaptGL(p) {
+  const c = p.coveragesInfo || {};
+  return {
+    state: map(p, "insuredInfo.insured_garaging_state", "state") || "TX",
+    county: map(p, "insuredInfo.insured_garaging_county", "county") || null,
+    revenue: map(p, "coveragesInfo.annualGrossRevenue", "revenue", Number)
+          || map(p, "exposureInfo.annual_revenue", "revenue", Number) || 0,
+    classCode: map(p, "coveragesInfo.class_code", "classCode", String)
+            || map(p, "coveragesInfo.naics_code", "classCode", String) || "238160",
+    limit: map(p, "coveragesInfo.liability", "limit", Number) || 1000000,
+    products: c.products_completed_ops === "Yes" || c.products === true || !!c.products_check,
+    schedMod: map(p, "uwReviewInfo.gl_schedule_mod", "schedMod", Number) || 0,
+    expMod: map(p, "uwReviewInfo.gl_experience_mod", "expMod", Number) || 1,
+  };
+}
+
+/* ---- Commercial Property (492) ---- */
+function adaptProp(p) {
+  const c = p.coveragesInfo || {};
+  const loc = (p.locations || [])[0] || {};
+  return {
+    state: map(p, "insuredInfo.insured_garaging_state", "state") || loc.state || "TX",
+    county: map(p, "insuredInfo.insured_garaging_county", "county") || null,
+    construction: map(p, "locations.0.construction", "construction") || c.construction || "JM",
+    ppc: num(loc.ppc != null ? loc.ppc : c.protection_class, 4),
+    occupancy: loc.occupancy || c.occupancy || "RETAIL",
+    windHail: loc.wind_hail_zone || c.wind_hail || "Z1",
+    deductible: map(p, "coveragesInfo.property_deductible", "deductible", Number) || 5000,
+    buildingValue: num(loc.building_value != null ? loc.building_value : c.total_tiv_building, 0),
+    bppValue: num(loc.bpp_value != null ? loc.bpp_value : c.total_tiv_bpp, 0),
+    timeElement: c.business_income === "Yes" || !!loc.time_element,
+    irpm: map(p, "uwReviewInfo.property_irpm", "irpm", Number) || 0,
+  };
+}
+
+/* ---- Professional Liability / MPL (497) ---- */
+function adaptMPL(p) {
+  const c = p.coveragesInfo || {};
+  return {
+    state: map(p, "insuredInfo.insured_garaging_state", "state") || "TX",
+    county: map(p, "insuredInfo.insured_garaging_county", "county") || null,
+    revenue: map(p, "coveragesInfo.annualGrossRevenue", "revenue", Number) || 0,
+    hazardGroup: map(p, "coveragesInfo.hazard_group", "hazardGroup", Number) || 2,
+    yip: c.year_in_program || "4th or More",
+    limit: map(p, "coveragesInfo.liability", "limit", Number) || 1000000,
+    retention: map(p, "coveragesInfo.retention", "retention", Number) || 5000,
+    alae: c.alae || "Defense Within Limits",
+    experienceFactor: map(p, "uwReviewInfo.mpl_experience_factor", "experienceFactor", Number) || 1,
+    uwAdjust: map(p, "uwReviewInfo.mpl_uw_credit_debit_factor", "uwAdjust", Number) || 0,
+  };
+}
+
+/* ---- Cyber (1102) ---- */
+function adaptCyber(p) {
+  const c = p.coveragesInfo || {};
+  return {
+    state: map(p, "insuredInfo.insured_garaging_state", "state") || "TX",
+    county: map(p, "insuredInfo.insured_garaging_county", "county") || null,
+    revenue: map(p, "coveragesInfo.annualGrossRevenue", "revenue", Number) || 0,
+    industry: c.cyber_industry || c.industry || "RETAIL",
+    mfa: c.mfa || c.multi_factor_auth || "PARTIAL",
+    limit: map(p, "coveragesInfo.liability", "limit", Number) || 1000000,
+    retention: map(p, "coveragesInfo.retention", "retention", Number) || 25000,
+    schedMod: map(p, "uwReviewInfo.cyber_schedule_mod", "schedMod", Number) || 0,
+  };
+}
+
+/* ---- Workers' Compensation (491) ----
+   Real component field names, per wc-exposures-data-capture.component.html /
+   wc-defaults.component.html / wc-eligibility-ques.component.html: each
+   exposure row carries state/class_code/payroll; the bureau-computed
+   experience mod arrives as a plain number; eligibility answers are
+   osha_violation counts, a fatality flag, subcontractor and prior-decline
+   flags. The exact top-level envelope key for the exposure array was not
+   independently confirmed against a real submission body (unlike Trucking's
+   483 payload, which was) — mapped defensively across the plausible real
+   paths rather than guessed at a single one, same as every other "shape
+   inferred, not confirmed" adapter path already flagged on this platform. */
+function adaptWC(p) {
+  const rows = p.wc_exposures || (p.wcExposuresInfo && p.wcExposuresInfo.rows) || p.exposures || [];
+  const wcExposures = rows.map((x, n) => ({
+    n: n + 1,
+    classCode: String(x.class_code || x.classCode || "8810"),
+    payroll: num(x.payroll, 0),
+  }));
+  const wcDefaults = p.wc_defaults || {};
+  const elig = p.wc_eligibility_ques || p.wcEligibilityQues || {};
+  return {
+    state: map(p, "insuredInfo.insured_garaging_state", "state") || "TX",
+    county: map(p, "insuredInfo.insured_garaging_county", "county") || null,
+    wcExposures: wcExposures.length ? wcExposures : [{ n: 1, classCode: "8810", payroll: 0 }],
+    wcExpMod: num(wcDefaults.experience_mod ?? p.experience_mod, 1),
+    wcSchedMod: num(wcDefaults.schedule_mod ?? p.schedule_mod, 0),
+    oshaViolations: num(elig.no_of_violations, elig.osha_violation ? 1 : 0),
+    wcFatality: !!elig.fatality,
+    wcSubcontractorsUninsured: !!(elig.subcontractors_hired && !elig.subcontractor_has_own_coverage),
+    wcPriorDeclined: !!elig.coverage_declined,
+  };
+}
+
+const ADAPTERS = { TRUCK: adaptTruck, GL: adaptGL, PROP: adaptProp, MPL: adaptMPL, CYBER: adaptCyber, WC: adaptWC };
+
+function amsToEngine(p) {
+  MAPPED.length = 0; WARN.length = 0;
+
+  const appType = pick(p, "genInfo.application_type_id");
+  if (appType == null) {
+    throw new Error("genInfo.application_type_id is missing — rating cannot route a submission without it.");
+  }
+  if (!(appType in APPTYPE_LOB)) {
+    throw new Error(`Application type ${appType} is not recognised. Known: ${Object.keys(APPTYPE_LOB).join(", ")}.`);
+  }
+  const lob = APPTYPE_LOB[appType];
+  if (!lob) {
+    const meta = (typeof VX_APP_TYPES !== "undefined" && VX_APP_TYPES[appType]) || {};
+    throw new Error(`Application type ${appType}${meta.name ? ` (${meta.name})` : ""} has no rating calculator on this platform. `
+      + "It is refused rather than rated on another line's engine.");
+  }
+  MAPPED.push(["genInfo.application_type_id", "lobCode", `${appType} → ${lob}`]);
+
+  const i = ADAPTERS[lob](p);
+
+  /* Cross-check is trucking-only: no other payload carries pre-resolved
+     factor values to compare against. */
+  const v0 = (p.vehicles || [])[0] || {};
+  const CROSSCHECK = lob !== "TRUCK" ? [] : [
+    ["vehicle_owned_factor", v0.vehicle_owned_factor, "ownership"],
+    ["al_pollution_factor", pick(p, "uwReviewInfo.al_pollution_factor"), "al_pollution"],
+    ["driver_criteria_factor", v0.driver_criteria_factor, "driver schedule"],
+    ["payment_plan_factor", v0.payment_plan_factor, "billtype"],
+    ["heavy_farm_factor", v0.heavy_farm_factor, "usetype"],
+    ["heavy_dumping_factor", v0.heavy_dumping_factor, "usetype"],
+    ["uw_credit_debit_factor", pick(p, "uwReviewInfo.uw_credit_debit_factor"), "underwriter entry"],
+    ["loss_experience_factor", pick(p, "uwReviewInfo.loss_experience_factor"), "prior loss ratio"],
+  ].filter(([, v]) => v !== undefined && v !== null);
+
+  const NOT_RATED = lob !== "TRUCK" ? [] : [
+    ["vehicles[].driver_factor_surcharge", v0.driver_factor_surcharge],
+    ["vehicles[].pd_semi_trailer_factor", v0.pd_semi_trailer_factor],
+  ].filter(([, v]) => v !== undefined && v !== null);
+
+  return { lob, appType, input: i, mapped: MAPPED.slice(), warnings: WARN.slice(),
+           notRated: NOT_RATED, crosscheck: CROSSCHECK };
+}
+
+/* ==========================================================================
+   Page
+   ========================================================================== */
+document.getElementById("vxBody").innerHTML = `
+  <div class="vx-exp2 vx-anim" id="qjTop">
+    <div class="hd"><i class="fa-solid fa-code" style="color:var(--primary);font-size:11.5px"></i>
+      <b>Same engine, JSON in and out</b>
+      <span>Paste an AMS submission payload; get the rating result the underwriting service would receive.</span>
+      <button type="button" class="tog" onclick="vxExpToggle('qjTop')">Why?</button></div>
+    <div class="bd">
+      <p>This is a developer view of the contract described in the
+      <a href="integration.html">Integration Guide</a> — useful for checking a payload maps cleanly before
+      wiring a caller. It runs the identical <code>ENGINE.rate()</code> path the sandbox screen uses.</p>
+      <p>It is not a quoting channel. Nothing is issued, bound or stored, and the adapter reports every field it
+      could not consume rather than quietly dropping it.</p>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-6">
+      <div class="vx-card vx-anim">
+        <div class="jbar">
+          <span class="t">Input — submission payload</span>
+          <select class="form-select form-select-sm ms-auto" id="sampleSel" style="width:auto"
+            onchange="loadSample()"></select>
+          <button class="btn btn-outline-secondary btn-sm" onclick="loadSample()">
+            <i class="fa-solid fa-file-import me-1"></i>Load</button>
+          <label class="btn btn-outline-secondary btn-sm" for="jsonFileUpload" style="margin-bottom:0;cursor:pointer">
+            <i class="fa-solid fa-file-arrow-up me-1"></i>Upload</label>
+          <input type="file" id="jsonFileUpload" accept=".json" class="vx-sr">
+          <button class="btn btn-outline-secondary btn-sm" onclick="formatIn()">
+            <i class="fa-solid fa-indent me-1"></i>Format</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="copyBox('jsonIn', this)">
+            <i class="fa-regular fa-copy me-1"></i>Copy</button>
+        </div>
+        <textarea class="jt" id="jsonIn" spellcheck="false" placeholder="Paste the submission JSON here, or Upload a file…"></textarea>
+        <div class="d-flex gap-2 mt-2 align-items-center">
+          <button class="btn btn-primary btn-sm" onclick="generate()">
+            <i class="fa-solid fa-play me-1"></i>Generate quote</button>
+          <span id="inStatus" style="font-size:11.5px"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="vx-card vx-anim">
+        <div class="jbar">
+          <span class="t">Output — rating result</span>
+          <select class="form-select form-select-sm ms-auto" id="outMode" style="width:auto" onchange="renderOut()">
+            <option value="summary">Quote result</option>
+            <option value="full">Full result + trace</option>
+            <option value="engine">Adapted engine input</option>
+          </select>
+          <button class="btn btn-outline-secondary btn-sm" onclick="copyBox('jsonOut', this)">
+            <i class="fa-regular fa-copy me-1"></i>Copy</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="downloadOut()">
+            <i class="fa-solid fa-download me-1"></i>Save</button>
+        </div>
+        <textarea class="jt out" id="jsonOut" spellcheck="false" readonly
+          placeholder="Run Generate quote to see the result…"></textarea>
+        <div id="outSummary" class="mt-2"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3" id="mapCards" style="display:none">
+    <div class="col-lg-7">
+      <div class="vx-card vx-anim">
+        <h2>Field mapping</h2>
+        <div class="sub">What the adapter read from the payload, and where it went.</div>
+        <div id="mapList" style="max-height:340px;overflow-y:auto"></div>
+      </div>
+    </div>
+    <div class="col-lg-5">
+      <div class="vx-card vx-anim">
+        <h2>Factor cross-check</h2>
+        <div class="sub">What this engine <b>derived from the inputs</b>, against what the production rater resolved.</div>
+        <div id="notRated"></div>
+      </div>
+    </div>
+  </div>`;
+
+/* A faithful trimmed copy of the real app_type 483 payload — same shape and
+   the same values, with the driver schedule cut to four so the box stays
+   readable. Trimming is noted rather than silent. */
+const SAMPLE_TRUCK = {
+  insured_id: 1150142, submission_id: 45537, quote_id: 1071611,
+  endorsement_number: 0, endorsement_type: null,
+  broker_fee: { amount: 2574, default: 1 },
+  genInfo: {
+    quotetype: "Trucking", application_type_id: 483, company: 210, lob: 152,
+    policytype: "New", billtype: "Agency Bill",
+    effective_date: "07/31/2026", expiration_date: "07/31/2027",
+    lock_rate_effective_date: "07/24/2026",
+    business_yrs_exp: "2", binding: "yes",
+    al_check: true, cargo_check: false, pd_check: true,
+  },
+  insuredInfo: {
+    entity_type: "Individual", insured_name: "Test DR Sanjiv",
+    insured_garaging_zip: "76262", insured_garaging_city: "Roanoke",
+    insured_garaging_state: "TX", insured_garaging_county: "Denton County",
+    years_of_experience: 2, dot_yes_no: "No", icc_filings_yes_no: "No",
+    description_of_operation: "Test",
+  },
+  coveragesInfo: {
+    rating_type: "Composite", liability: 1000000, al_deductions: 0,
+    pd: "Yes", cargo: "No", cargo_limit: 100000,
+    pd_high_deductible: "5000", pd_deductible_amount: 2500,
+    naics_code: 484110, rating_class: 5, dashcam: "No",
+    al_check: true, pd_check: true, cargo_check: false, towing: "10000",
+  },
+  filingInfo: { safer_factor: "1", FMCSA_alert: "2", uw_credit_debit_factor: "1" },
+  radiusOfOperationsInfo: { radius: 2, Intrastate_interstate: "Interstate" },
+  serviceInspectionInfo: {
+    number_of_inspection_si: 0, oos_violation_si: 0,
+    account_percent_si: "-", account_percent_driver: "-",
+  },
+  commoditiesSelected: [2],
+  commoditiesInfo: { secondary_class: "Truckers" },
+  uwReviewInfo: {
+    driver_factor: 1.429, og_driver_count: 5, cr_driver_count: 5,
+    al_pollution: "Low", al_pollution_factor: "1.03",
+    uw_credit_debit_factor: "1", loss_experience_factor: "1",
+    min_earn_factor: 25, broker_fee_amount: 2574,
+    original_driver_exclude_count: 7,
+  },
+  vehicles: [{
+    id: 903139, xid: 1, year: 2023, make: "TT", model: "TRUCK",
+    state_code: "TX", zip: "76262", weight: "Heavy", ownership: "Owned",
+    primary_code: 332, secondary_code: null, rating_class: 5,
+    stated_value: 500000, al_value: 106586, miles_driven: 4,
+    no_of_units: 1, no_of_ppt_units: 0, vehicle_age: 3,
+    Liability: "Yes", pd_opted: "Yes", naics_code: 484110,
+    liab_baserate: 837, liab_ilf_factor: 2.06, liab_ded_factor: 0,
+    liab_lcm_factor: 1.67, liab_primary_factor: 1.8, liab_secondary_factor: 1.98,
+    liab_fleet_factor: 0.97, vehicle_age_factor: 1.12, liab_ocn_factor: 1.14,
+    radius_factor: 0.95, naics_factor: 1.1, tort_limitation_factor: 1,
+    miles_driven_factor: 1.03, rating_class_factor: 1, dashcam_factor: 1,
+    cdl_exp_disc_factor: 1, driver_class_factor: 2.413, liab_acc_level_factor: 1,
+    vehicle_owned_factor: 0.95, driver_criteria_factor: 1, payment_plan_factor: 1,
+    heavy_farm_factor: 1, heavy_dumping_factor: 1, uw_credit_debit_factor: 1,
+    al_premium_wo_mod_factor: 33010.514, liability_premium: 31360,
+    pd_premium: 42070, pd_base_rate: 4.75, pd_deductible_factor: 0.875,
+  }],
+  drivers: [
+    { id: 942561, given_name: "Test", last_name: "2nd Dr", dob: "01/01/2003",
+      licensestate: "CA", licenseclasstype: "Class A", experience: "", tenure: 0,
+      exclude: 0, status: "Added", driver_factor: 2.4125,
+      violations: [{ violationDate: "02/25/2026", violation: 164, occurrence: 1 }] },
+    { id: 942564, given_name: "Travon Antonio", last_name: "Hadley", dob: "10/19/2000",
+      licensestate: "TX", licenseclasstype: "Class A", experience: 3, tenure: 3,
+      exclude: 0, status: "Added", driver_factor: 1.39,
+      violations: [{ violation: "391", occurrence: 1 }, { violation: "161", occurrence: 1 }] },
+    { id: 942568, given_name: "GAMBOA", last_name: "LAMBERTO S JR", dob: "06/18/1985",
+      licensestate: "IN", licenseclasstype: "Class A", experience: 2, tenure: 0,
+      exclude: 0, status: "Added", driver_factor: 0.95, violations: [] },
+    { id: 942562, given_name: "test", last_name: "case9", dob: "05/05/1995",
+      licensestate: "AR", licenseclasstype: "Class B", experience: "", tenure: 0,
+      exclude: 1, status: "Excluded", driver_factor: 1.25, violations: [] },
+  ],
+  broker_info: { agencyname: 900109, agencyPhone: "1234567890", agencyuserid: "11370" },
+  secondary_class: "Truckers", user_id: "11370", agency_id: "900109",
+  _note: "Trimmed from the production payload: driver schedule cut to 4 of 12, servicing/document/endorsement sections omitted. Rating-relevant values are unchanged.",
+};
+
+/* One payload per line so every adapter is exercisable. Only the trucking one
+   is taken from a real production submission; the rest are shaped to the same
+   contract and carry the fields each calculator actually reads. That
+   distinction is stated rather than blurred. */
+const SAMPLE_GL = {
+  submission_id: 51022, quote_id: 1090311,
+  genInfo: { quotetype: "General Liability", application_type_id: 499, policytype: "New",
+    billtype: "Agency Bill", effective_date: "07/31/2026", expiration_date: "07/31/2027",
+    lock_rate_effective_date: "07/24/2026", business_yrs_exp: "8" },
+  insuredInfo: { insured_name: "Ridgeline Contracting LLC", entity_type: "LLC",
+    insured_garaging_state: "TX", insured_garaging_zip: "75001",
+    insured_garaging_city: "Addison", insured_garaging_county: "Dallas County" },
+  coveragesInfo: { gl_check: true, liability: 1000000, annualGrossRevenue: 2500000,
+    class_code: "238160", products_completed_ops: "Yes", naics_code: 238160 },
+  uwReviewInfo: { gl_schedule_mod: 0, gl_experience_mod: 1, gl_policy_fee: "150" },
+  broker_info: { agencyname: 900109, agencyuserid: "11370" },
+  _note: "Illustrative GL submission on the same contract shape. Not a production payload.",
+};
+
+const SAMPLE_PROP = {
+  submission_id: 51044, quote_id: 1090402,
+  genInfo: { quotetype: "Commercial Property", application_type_id: 492, policytype: "New",
+    billtype: "Agency Bill", effective_date: "07/31/2026", expiration_date: "07/31/2027" },
+  insuredInfo: { insured_name: "Northgate Retail Holdings", entity_type: "Corporation",
+    insured_garaging_state: "TX", insured_garaging_zip: "75201", insured_garaging_county: "Dallas County" },
+  coveragesInfo: { property_check: true, property_deductible: 5000, business_income: "Yes" },
+  locations: [{ id: 1, state: "TX", zip: "75201", construction: "JM", ppc: 4,
+    occupancy: "RETAIL", wind_hail_zone: "Z1",
+    building_value: 1200000, bpp_value: 250000, time_element: true }],
+  uwReviewInfo: { property_irpm: 0 },
+  _note: "Illustrative Commercial Property submission. Not a production payload.",
+};
+
+const SAMPLE_MPL = {
+  submission_id: 51077, quote_id: 1090517,
+  genInfo: { quotetype: "Professional Liability", application_type_id: 497, policytype: "New",
+    billtype: "Agency Bill", effective_date: "07/31/2026", expiration_date: "07/31/2027" },
+  insuredInfo: { insured_name: "Copperfield Allied Health", entity_type: "PLLC",
+    insured_garaging_state: "TX", insured_garaging_zip: "78701", insured_garaging_county: "Travis County" },
+  coveragesInfo: { mpl_check: true, liability: 200000, retention: 5000,
+    annualGrossRevenue: 250000, hazard_group: 2, year_in_program: "4th or More",
+    alae: "Defense Within Limits" },
+  uwReviewInfo: { mpl_experience_factor: 0.9, mpl_uw_credit_debit_factor: 0, mpl_Broker_Fee: "150" },
+  _note: "Illustrative MPL submission. Not a production payload.",
+};
+
+const SAMPLE_CYBER = {
+  submission_id: 51090, quote_id: 1090640,
+  genInfo: { quotetype: "Cyber", application_type_id: 1102, policytype: "New",
+    billtype: "Agency Bill", effective_date: "07/31/2026", expiration_date: "07/31/2027" },
+  insuredInfo: { insured_name: "Blue Harbor Outfitters", entity_type: "Corporation",
+    insured_garaging_state: "TX", insured_garaging_zip: "77002", insured_garaging_county: "Harris County" },
+  coveragesInfo: { cyber_check: true, liability: 1000000, retention: 25000,
+    annualGrossRevenue: 8000000, cyber_industry: "RETAIL", mfa: "PARTIAL" },
+  uwReviewInfo: { cyber_schedule_mod: 0 },
+  _note: "Illustrative Cyber submission. Not a production payload.",
+};
+
+/* Umbrella is deliberately present and deliberately unratable: app type 495
+   has no calculator registered in the engine. Loading it should demonstrate a
+   clean refusal, not a number. */
+const SAMPLE_UMBRELLA = {
+  submission_id: 51101,
+  genInfo: { quotetype: "Umbrella / Excess", application_type_id: 495, policytype: "New",
+    effective_date: "07/31/2026" },
+  insuredInfo: { insured_name: "Test Excess Risk", insured_garaging_state: "TX" },
+  coveragesInfo: { excess_check: true, liability: 5000000 },
+  _note: "No rating calculator exists for Umbrella / Excess. This payload should be REFUSED.",
+};
+
+/* Illustrative — the wc_exposures envelope key was inferred from the real
+   component's own name (wc-exposures-data-capture), not confirmed against an
+   actual production submission body, unlike Trucking's 483 sample. */
+const SAMPLE_WC = {
+  submission_id: 51204, quote_id: 1090721,
+  genInfo: { quotetype: "Workers' Compensation", application_type_id: 491, policytype: "New",
+    billtype: "Agency Bill", effective_date: "09/01/2026", expiration_date: "09/01/2027" },
+  insuredInfo: { insured_name: "Harborview Construction LLC", entity_type: "LLC",
+    insured_garaging_state: "TX", insured_garaging_zip: "75201", insured_garaging_county: "Dallas County" },
+  wc_exposures: [
+    { class_code: "5645", payroll: 620000 },
+    { class_code: "8810", payroll: 95000 },
+  ],
+  wc_defaults: { experience_mod: 1.08, schedule_mod: 0 },
+  wc_eligibility_ques: { osha_violation: false, no_of_violations: 1, fatality: false,
+    subcontractors_hired: true, subcontractor_has_own_coverage: true, coverage_declined: false },
+  _note: "Illustrative Workers' Compensation submission. Not a production payload — admitted line, not surplus lines (see D.lobs' licenceBasis note).",
+};
+
+const SAMPLES = {
+  TRUCK:    { label: "Commercial Trucking (483)", real: true,  payload: () => SAMPLE_TRUCK },
+  GL:       { label: "General Liability (499)",   real: false, payload: () => SAMPLE_GL },
+  PROP:     { label: "Commercial Property (492)", real: false, payload: () => SAMPLE_PROP },
+  MPL:      { label: "Professional Liability (497)", real: false, payload: () => SAMPLE_MPL },
+  CYBER:    { label: "Cyber (1102)",              real: false, payload: () => SAMPLE_CYBER },
+  WC:       { label: "Workers' Compensation (491)", real: false, payload: () => SAMPLE_WC },
+  UMBRELLA: { label: "Umbrella / Excess (495) — unratable", real: false, payload: () => SAMPLE_UMBRELLA },
+};
+
+/* Every line measures its own exposure. Trucking counts units; the others rate
+   off revenue or insured value, and reaching for `.vehicles.length` on them is
+   what made a successful GL quote throw after it had already rendered. */
+function riskScale(a) {
+  const i = a.input || {};
+  if (Array.isArray(i.vehicles)) {
+    const d = Array.isArray(i.drivers) ? `, ${i.drivers.length} driver(s)` : "";
+    return `${i.vehicles.length} unit(s)${d}`;
+  }
+  if (i.buildingValue != null || i.bppValue != null) {
+    return `TIV ${vxMoney((+i.buildingValue || 0) + (+i.bppValue || 0))}`;
+  }
+  if (i.revenue) return `${vxMoney(i.revenue)} revenue`;
+  return a.lob;
+}
+
+let LAST = null;
+
+/* File upload for the input box. Reads the raw text (not through
+   vxParseJsonUpload in core.js, used by the Sandbox Quote and Build a Rating
+   Program upload paths) because this box's job is to show the submission
+   JSON as-is for editing — re-serializing a parsed object would lose the
+   uploaded file's own formatting. Unlike Load (which only fills the box), an
+   upload runs generate() immediately, so the uploaded data actually shows on
+   the form — the premium, factors and output JSON below — rather than
+   sitting in the input box waiting for a second click. A file that fails to
+   parse never reaches generate() at all; the box is left untouched and the
+   status line says why. */
+document.getElementById("jsonFileUpload").onchange = async e => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  try {
+    const reader = new FileReader();
+    reader.onerror = () => setStatus("Could not read the file.", "err");
+    reader.onload = () => {
+      const text = reader.result;
+      try { JSON.parse(text); }
+      catch (err) { setStatus("Uploaded file is not valid JSON: " + err.message, "err"); return; }
+      document.getElementById("jsonIn").value = text;
+      setStatus(`Uploaded "${file.name}" — generating quote…`, "info");
+      generate();
+    };
+    reader.readAsText(file);
+  } catch (err) { setStatus("Upload failed: " + err.message, "err"); }
+};
+
+function loadSample() {
+  const sel = document.getElementById("sampleSel");
+  if (sel && !sel.options.length) {
+    sel.innerHTML = Object.entries(SAMPLES)
+      .map(([k, v]) => `<option value="${k}">${v.label}</option>`).join("");
+  }
+  const key = (sel && sel.value) || "TRUCK";
+  const meta = SAMPLES[key];
+  document.getElementById("jsonIn").value = JSON.stringify(meta.payload(), null, 2);
+  document.getElementById("jsonOut").value = "";
+  document.getElementById("outSummary").innerHTML = "";
+  document.getElementById("mapCards").style.display = "none";
+  LAST = null;
+  setStatus(meta.real
+    ? "Real production payload loaded — press Generate quote."
+    : "Illustrative payload loaded (not production data) — press Generate quote.", "info");
+}
+function formatIn() {
+  const el = document.getElementById("jsonIn");
+  try {
+    el.value = JSON.stringify(JSON.parse(el.value), null, 2);
+    setStatus("Formatted.", "ok");
+  } catch (e) { setStatus("Not valid JSON: " + e.message, "err"); }
+}
+function setStatus(msg, kind) {
+  const c = kind === "err" ? "var(--bad)" : kind === "ok" ? "var(--good)" : "var(--text-dim)";
+  document.getElementById("inStatus").innerHTML = `<span style="color:${c}">${msg}</span>`;
+}
+
+function generate() {
+  const raw = document.getElementById("jsonIn").value.trim();
+  if (!raw) { setStatus("Paste a payload first, or load the sample.", "err"); return; }
+  let payload;
+  try { payload = JSON.parse(raw); }
+  catch (e) { setStatus("Not valid JSON: " + e.message, "err"); return; }
+
+  let adapted;
+  try { adapted = amsToEngine(payload); }
+  catch (e) { setStatus("Adapter failed: " + e.message, "err"); return; }
+
+  let result, elig = null;
+  try {
+    if (typeof evaluateEligibility === "function") elig = evaluateEligibility(adapted.lob, adapted.input);
+    result = ENGINE.rate(adapted.lob, adapted.input);
+  } catch (e) { setStatus("Rating failed: " + e.message, "err"); return; }
+
+  LAST = { payload, adapted, result, elig };
+  setStatus(`Rated — ${vxMoney(result.finalPremium)} on version ${result.version}.`, "ok");
+  renderOut();
+  renderMapping();
+  vxToast("Quote generated", `${vxMoney(result.finalPremium)} · ${riskScale(adapted)}`, "ok");
+}
+
+function renderOut() {
+  if (!LAST) return;
+  const mode = document.getElementById("outMode").value;
+  const { adapted, result, elig } = LAST;
+  let out;
+  if (mode === "engine") {
+    out = adapted.input;
+  } else if (mode === "full") {
+    out = { ...result, trace: ENGINE.trace(result), explain: ENGINE.explain(result) };
+  } else {
+    out = {
+      quote: {
+        lob: result.lob, state: result.state,
+        ratingVersion: result.version,
+        coveragePremium: result.coveragePremium,
+        discounts: result.discounts, surcharges: result.surcharges,
+        creditsNotApplied: (result.creditsSkipped || []).map(c => ({
+          name: c.name, code: c.code, reason: c.reason,
+          undetermined: !!c.undetermined })),
+        fees: result.feeLines,
+        taxPct: result.taxPct, tax: result.tax,
+        countyName: result.countyName, countyRate: result.countyRate, countyTax: result.countyTax,
+        finalPremium: result.finalPremium,
+        minimumApplied: !!result.minApplied,
+      },
+      coverages: (result.groups || []).map(g => ({
+        name: g.name, subtotal: g.subtotal,
+        factors: (g.factors || []).map(f => ({
+          label: f.label, value: f.value, base: f.base,
+          driver: f.driver, input: f.input, matched: f.matched,
+        })),
+      })),
+      eligibility: elig ? {
+        declines: elig.declines.map(e => e.rule.name),
+        refers: elig.refers.map(e => e.rule.name),
+      } : null,
+      adapter: {
+        fieldsMapped: adapted.mapped.length,
+        warnings: adapted.warnings,
+      },
+    };
+  }
+  document.getElementById("jsonOut").value = JSON.stringify(out, null, 2);
+
+  const w = adapted.warnings;
+  /* JSON is the point of this screen, but a number inside a code block is hard
+     to sanity-check. These open the same two views the sandbox Premium tab
+     shows, so a payload can be judged on what it produced. */
+  document.getElementById("outSummary").innerHTML = `
+    <div class="d-flex gap-2 flex-wrap align-items-center" style="font-size:11.8px">
+      <span class="vx-b green">${vxMoney(result.finalPremium)}</span>
+      <span class="vx-b blue">${result.version}</span>
+      <span class="vx-b gray">${adapted.mapped.length} fields mapped</span>
+      ${w.length ? `<span class="vx-b amber">${w.length} warning${w.length === 1 ? "" : "s"}</span>` : ""}
+      <button class="btn btn-outline-secondary btn-sm ms-auto" onclick="showPremium()">
+        <i class="fa-solid fa-receipt me-1"></i>Premium</button>
+      <button class="btn btn-outline-secondary btn-sm" onclick="showFactors()">
+        <i class="fa-solid fa-sliders me-1"></i>Factors</button>
+    </div>
+    ${w.length ? `<div style="font-size:11.5px;color:var(--text-dim);line-height:1.6;margin-top:7px;
+      border-left:3px solid var(--warn);background:rgba(232,163,61,.08);padding:9px 12px;border-radius:0 6px 6px 0">
+      ${w.map(x => `<div>• ${x}</div>`).join("")}</div>` : ""}`;
+}
+
+function renderMapping() {
+  if (!LAST) return;
+  document.getElementById("mapCards").style.display = "";
+  document.getElementById("mapList").innerHTML = LAST.adapted.mapped.map(([src, tgt, val]) => `
+    <div class="maprow">
+      <code>${src}</code>
+      <i class="fa-solid fa-arrow-right a"></i>
+      <div><b>${tgt}</b> <span style="color:var(--text-dim)">= ${String(val).slice(0, 40)}</span></div>
+    </div>`).join("");
+
+  /* Compare our derived value against the production rater's, factor by
+     factor. Copying theirs would prove nothing; deriving and comparing is what
+     catches a real disagreement about how a factor is selected. */
+  const trace = ENGINE.trace(LAST.result);
+  const OURS = {
+    vehicle_owned_factor: "Vehicle Ownership Factor",
+    al_pollution_factor: "Pollution Factor",
+    driver_criteria_factor: "Driver Criteria Factor",
+    payment_plan_factor: "Payment Plan Factor",
+    heavy_farm_factor: "Heavy Farm Factor",
+    heavy_dumping_factor: "Heavy Dumping Factor",
+    uw_credit_debit_factor: "UW Credit / Debit",
+    loss_experience_factor: "Loss Experience Factor",
+  };
+  const cc = LAST.adapted.crosscheck || [];
+  const rows = cc.map(([k, theirs, from]) => {
+    const label = OURS[k];
+    const t = label ? trace.find(x => x.label === label) : null;
+    const ours = t ? +t.value : null;
+    const match = ours != null && Math.abs(ours - (+theirs)) < 1e-6;
+    return { k, from, theirs: +theirs, ours, match, label };
+  });
+  const agree = rows.filter(r => r.match).length;
+  document.getElementById("notRated").innerHTML = rows.length ? `
+    <div class="d-flex gap-2 mb-2" style="font-size:11.5px">
+      <span class="vx-b ${agree === rows.length ? "green" : "amber"}">${agree} of ${rows.length} agree</span>
+    </div>
+    <div class="vx-tw"><table class="vx-t" style="font-size:11.6px">
+      <thead><tr><th>Factor</th><th>Derived from</th><th style="text-align:right">Ours</th>
+        <th style="text-align:right">Theirs</th><th></th></tr></thead>
+      <tbody>${rows.map(r => `<tr>
+        <td>${r.label || r.k}</td>
+        <td style="font-size:10.8px;color:var(--text-mute)">${r.from}</td>
+        <td style="text-align:right;font-variant-numeric:tabular-nums">${r.ours == null ? "—" : r.ours.toFixed(3)}</td>
+        <td style="text-align:right;font-variant-numeric:tabular-nums">${r.theirs.toFixed(3)}</td>
+        <td style="text-align:right">${r.match
+          ? '<i class="fa-solid fa-check" style="color:var(--good)"></i>'
+          : '<i class="fa-solid fa-xmark" style="color:var(--bad)"></i>'}</td>
+      </tr>`).join("")}</tbody></table></div>
+    ${LAST.adapted.notRated.length ? `<div style="font-size:11.3px;color:var(--text-dim);margin-top:9px">
+      Still unmodelled: ${LAST.adapted.notRated.map(([k]) => `<code>${k.split(".").pop()}</code>`).join(", ")}</div>` : ""}`
+    : `<div class="vx-empty" style="padding:18px"><i class="fa-solid fa-check"></i>No resolved factors on this payload to compare.</div>`;
+}
+
+/* ==========================================================================
+   Premium and Factor views. The same breakdown the sandbox Premium tab shows,
+   reachable from here so a payload can be judged on the number it produced
+   rather than on the JSON alone.
+   ========================================================================== */
+const fmtF = (v, kind) => kind === "+" ? (v >= 0 ? "+" : "") + vxMoney(v)
+  : kind === "%" ? (v * 100).toFixed(2) + "%"
+  : Number(v).toFixed(3).replace(/0+$/, "").replace(/\.$/, "") + "×";
+
+function showPremium() {
+  if (!LAST) return;
+  const r = LAST.result;
+  const row = (label, amt, opt) => `<tr>
+    <td${opt && opt.indent ? ' style="padding-left:26px;color:var(--text-dim)"' : ""}>${label}</td>
+    <td style="text-align:right;font-variant-numeric:tabular-nums">${opt && opt.bold
+      ? `<b>${vxMoney(amt)}</b>` : vxMoney(amt)}</td></tr>`;
+
+  vxModal(`Premium — ${vxMoney(r.finalPremium)}`, `
+    <div class="sub" style="margin-top:-6px">Rating version <b>${r.version}</b> · ${r.state} ·
+      ${(r.groups || []).length} coverage${(r.groups || []).length === 1 ? "" : "s"} ·
+      ${riskScale(LAST.adapted)}</div>
+    <div class="vx-tw"><table class="vx-t">
+      <tbody>
+        ${(r.groups || []).map(g => `<tr>
+          <td><i class="fa-solid ${g.icon} me-2" style="color:${g.color}"></i><b>${g.name}</b>
+            <span class="vx-b gray" style="margin-left:6px">${(g.factors || []).length} factors</span></td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums"><b>${vxMoney(g.subtotal)}</b></td>
+        </tr>`).join("")}
+        ${row("Coverage premium", r.coveragePremium, { bold: true })}
+        ${(r.discounts || []).map(d => row(d.name, d.amt, { indent: true })).join("")}
+        ${(r.surcharges || []).map(x => row(x.name, x.amt, { indent: true })).join("")}
+        ${(() => {
+          /* Undetermined credits are the actionable ones: a field the
+             submission never carried is standing between this account and a
+             credit it may qualify for. */
+          const sk = (r.creditsSkipped || []).filter(c => c.undetermined);
+          if (!sk.length) return "";
+          return `<tr><td colspan="2" style="padding:8px 12px;font-size:11.5px;color:var(--warn)">
+            <i class="fa-solid fa-circle-question" style="margin-inline-end:6px" aria-hidden="true"></i>
+            ${sk.length} credit${sk.length === 1 ? "" : "s"} could not be evaluated — the submission does not
+            carry the data: ${sk.map(c => c.name).join(", ")}</td></tr>`;
+        })()}
+        ${(r.feeLines || []).map(f => row(f.name + (f.capped ? ` (${f.capped} applied)` : ""), f.amt, { indent: true })).join("")}
+        ${row(`Surplus lines tax (${(r.taxPct * 100).toFixed(2)}%)`, r.tax)}
+        ${r.countyTax ? row(`County tax — ${r.countyName} (${r.countyRate.toFixed(2)}%)`, r.countyTax) : ""}
+        ${r.countyUnknown ? `<tr><td colspan="2" style="padding:8px 12px;font-size:11.5px;color:var(--warn)">
+          <i class="fa-solid fa-triangle-exclamation" style="margin-inline-end:6px" aria-hidden="true"></i>
+          ${r.countyRequested} is not configured for ${r.state} — no local tax was charged.</td></tr>` : ""}
+        ${row("Total premium", r.finalPremium, { bold: true })}
+      </tbody>
+    </table></div>
+    ${r.minApplied ? `<div style="font-size:11.8px;color:var(--warn);margin-top:9px">
+      <i class="fa-solid fa-triangle-exclamation me-1"></i>The calculated premium fell below the program
+      minimum — the minimum premium rule was applied.</div>` : ""}
+    ${LAST.elig && (LAST.elig.declines.length || LAST.elig.refers.length) ? `
+      <div style="margin-top:12px">
+        ${LAST.elig.declines.map(e => `<div class="mb-1"><span class="vx-b red"><i class="fa-solid fa-ban me-1"></i>Decline</span>
+          <span style="font-size:11.8px;margin-left:6px">${e.rule.name}</span></div>`).join("")}
+        ${LAST.elig.refers.map(e => `<div class="mb-1"><span class="vx-b amber"><i class="fa-solid fa-flag me-1"></i>Refer</span>
+          <span style="font-size:11.8px;margin-left:6px">${e.rule.name}</span></div>`).join("")}
+      </div>` : ""}`,
+    [{ t: "Close", c: "secondary" }], "modal-lg");
+}
+
+/* Tabbed by coverage, with the account-level factor as its own tab. A trucking
+   quote carries several coverage chains of 20+ factors; as one continuous list
+   they are unreadable and the account factor — which applies to every unit —
+   gets buried at the end of whichever chain happened to be first. */
+let FX_TAB = null;
+const FXQ_OPEN = {};
+
+function factorTabsData() {
+  const r = LAST.result;
+  const tabs = [];
+  if (r.accountFactorLines && r.accountFactorLines.length) {
+    tabs.push({ key: "__acct", label: "Account (Liability)", icon: "fa-sliders",
+                count: r.accountFactorLines.length, sub: (+r.accountFactor || 1).toFixed(3) + "×" });
+  }
+  // Liability and Physical Damage compute separate account-level factors
+  // (verified against ams-service's real stored procedure) — a second tab,
+  // not folded into the first, so the two numbers are never conflated.
+  if (r.pdAccountFactorLines && r.pdAccountFactorLines.length) {
+    tabs.push({ key: "__acct_pd", label: "Account (PD)", icon: "fa-sliders",
+                count: r.pdAccountFactorLines.length, sub: (+r.pdAccountFactor || 1).toFixed(3) + "×" });
+  }
+  // The real formula's own coverages (Auto Liability, Physical Damage,
+  // Cargo, Garagekeepers, ...) — this is what the quote actually charges.
+  (r.groups || []).forEach(g => tabs.push({
+    key: g.name, label: g.name, icon: g.icon, color: g.color,
+    count: (g.factors || []).length, sub: vxMoney(g.subtotal), group: g,
+  }));
+  // Commercial Trucking also carries two candidate models alongside the
+  // real formula (r.modelA / r.modelB — see engine.js), purely for
+  // comparison — additional tabs, clearly labelled, not a replacement for
+  // the real coverage tabs above. Each tab carries its own group object
+  // directly (group: g), so groupPanelHtml() never has to re-resolve which
+  // model a tab's group came from.
+  if (r.modelA && r.modelB) {
+    const label = (g, m) => `${m} (candidate) — ${g.name}`;
+    (r.modelA.groups || []).forEach(g => tabs.push({
+      key: "A:" + g.name, label: label(g, "Model A"), icon: "fa-truck", color: "var(--cat-1)",
+      count: (g.factors || []).length, sub: vxMoney(g.subtotal), group: g,
+    }));
+    (r.modelB.groups || []).forEach(g => tabs.push({
+      key: "B:" + g.name, label: label(g, "Model B"), icon: "fa-road", color: "var(--cat-3)",
+      count: (g.factors || []).length, sub: vxMoney(g.subtotal), group: g,
+    }));
+  }
+  return tabs;
+}
+
+function fxSectionOpen(k) {
+  if (FXQ_OPEN[k] === undefined) FXQ_OPEN[k] = true;
+  return FXQ_OPEN[k];
+}
+function toggleFxSection(k) { FXQ_OPEN[k] = !fxSectionOpen(k); paintFactors(); }
+function selectFxTab(k) { FX_TAB = k; paintFactors(); }
+
+function acctPanelHtml(pd) {
+  const r = LAST.result;
+  const lines = (pd ? r.pdAccountFactorLines : r.accountFactorLines) || [];
+  const value = pd ? r.pdAccountFactor : r.accountFactor;
+  return `
+    <div class="sub">${lines.length} underwriting answers summed into one policy-level multiplier for ${pd ? "Physical Damage" : "Auto Liability"}, applied to
+      <b>every unit</b> rather than once at the end. Clamped to the program band. ${pd ? "Computed separately from Liability's — see the Account (Liability) tab." : "Computed separately from Physical Damage's — see the Account (PD) tab."}</div>
+    <div class="vx-tw"><table class="vx-t" style="font-size:11.8px">
+      <thead><tr><th>Component</th><th style="text-align:right">Credit / debit</th></tr></thead>
+      <tbody>${lines.map(([n, v]) => `<tr>
+        <td>${n}</td>
+        <td style="text-align:right;font-variant-numeric:tabular-nums;color:${
+          +v > 0 ? "var(--bad)" : +v < 0 ? "var(--good)" : "var(--text-mute)"}">${
+          +v > 0 ? "+" : ""}${(+v * 100).toFixed(1)}%</td></tr>`).join("")}
+        <tr class="pt-total"><td><b>Account-Level Factor</b></td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums">
+            <b>${(+value || 1).toFixed(3)}×</b></td></tr>
+      </tbody></table></div>`;
+}
+
+function groupPanelHtml(g) {
+  const pct = (v, base) => (base != null && typeof v === "number" && base !== 0)
+    ? ((v / base - 1) * 100) : null;
+  return `
+    <div class="sub">${(g.factors || []).length} factors · subtotal ${vxMoney(g.subtotal)}</div>
+    <div class="vx-tw"><table class="vx-t" style="font-size:11.8px">
+      <thead><tr><th>Factor</th><th>Driven by</th><th>Answer</th><th>Matched</th>
+        <th style="text-align:right">Applied</th><th style="text-align:right">Default</th>
+        <th style="text-align:right">Effect</th></tr></thead>
+      <tbody>${(g.factors || []).map(f => {
+        const adj = f.kind === "x" ? pct(f.value, f.base) : null;
+        const off = f.base != null && typeof f.value === "number" && Math.abs(f.value - f.base) > 1e-9;
+        return `<tr>
+          <td><b>${f.label}</b>${f.varies ? ' <span class="vx-b amber" style="font-size:8.5px">per unit</span>' : ""}</td>
+          <td style="color:var(--text-dim)">${f.driver || "—"}</td>
+          <td>${f.input == null ? "—" : f.input}</td>
+          <td style="color:var(--text-dim)">${f.matched || "—"}</td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums">
+            <b${off ? ' style="color:var(--primary)"' : ""}>${fmtF(f.value, f.kind)}</b></td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--text-mute)">
+            ${f.base != null ? fmtF(f.base, f.kind) : "—"}</td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums">${adj == null
+            ? '<span style="color:var(--text-mute)">—</span>'
+            : `<span style="color:${adj > 0 ? "var(--bad)" : adj < 0 ? "var(--good)" : "var(--text-mute)"}">${
+                adj > 0 ? "+" : ""}${adj.toFixed(1)}%</span>`}</td>
+        </tr>`; }).join("")}</tbody>
+    </table></div>`;
+}
+
+function paintFactors() {
+  const host = document.getElementById("fxBody");
+  if (!host) return;
+  const tabs = factorTabsData();
+  if (!FX_TAB || !tabs.some(t => t.key === FX_TAB)) FX_TAB = tabs.length ? tabs[0].key : null;
+  const cur = tabs.find(t => t.key === FX_TAB);
+  const open = fxSectionOpen(FX_TAB);
+
+  document.getElementById("fxTabs").innerHTML = tabs.map(t => `
+    <li class="nav-item"><a class="nav-link ${t.key === FX_TAB ? "active" : ""}" href="#"
+      onclick="event.preventDefault();selectFxTab(\'${String(t.key).replace(/\'/g, "\\\'")}\')"
+      style="font-size:12.2px">
+      <i class="fa-solid ${t.icon} me-1" style="${t.color ? `color:${t.color}` : ""}"></i>${t.label}
+      <span class="vx-b gray ms-1">${t.count}</span></a></li>`).join("");
+
+  host.innerHTML = cur ? `
+    <div style="border:1px solid var(--border);border-radius:9px;overflow:hidden">
+      <div onclick="toggleFxSection(\'${String(FX_TAB).replace(/\'/g, "\\\'")}\')"
+        style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--surface-2);cursor:pointer">
+        <i class="fa-solid fa-chevron-${open ? "down" : "right"}"
+          style="font-size:10px;color:var(--text-mute);width:11px"></i>
+        <i class="fa-solid ${cur.icon}" style="${cur.color ? `color:${cur.color}` : "color:var(--primary)"}"></i>
+        <b style="font-size:12.7px">${cur.label}</b>
+        <span class="vx-b gray">${cur.count} factors</span>
+        <span style="margin-left:auto;font-weight:600">${cur.sub}</span>
+      </div>
+      <div style="display:${open ? "" : "none"};padding:11px 13px">
+        ${FX_TAB === "__acct" ? acctPanelHtml(false) : FX_TAB === "__acct_pd" ? acctPanelHtml(true) : groupPanelHtml(cur.group)}
+      </div>
+    </div>` : '<div class="vx-empty" style="padding:20px"><i class="fa-solid fa-sliders"></i>No factors on this quote.</div>';
+}
+
+function showFactors() {
+  if (!LAST) return;
+  FX_TAB = null;
+  vxModal("Factors applied", `
+    <ul class="nav nav-tabs mb-3" id="fxTabs" style="border-bottom:1px solid var(--border)"></ul>
+    <div id="fxBody"></div>
+    <div style="font-size:11.3px;color:var(--text-mute);border-top:1px solid var(--border);
+      padding-top:9px;margin-top:12px">
+      <b>Applied</b> is the value used for this risk; <b>Default</b> is the neutral row the factor takes when no
+      answer matches. A factor sitting on its default did not move this premium.
+    </div>`,
+    [{ t: "Close", c: "secondary" }], "modal-xl");
+  paintFactors();
+}
+
+/* Clipboard, with a fallback: navigator.clipboard is unavailable on file://
+   in some browsers, and a Copy button that silently does nothing is worse
+   than not offering one. */
+function copyBox(id, btn) {
+  const el = document.getElementById(id);
+  const text = el.value;
+  if (!text) { vxToast("Nothing to copy", "The box is empty", "info"); return; }
+  const done = () => {
+    const old = btn.innerHTML;
+    btn.innerHTML = '<i class="fa-solid fa-check me-1"></i>Copied';
+    setTimeout(() => { btn.innerHTML = old; }, 1400);
+    vxToast("Copied", `${text.length.toLocaleString()} characters on the clipboard`, "ok");
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => legacyCopy(el, done));
+  } else legacyCopy(el, done);
+}
+function legacyCopy(el, done) {
+  const ro = el.readOnly; el.readOnly = false;
+  el.select(); el.setSelectionRange(0, el.value.length);
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+  el.readOnly = ro; window.getSelection().removeAllRanges();
+  if (ok) done(); else vxToast("Copy blocked", "Select the text and copy manually", "err");
+}
+
+function downloadOut() {
+  const text = document.getElementById("jsonOut").value;
+  if (!text) { vxToast("Nothing to save", "Generate a quote first", "info"); return; }
+  const blob = new Blob([text], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `quote-${(LAST && LAST.result.version) || "result"}.json`;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  vxToast("Saved", a.download, "ok");
+}
+
+loadSample();
+</script>
+</body>
+</html>
