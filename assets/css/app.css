@@ -578,46 +578,7 @@ label{font-size:11.5px;font-weight:600;color:var(--text-dim);margin-bottom:3px}
 /* Operator strip, sitting directly above the canvas. It used to live at the
    bottom of the left column, below a tall scrolling variables list, which put
    the operators off-screen exactly when you needed them. */
-/* ---------- Formula canvas · variant B ----------
-   Presentation-only treatment for the A/B test. Nothing here is referenced by
-   variant A, so removing this block reverts B to the control. */
-.palgrp{display:flex;align-items:center;gap:6px;font-size:9.5px;font-weight:700;
-  text-transform:uppercase;letter-spacing:.08em;color:var(--text-mute);
-  margin:12px 0 5px;padding-bottom:4px;border-bottom:1px solid var(--border)}
-.palgrp:first-child{margin-top:0}
-.palgrp span{margin-inline-start:auto;font-weight:600;letter-spacing:0}
-/* Height has to be predictable or the density gain evaporates on the long
-   labels — "Increased Limits Factor (ILF)" wrapped to two lines and made the
-   slim tile TALLER than the control it replaces. Clamp to two lines and tighten
-   the leading: one line lands ~44px, two ~58px, both under the 69px control. */
-.vx-vartile.slim{padding:6px 9px;margin-bottom:4px}
-.vx-vartile.slim .vx-vartile-label{font-size:12px;line-height:1.25;
-  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.vx-vartile.slim .vx-vartile-meta{margin-top:1px;font-size:10.5px;line-height:1.3}
-.vx-vartile.used{opacity:.62;border-style:dashed}
-.vx-vartile.used:hover{opacity:1}
-
-/* Parenthesised runs get a tinted ground so precedence is visible without
-   counting brackets. Nesting depth deepens the tint rather than adding chrome. */
-.tokgrp{display:inline-flex;align-items:center;gap:4px;padding:3px 5px;margin:0 1px;
-  border-radius:7px;background:var(--primary-soft);
-  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--primary) 22%, transparent)}
-.tokgrp.d2{background:rgba(139,92,246,.11);
-  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--purple) 24%, transparent)}
-.tokgrp.d3{background:rgba(232,163,61,.13);
-  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--warn) 26%, transparent)}
-.vx-fb-canvas .vx-tok.bad{outline:2px solid var(--bad);outline-offset:1px}
-
 .fx-head:hover{background:var(--surface-3)!important}
-.vx-abbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 12px;
-  border:1px dashed var(--border);border-radius:8px;background:var(--surface-2);margin-bottom:12px}
-.vx-abbar .t{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;
-  color:var(--text-mute)}
-.vx-abbar .arm{font-family:inherit;font-size:11.5px;font-weight:600;padding:3px 12px;border-radius:20px;
-  border:1px solid var(--border);background:var(--surface);color:var(--text-dim);cursor:pointer;transition:.14s}
-.vx-abbar .arm.on{background:var(--color-brand);border-color:var(--color-link);color:var(--color-on-brand)}
-.vx-abbar .arm:hover:not(.on){border-color:var(--primary);color:var(--primary)}
-.vx-abbar .desc{font-size:11.3px;color:var(--text-dim);margin-inline-start:auto}
 
 .vx-fb-ops{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
   padding:9px 11px;margin-bottom:10px;border:1px solid var(--border);

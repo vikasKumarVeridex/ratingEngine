@@ -9,13 +9,49 @@
 <link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-theme-quartz.css" rel="stylesheet">
 <link href="assets/css/app.css" rel="stylesheet">
 <style>
-.covcard{border:2px solid var(--border);border-radius:12px;padding:14px;cursor:pointer;transition:.16s;background:var(--surface);height:100%}
-.covcard:hover{border-color:var(--primary);transform:translateY(-1px);box-shadow:var(--shadow)}
-.covcard.on{border-color:var(--primary);background:var(--primary-soft)}
-.covcard i{font-size:19px;margin-bottom:7px;display:block}
-.covcard b{display:block;font-size:13px;margin-bottom:3px}
-.covcard span{font-size:11px;color:var(--text-dim);line-height:1.4;display:block}
-.covcard .covwarn{color:var(--warn);font-weight:600;margin-top:4px}
+/* Step scaffold for the LOB / coverage picker. A numbered chip per step and
+   a rule beneath the label give the two questions ("which line", "which
+   coverage") clear sequence and separation, rather than two card grids
+   sitting back to back with only spacing to imply order. */
+.fb-step{margin-bottom:20px}
+.fb-step:last-child{margin-bottom:0}
+.fb-step-hd{display:flex;align-items:baseline;gap:9px;font-size:13px;font-weight:700;
+  padding-bottom:9px;margin-bottom:12px;border-bottom:1px solid var(--border)}
+.fb-step-n{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;
+  border-radius:50%;background:var(--primary-soft);color:var(--primary);font-size:11px;font-weight:800;flex:none}
+.fb-step-sub{font-weight:400;color:var(--text-mute);font-size:11.5px;margin-inline-start:4px}
+
+/* An intrinsic grid, not a fixed Bootstrap column count. A column count
+   tuned to "7 lines of business" strands the 7th card alone on its own row
+   the moment an 8th is added, or looks sparse the moment one is removed —
+   this balances at whatever width the cards and the viewport actually allow. */
+.fb-picker-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(122px,1fr));gap:8px}
+.fb-picker-grid.cob{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+
+.covcard{position:relative;border:1.5px solid var(--border);border-radius:10px;padding:10px 11px;
+  cursor:pointer;transition:border-color .14s,background-color .14s,box-shadow .14s,transform .14s;
+  background:var(--surface);height:100%}
+.covcard:hover{border-color:var(--primary);box-shadow:var(--shadow)}
+.covcard:active{transform:scale(.98)}
+.covcard.on{border-color:var(--primary);background:var(--primary-soft);box-shadow:0 0 0 1px var(--primary) inset}
+.covcard i{font-size:16px;margin-bottom:5px;display:block}
+.covcard b{display:block;font-size:12.3px;margin-bottom:2px;line-height:1.25}
+.covcard-code{display:inline-block;font-size:9.6px;color:var(--text-mute);background:var(--surface-2);
+  border:1px solid var(--border);border-radius:5px;padding:1px 6px;font-family:ui-monospace,Consolas,monospace}
+.covcard-check{position:absolute !important;top:7px;right:7px;font-size:12px !important;margin:0 !important;
+  color:var(--primary) !important}
+/* One compact status row instead of a stacked engine-badge line plus a full
+   warning sentence — the sentence itself still shows in full once this
+   coverage is actually selected (the banner above the canvas); here it is a
+   tooltip, so a caution does not cost the same vertical space as a heading. */
+.covcard-status{display:flex;align-items:center;gap:6px;margin-top:6px;min-height:15px}
+.covcard-status .vx-b{font-size:8.5px}
+.covwarn-i{color:var(--warn) !important;font-size:11px !important;margin:0 !important;cursor:help}
+/* Compact form used only for the LOB row — same card language, smaller
+   footprint since this step never carries a description line. */
+.covcard.sm{padding:9px 8px;text-align:center}
+.covcard.sm i{font-size:15px;margin-bottom:4px}
+.covcard.sm b{font-size:11.3px;margin-bottom:0}
 .vx-vartile{border:1px solid var(--border);border-radius:8px;padding:7px 9px;margin-bottom:6px;cursor:grab;background:var(--surface);transition:.12s}
 .vx-vartile:hover{border-color:var(--primary);background:var(--primary-soft)}
 .vx-vartile:active{cursor:grabbing}
@@ -438,24 +474,6 @@ function fmtVarValue(n, v) {
 function lobsWithCob() { return [...new Set(VX.cobParents.map(c => c.lob))]; }
 function cobsForLob(lob) { return VX.cobParents.filter(c => c.lob === lob).map(c => c.name); }
 
-/* ── A/B treatment ─────────────────────────────────────────────────
-   A = control (shipped design). B = the alternate under test.
-   Both arms share every calculation path; only presentation differs, so a
-   measured difference is attributable to the design and not to the logic. */
-const FB_VARIANT = (() => {
-  const q = new URLSearchParams(location.search).get("variant");
-  if (q === "a" || q === "b") { try { localStorage.setItem("vxFbVariant", q); } catch (e) {} return q; }
-  try { return localStorage.getItem("vxFbVariant") || "a"; } catch (e) { return "a"; }
-})();
-const isB = () => FB_VARIANT === "b";
-
-function setVariant(v) {
-  try { localStorage.setItem("vxFbVariant", v); } catch (e) {}
-  const u = new URL(location.href);
-  u.searchParams.set("variant", v);
-  location.href = u.toString();
-}
-
 let currentLob = "Commercial Trucking";
 let currentCob = "Auto Liability";
 let TOK = toTokens(DEFAULT_TOKENS["Auto Liability"], "Auto Liability");
@@ -561,7 +579,15 @@ function fbBack() {
   fbShowList();
 }
 function fbNewFormula() {
-  currentFormula = null; currentCob = null; TOK = []; canvasTested = false;
+  /* Land on the first real line and its first real coverage, not
+     Account-Level — Account-Level is one option among several, and always
+     defaulting to it made every new formula start on the LEAST common case
+     rather than the most common one. Falls back to Account-Level only for a
+     line that genuinely has no coverages of its own. */
+  currentFormula = null; TOK = []; canvasTested = false;
+  currentLob = lobsWithCob()[0] || currentLob;
+  const firstCob = cobsForLob(currentLob);
+  currentCob = firstCob.length ? firstCob[0] : null;
   renderLobPicker(); renderCobPicker(); draw(); drawRules(); renderCanvasContext();
   fbShowBuilder();
 }
@@ -613,14 +639,16 @@ document.getElementById("vxBody").innerHTML = `
 </div>
 
 <div id="fbBuilder" style="display:none">
-<div class="vx-abbar" id="abBar"></div>
 <div class="vx-card vx-anim" id="pickerCard">
-  <div id="pickerBar"></div>
-  <div id="pickerFull">
-    <h2><i class="fa-solid fa-truck-fast me-2 text-primary"></i>What are you rating?</h2>
-    <div class="sub">1. Pick a line of business, then 2. pick which of its real classes of business you're building a formula for.</div>
-    <div class="row g-2 mb-2" id="lobPicker"></div>
-    <div class="row g-2" id="cobPicker"></div>
+  <h2 class="mb-3"><i class="fa-solid fa-truck-fast me-2 text-primary"></i>What are you rating?</h2>
+  <div class="fb-step">
+    <div class="fb-step-hd"><span class="fb-step-n">1</span>Line of business</div>
+    <div class="fb-picker-grid" id="lobPicker"></div>
+  </div>
+  <div class="fb-step">
+    <div class="fb-step-hd"><span class="fb-step-n">2</span>Class of business
+      <span class="fb-step-sub">Which real coverage under <b id="lobPickerName"></b> you're building a formula for</span></div>
+    <div class="fb-picker-grid cob" id="cobPicker"></div>
   </div>
 </div>
 
@@ -638,7 +666,7 @@ document.getElementById("vxBody").innerHTML = `
       <div id="canvasContext" class="mb-2"></div>
       <div class="vx-card-head"><div><h2>Formula Canvas</h2>
         <div class="sub">Click to append, drag to place exactly. <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes.</div></div>
-        <div class="d-flex gap-2 align-items-center"><span id="fbStatus" class="me-2"></span>
+        <div class="d-flex gap-2 align-items-center">
         <button class="btn btn-outline-secondary btn-sm" onclick="undo()"><i class="fa-solid fa-rotate-left"></i></button>
         <button class="btn btn-outline-secondary btn-sm" onclick="clearCanvas()"><i class="fa-solid fa-trash"></i></button></div></div>
       ${currentCob && !ENGINE.runsFormula(currentLob, currentCob) ? `
@@ -690,53 +718,7 @@ document.getElementById("vxBody").innerHTML = `
    two orderings that actually matter — what this formula already uses, and
    what a formula for this coverage usually uses — are both derivable from data
    already on hand (TOK and DEFAULT_TOKENS). */
-function palGroupOf(name) {
-  if (TOK.some(t => t.t === "var" && t.v === name)) return 0;          // in this formula
-  const dflt = DEFAULT_TOKENS[currentCob || ACCOUNT_KEY] || [];
-  if (dflt.includes(name)) return 1;                                    // expected here
-  return 2;                                                             // other available
-}
-const PAL_GROUPS = [
-  { l: "In this formula", i: "fa-check", c: "var(--good)" },
-  { l: "Expected for this coverage", i: "fa-star", c: "var(--primary)" },
-  { l: "Other available", i: "fa-ellipsis", c: "var(--text-mute)" },
-];
-
-function palVarsB(f) {
-  const q = (f || "").toLowerCase();
-  const rows = currentVars().filter(v =>
-    !q || v.n.toLowerCase().includes(q) || varLabel(v.n).toLowerCase().includes(q));
-  const buckets = [[], [], []];
-  rows.forEach(v => buckets[palGroupOf(v.n)].push(v));
-
-  document.getElementById("palVar").innerHTML = buckets.map((bucket, gi) => {
-    if (!bucket.length) return "";
-    const g = PAL_GROUPS[gi];
-    return `<div class="palgrp"><i class="fa-solid ${g.i}" style="color:${g.c}"></i>${g.l}
-        <span>${bucket.length}</span></div>` +
-      bucket.map(v => {
-        const src = varSource(v.n), km = KIND_META[src.kind] || KIND_META.constant, rng = varRange(v.n);
-        const val = rng ? `${fmtVarValue(v.n, rng.min)} – ${fmtVarValue(v.n, rng.max)}`
-                        : fmtVarValue(v.n, v.v);
-        /* Three lines at rest instead of six. Driver, raw identifier and the
-           full row list are not removed — they move to the tooltip and the
-           inspect panel, both of which already exist. */
-        return `<div class="vx-vartile slim ${gi === 0 ? "used" : ""}" draggable="true" data-t="var" data-v="${v.n}"
-            title="${v.n}${src.driver ? " · driven by " + src.driver : ""} — click to add, drag to place">
-          <div class="d-flex align-items-center gap-2">
-            <div class="vx-vartile-label" style="flex:1">${varLabel(v.n)}</div>
-            <span class="vx-b ${km.c}" style="font-size:8px;flex:none">${km.l}</span>
-            <button class="vartile-i" data-inspect="1" title="Where this value comes from"
-              onclick="event.stopPropagation();inspectVar('${v.n}')"><i class="fa-solid fa-circle-info"></i></button>
-          </div>
-          <div class="vx-vartile-meta"><b>${val}</b></div>
-        </div>`;
-      }).join("");
-  }).join("") || `<div style="font-size:12px;color:var(--text-mute);padding:8px">No variables match.</div>`;
-}
-
 function palVars(f) {
-  if (isB()) { palVarsB(f); bindDrag(); return; }
   const q = (f || "").toLowerCase();
   document.getElementById("palVar").innerHTML = currentVars()
     .filter(v => !q || v.n.toLowerCase().includes(q) || varLabel(v.n).toLowerCase().includes(q))
@@ -795,58 +777,49 @@ function inspectVar(n) {
      { t: "Browse Rate Tables", c: "primary", fn: () => { location.href = "rate-tables.html"; } }]);
 }
 function renderLobPicker() {
+  /* A CSS grid of intrinsically-sized columns, not a fixed Bootstrap column
+     count. Fixed counts assume a specific number of lines of business —
+     with 7 today, a 6-per-row split leaves the 7th stranded alone on its own
+     row. A grid that wraps by available width balances any count without a
+     magic number tuned to today's data. */
   document.getElementById("lobPicker").innerHTML = lobsWithCob().map(lob => {
     const m = LOB_META[lob] || { icon: "fa-layer-group", color: "var(--cat-8)" };
-    return `<div class="col-6 col-lg-2"><div class="covcard ${lob === currentLob ? "on" : ""}" data-lob="${lob}" style="padding:10px">
-      <i class="fa-solid ${m.icon}" style="color:${m.color};font-size:16px;margin-bottom:4px"></i><b style="font-size:12px">${lob}</b>
-    </div></div>`;
+    const on = lob === currentLob;
+    return `<div class="covcard sm ${on ? "on" : ""}" data-lob="${lob}">
+      ${on ? '<i class="fa-solid fa-circle-check covcard-check"></i>' : ""}
+      <i class="fa-solid ${m.icon}" style="color:${m.color}"></i><b>${lob}</b>
+    </div>`;
   }).join("");
   document.querySelectorAll("[data-lob]").forEach(el => el.onclick = () => selectLob(el.dataset.lob));
+  const nameEl = document.getElementById("lobPickerName");
+  if (nameEl) nameEl.textContent = currentLob;
 }
 function renderCobPicker() {
   const m = LOB_META[currentLob] || { icon: "fa-layer-group", color: "var(--cat-8)" };
   const cobs = cobsForLob(currentLob).map(name => ({
     key: name, label: name, icon: m.icon, color: m.color,
-    desc: (VX.cobParents.find(c => c.name === name && c.lob === currentLob) || {}).sourceRef || "",
+    code: (VX.cobParents.find(c => c.name === name && c.lob === currentLob) || {}).sourceRef || "",
     warn: COB_WARN[name],
   }));
   cobs.push({ key: null, label: "Account-Level (this LOB)", icon: "fa-layer-group", color: "var(--cat-8)",
-    desc: "Not tied to one coverage — applies once across the whole policy for this line of business." });
-  document.getElementById("cobPicker").innerHTML = cobs.map(c => `
-    <div class="col-6 col-lg-3"><div class="covcard ${c.key === currentCob ? "on" : ""}" data-cob="${c.key === null ? "" : c.key}">
-      <i class="fa-solid ${c.icon}" style="color:${c.color}"></i><b>${c.label}</b><span>${c.desc}</span>
-      ${c.key === null ? "" : (ENGINE.runsFormula(currentLob, c.key)
-        ? `<span class="vx-b green" style="margin-top:6px;font-size:8.5px"><i class="fa-solid fa-bolt me-1"></i>engine runs this</span>`
-        : `<span class="vx-b gray" style="margin-top:6px;font-size:8.5px"><i class="fa-solid fa-pause me-1"></i>saved, not executed</span>`)}
-      ${c.warn ? `<span class="covwarn"><i class="fa-solid fa-triangle-exclamation me-1"></i>${c.warn}</span>` : ""}
-    </div></div>`).join("");
+    code: "", desc: "Not tied to one coverage — applies once across the whole policy for this line of business." });
+  document.getElementById("cobPicker").innerHTML = cobs.map(c => { const on = c.key === currentCob; return `
+    <div class="covcard ${on ? "on" : ""}" data-cob="${c.key === null ? "" : c.key}" ${c.desc ? `title="${c.desc}"` : ""}>
+      ${on ? '<i class="fa-solid fa-circle-check covcard-check"></i>' : ""}
+      <i class="fa-solid ${c.icon}" style="color:${c.color}"></i><b>${c.label}</b>
+      ${c.code ? `<code class="covcard-code">${c.code}</code>` : ""}
+      <div class="covcard-status">
+        ${/* The engine running a formula is the common case for a real
+              coverage — a badge affirming the normal case on every card
+              added noise without adding information. Only the EXCEPTION
+              (not yet executed) is worth a permanent visual cost now. */""}
+        ${c.key !== null && !ENGINE.runsFormula(currentLob, c.key)
+          ? `<span class="vx-b gray"><i class="fa-solid fa-pause me-1"></i>saved, not executed</span>` : ""}
+        ${c.warn ? `<i class="fa-solid fa-triangle-exclamation covwarn-i" title="${c.warn}"></i>` : ""}
+      </div>
+    </div>`; }).join("");
   document.querySelectorAll("[data-cob]").forEach(el => el.onclick = () => selectCob(el.dataset.cob || null));
-  renderPickerBar();
 }
-/* B: the picker is a prerequisite, not the purpose of the screen. Once a
-   selection exists it collapses to a single line and gives the ~250px back to
-   the canvas. A is untouched. */
-let pickerOpen = false;
-function renderPickerBar() {
-  const bar = document.getElementById("pickerBar");
-  const full = document.getElementById("pickerFull");
-  if (!bar || !full) return;
-  if (!isB()) { bar.innerHTML = ""; full.style.display = ""; return; }
-
-  const n = currentVars().length;
-  const cobLabel = currentCob || "Account-Level";
-  full.style.display = pickerOpen ? "" : "none";
-  bar.innerHTML = `<div class="d-flex align-items-center gap-2 flex-wrap" style="font-size:13px">
-    <i class="fa-solid fa-diagram-project" style="color:var(--primary)"></i>
-    <b>${currentLob}</b>
-    <i class="fa-solid fa-chevron-right" style="font-size:9px;color:var(--text-mute)"></i>
-    <b>${cobLabel}</b>
-    <span class="vx-b blue">${n} variable${n === 1 ? "" : "s"}</span>
-    <button class="btn btn-outline-secondary btn-sm ms-auto" onclick="togglePicker()">
-      <i class="fa-solid fa-${pickerOpen ? "xmark" : "pen"} me-1"></i>${pickerOpen ? "Done" : "Change"}</button>
-  </div>`;
-}
-function togglePicker() { pickerOpen = !pickerOpen; renderPickerBar(); }
 
 function selectLob(lob) {
   if (lob === currentLob) return;
@@ -875,7 +848,6 @@ function selectCob(cob, skipConfirm) {
    labelled as a generic reference template rather than this tenant's own. */
 function applyCob(cob) {
   currentCob = cob;
-  if (isB()) pickerOpen = false;
   const key = cob || ACCOUNT_KEY;
   hist = [];
   TOK = [];
@@ -951,62 +923,6 @@ function renderCanvasContext() {
     </div>`;
 }
 const cv = () => document.getElementById("canvas");
-/* A flat strip cannot show precedence: "A × B + C × D" and "A × (B + C) × D"
-   differ by two chips of no visual weight and are different rates. B tints the
-   parenthesised run so grouping is legible without counting brackets. */
-function drawTokensB() {
-  let depth = 0;
-  return TOK.map((t, i) => {
-    const chip = `<span class="vx-tok ${t.t}" data-i="${i}" draggable="true" title="Drag to reorder">${
-      t.t === "var" ? varLabel(t.v) : t.v}<button class="tokx" data-del="${i}" title="Remove this term" aria-label="Remove term">&#10005;</button></span>`;
-    if (t.v === "(") { depth++; return `<span class="tokgrp d${Math.min(depth, 3)}">` + chip; }
-    if (t.v === ")") { depth = Math.max(0, depth - 1); return chip + `</span>`; }
-    return chip;
-  }).join("") + "</span>".repeat(depth);   // tolerate an unbalanced draft
-}
-
-/* Validity is checked on every mutation — a linear scan of an array that is
-   never more than a few dozen items. Three states, because "incomplete" is the
-   normal condition mid-compose and flagging it red teaches people to ignore
-   the indicator. */
-function formulaStatus() {
-  if (!TOK.length) return { s: "empty", m: "Nothing on the canvas yet" };
-  let depth = 0, prev = null;
-  for (let i = 0; i < TOK.length; i++) {
-    const t = TOK[i], v = t.v;
-    if (v === "(") depth++;
-    else if (v === ")") { depth--; if (depth < 0) return { s: "invalid", m: "Closing bracket with nothing open", i }; }
-    const isOp = t.t === "op" && !["(", ")"].includes(v);
-    const prevIsOp = prev && prev.t === "op" && !["(", ")"].includes(prev.v);
-    if (isOp && prevIsOp) return { s: "invalid", m: `Two operators in a row (${prev.v} ${v})`, i };
-    if (isOp && prev === null) return { s: "invalid", m: `Formula starts with an operator (${v})`, i };
-    prev = t;
-  }
-  if (depth > 0) return { s: "incomplete", m: `${depth} bracket${depth === 1 ? "" : "s"} still open` };
-  if (prev && prev.t === "op" && ![")"].includes(prev.v))
-    return { s: "incomplete", m: `Ends on an operator (${prev.v}) — add a term` };
-  return { s: "valid", m: `${TOK.filter(t => t.t === "var").length} variables, brackets balanced` };
-}
-
-function renderStatusB() {
-  const el = document.getElementById("fbStatus");
-  if (!el) return;
-  if (!isB()) { el.innerHTML = ""; return; }
-  const st = formulaStatus();
-  const M = {
-    empty:      ["gray",  "fa-circle",        "Empty"],
-    incomplete: ["amber", "fa-circle-half-stroke", "Incomplete"],
-    invalid:    ["red",   "fa-circle-xmark",  "Invalid"],
-    valid:      ["green", "fa-circle-check",  "Valid"],
-  }[st.s];
-  el.innerHTML = `<span class="vx-b ${M[0]}"><i class="fa-solid ${M[1]} me-1"></i>${M[2]}</span>
-    <span style="font-size:11.5px;color:var(--text-dim);margin-left:7px">${st.m}</span>`;
-  cv().querySelectorAll(".vx-tok").forEach(t => t.classList.remove("bad"));
-  if (st.i != null) {
-    const bad = cv().querySelector(`[data-i="${st.i}"]`);
-    if (bad) bad.classList.add("bad");
-  }
-}
 
 /* Shown in the empty canvas when a reference chain exists for the current
    coverage — an explicit, labelled offer rather than the canvas pre-filling
@@ -1025,11 +941,6 @@ function emptyCanvasHtml(hint) {
   </div>`;
 }
 function draw() {
-  if (isB()) {
-    cv().innerHTML = TOK.length ? drawTokensB() : emptyCanvasHtml("Drag a variable here, or click one in the palette…");
-    drawTail();
-    return;
-  }
   cv().innerHTML = TOK.length
     ? TOK.map((t, i) => `<span class="vx-tok ${t.t}" data-i="${i}" draggable="true" title="Drag to reorder">
         ${t.t === "var" ? varLabel(t.v) : t.v}<button class="tokx" data-del="${i}" title="Remove this term" aria-label="Remove term">&#10005;</button></span>`).join("")
@@ -1076,8 +987,6 @@ function drawTail() {
     </div>`;
   }).join("") : `<div style="font-size:12px;color:var(--text-mute)">No variables in formula yet.</div>`;
   tv.querySelectorAll(".TV").forEach(i => i.oninput = () => { TESTVALS[i.dataset.n] = +i.value; });
-  renderStatusB();
-  if (isB()) palVars(document.getElementById("vq") ? document.getElementById("vq").value : "");
 }
 let hist = [];
 const TESTVALS = {};   // typed test values, keyed by variable name
@@ -1465,26 +1374,7 @@ fbGrid = vxAgGrid({ el: "#fbGrid", key: "savedFormulas", name: "Formula", size: 
 });
 
 document.getElementById("vq").oninput = e => palVars(e.target.value);
-function renderAbBar() {
-  const el = document.getElementById("abBar");
-  if (!el) return;
-  const b = isB();
-  el.innerHTML = `<span class="t">Design test</span>
-    <button class="arm ${b ? "" : "on"}" onclick="setVariant('a')">A · Control</button>
-    <button class="arm ${b ? "on" : ""}" onclick="setVariant('b')">B · Alternate</button>
-    <span class="desc">${b
-      ? "Collapsed picker · grouped palette · grouped tokens · live validity"
-      : "Card picker · flat palette · flat token strip"}</span>`;
-  /* Give the canvas the column B's layout calls for. Done here rather than in
-     the markup so the two arms share one template. */
-  const pal = document.getElementById("colPalette"), can = document.getElementById("colCanvas"),
-        test = document.getElementById("colTest");
-  if (can) { can.className = b ? "col-lg-7" : "col-lg-6"; }
-  if (test) { test.className = b ? "col-lg-2" : "col-lg-3"; }
-  if (pal) { pal.className = "col-lg-3"; }
-}
-renderAbBar();
-renderLobPicker(); renderCobPicker(); renderPickerBar(); palVars(""); draw(); drawRules();
+renderLobPicker(); renderCobPicker(); palVars(""); draw(); drawRules();
 
 /* Land on the grid. ?new opens a blank builder, ?id=<n> opens that formula —
    so the two views are linkable and Back always has somewhere to return to. */
