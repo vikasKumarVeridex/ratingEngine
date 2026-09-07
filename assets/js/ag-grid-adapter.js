@@ -206,7 +206,9 @@ function vxAgGrid(opt) {
     });
     if (a === "del") return vxConfirm(`Delete ${name}?`,
       `This will remove <b>${rec.name || rec.code || "this record"}</b> from the active configuration. Version history is retained.`,
-      () => API.remove(key, rec.id).then(() => { vxToast(name + " deleted", "Removed from active configuration", "err"); vxAutoSave(); reload(); }), true);
+      () => API.remove(key, rec.id).then(() => {
+        if (opt.onAfterDelete) opt.onAfterDelete(rec);
+        vxToast(name + " deleted", "Removed from active configuration", "err"); vxAutoSave(); reload(); }), true);
   }
 
   function viewModal(rec) {
@@ -219,6 +221,10 @@ function vxAgGrid(opt) {
 
   function formModal(rec) {
     const isNew = !rec;
+    /* Hand the caller the row as it stands BEFORE any edit. Once API.update
+       runs, VX[key] holds only the new values — a caller that wants to log
+       or diff a change has no way back to the prior state otherwise. */
+    if (opt.onBeforeSave) opt.onBeforeSave(rec ? { ...rec } : null, isNew);
     const flds = opt.form || cols.filter(c => c.k !== "id");
     /* `editOnly` names the only fields an EXISTING record may change; every
        other field renders disabled. Add is left fully editable — you cannot

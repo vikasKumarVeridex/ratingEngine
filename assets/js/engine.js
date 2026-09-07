@@ -46,6 +46,121 @@ const ENGINE = (() => {
   const opts = (rows, labelFn, valFn, activeFn) => rows.map(r => ({
     label: labelFn(r), value: valFn(r), active: !!activeFn(r) }));
 
+  /* ---------------- Rate version selection ----------------
+     Which filed version rates a quote is a date question, and WHICH date is
+     the whole subtlety:
+       - new business  -> the policy effective date …
+       - rate lock     -> …unless the quote was locked before a revision took
+                          effect, in which case the locked date governs and
+                          the insured is honoured at the older rates
+       - endorsement   -> the ORIGINAL policy effective date, not today, or a
+                          mid-term change would silently reprice the policy
+                          on rates the insured never agreed to
+       - renewal       -> the renewal effective date (a genuinely new pick)
+     This is why superseded rows are closed rather than overwritten: an
+     endorsement written months later still has to reproduce the version that
+     was in force at inception.
+
+     Returns the resolved date AND the version record, so a caller can report
+     what was actually selected instead of asserting a selection it never
+     made. Falls back to the platform's standing reference date rather than
+     the browser clock, matching every other date-relative table here. */
+  function resolveRatingAsOf(i) {
+    if (i.asOf) return { asOf: i.asOf, basis: "explicit as-of date supplied on the quote" };
+    if (i.policyType === "Endorsement" && i.originalEffectiveDate)
+      return { asOf: i.originalEffectiveDate, basis: "original policy effective date (endorsements rate on the version in force at inception)" };
+    if (i.rateLockDate && i.effectiveDate && i.rateLockDate < i.effectiveDate)
+      return { asOf: i.rateLockDate, basis: "quote rate-lock date (locked before the effective date, so the older rates are honoured)" };
+    if (i.effectiveDate) return { asOf: i.effectiveDate, basis: "policy effective date" };
+    return { asOf: VX.referenceDate || "2026-09-01", basis: "platform reference date (no policy effective date on the quote)" };
+  }
+
+  /* ---------------- Admitted vs surplus lines ----------------
+     Whether a quote is written on ADMITTED paper decides two real money
+     items: the surplus-lines premium tax, and the surplus-lines filing fee.
+     Both are excise charges the non-admitted market collects on the state's
+     behalf; an admitted carrier owes neither (it pays ordinary premium tax
+     through a different mechanism this platform does not model).
+
+     This used to be decided by testing the LOB name against the literal
+     string "Workers' Compensation" in two places — which meant the ONE
+     admitted tenant on this platform (Ironclad, nonAdmitted:false) was
+     charged surplus-lines tax and the SL filing fee on every line it wrote
+     except WC. The licence basis is data on both the LOB and the tenant, so
+     it is read from there instead.
+
+     Resolved most-specific-first, because the same line is genuinely written
+     both ways:
+       1. STATUTORY — the line itself must be admitted (WC: no private
+          surplus-lines carrier can write it standalone). Not overridable by
+          a product, which is why this is tested first.
+       2. PRODUCT — the paper this particular program is written on. A
+          carrier group can run an admitted trucking program alongside an
+          E&S one, so this is the level that usually decides it.
+       3. CARRIER — the writing tenant's own licence, when the product does
+          not say. An admitted carrier writes admitted by default.
+     Anything unresolved is surplus lines, which is what this platform's
+     default paper is. */
+  function isAdmitted(lobName, tenantId, productName) {
+    const lob = (VX.lobs || []).find(l => l.name === lobName);
+    if (lob && lob.licenceBasis === "Admitted") return true;          // 1. statutory
+    if (productName) {
+      const p = (VX.products || []).find(x => x.name === productName);
+      if (p && p.licenceBasis) return p.licenceBasis === "Admitted";  // 2. product paper
+    }
+    const tid = tenantId != null ? tenantId : VX.activeTenantId;
+    const t = (VX.tenants || []).find(x => x.id === tid);
+    return !!(t && t.nonAdmitted === false);                          // 3. carrier licence
+  }
+  /* Surplus-lines premium tax rate for a quote — zero on admitted paper. */
+  function surplusTaxFor(lobName, st, tenantId, productName) {
+    if (isAdmitted(lobName, tenantId, productName)) return 0;
+    return ((VX.taxes || []).find(t => t.state === st) || { surplusTax: 2 }).surplusTax / 100;
+  }
+
+  function resolveRatingVersion(lobName, asOf, productName) {
+    const all = (VX.versions || []).filter(v => v.lob === lobName && v.effectiveStart
+      && (!productName || v.product === productName));
+    const inWindow = all.filter(v => v.effectiveStart <= asOf && (!v.effectiveEnd || v.effectiveEnd >= asOf));
+    /* Published beats a Scheduled/Expired row covering the same instant, and
+       the latest start wins among equals — a newer filing supersedes. */
+    const rank = v => (v.status === "Published" ? 2 : v.status === "Scheduled" ? 1 : 0);
+    const byRank = rows => rows.slice().sort((a, b) => rank(b) - rank(a) || (a.effectiveStart < b.effectiveStart ? 1 : -1));
+    const sorted = byRank(inWindow);
+
+    /* A line can carry several products, each on its own filing. With no
+       product named on the quote, two different versions may both cover the
+       date — and picking one arbitrarily would print a version label the
+       quote cannot be said to have been rated under. Report the ambiguity
+       instead and let the caller keep its own filing label. */
+    const labels = [...new Set(sorted.map(v => v.version))];
+    if (sorted.length) {
+      return { rec: sorted[0], ambiguous: !productName && labels.length > 1, fallback: null,
+        candidates: sorted.map(v => ({ version: v.version, product: v.product, status: v.status })) };
+    }
+
+    /* Nothing is in force on that date. Refusing to name a version at all
+       left the caller with a premium and no idea which filing produced it,
+       which is worse than an honest approximation — so fall back to the
+       nearest real version and SAY it is a fallback, never passing it off as
+       the version in force. Prefer the most recent one that has already
+       taken effect (what was last in force); otherwise the soonest one due
+       to take effect. */
+    const past = all.filter(v => v.effectiveStart <= asOf)
+      .sort((a, b) => (a.effectiveStart < b.effectiveStart ? 1 : -1));
+    const future = all.filter(v => v.effectiveStart > asOf)
+      .sort((a, b) => (a.effectiveStart > b.effectiveStart ? 1 : -1));
+    const pick = byRank(past)[0] || past[0] || future[0] || null;
+    if (!pick) return { rec: null, ambiguous: false, fallback: null, candidates: [] };
+    return {
+      rec: pick, ambiguous: false,
+      fallback: past.length
+        ? `no version is in force on ${asOf} — rated on ${pick.version}, the most recent one that had taken effect (${pick.status}, effective ${pick.effectiveStart}${pick.effectiveEnd ? " to " + pick.effectiveEnd : ""})`
+        : `no version had taken effect by ${asOf} — rated on ${pick.version}, the earliest on file (${pick.status}, effective ${pick.effectiveStart})`,
+      candidates: all.map(v => ({ version: v.version, product: v.product, status: v.status })),
+    };
+  }
+
   /* ---------------- Commercial Trucking ----------------
      Verified against DIGITAL TRUCKING Rater_2026-03.xlsb (Vehicles!BV10/BW10,
      FinalPremium, Insured, Drivers tabs) on 2026-08-18. Per-vehicle Liability
@@ -90,16 +205,24 @@ const ENGINE = (() => {
           through it as an unmodeled gap.
 
      This was briefly REMOVED and replaced with two candidate rating models
-     (Model A / Model B) at the user's request, then RESTORED at the user's
-     further request once they saw the real formula was gone. Both candidate
-     models are kept — see truckingReal() below for the real, verified
-     formula (this platform's actual, primary Commercial Trucking engine),
-     and truckingModelA()/truckingModelB() for the two candidates, still
-     computed alongside it purely for comparison (r.modelA / r.modelB on the
-     result), clearly disclosed as not filed everywhere they surface. */
+     (a classification model and an exposure/mileage model) at the user's
+     request, then RESTORED once they saw the real formula was gone. Both
+     candidates have since been removed as well, so what follows is the real,
+     verified formula and the only thing Commercial Trucking rates on. */
   function truckingReal(i) {
     const cob = i.cob && i.cob.length ? i.cob : ["Auto Liability", "Physical Damage", "Cargo"];
     const st = i.state || "TX";
+    /* Resolve the rating date ONCE, here, and read every effective-dated
+       table through it. Letting each lookup pick "current" independently is
+       how a single premium ends up built from two different filings — the
+       liability factor off the new revision, the fleet factor off the old
+       one — which reconciles against neither. */
+    const asOfInfo = resolveRatingAsOf(i);
+    const asOf = asOfInfo.asOf;
+    const versionPick = resolveRatingVersion("Commercial Trucking", asOf, i.product);
+    const ratingVersionRec = versionPick.ambiguous ? null : versionPick.rec;
+    const primaryTable = VX.tableAsOf(VX.truckPrimary, asOf);
+    const fleetTable = VX.tableAsOf(VX.truckFleetSize, asOf);
     const vehicles = (i.vehicles && i.vehicles.length) ? i.vehicles : [{ n: 1, desc: "Unit 1", primaryClass: "321", year: 2022, value: 145000, trailer: "None — Power Unit Only", trailerValue: 0, miles: 65000 }];
     const drivers = (i.drivers && i.drivers.length) ? i.drivers : [{ n: 1, name: "Driver 1", age: 42, cdlYears: 8, violations: 0, cls: "A — Clean" }];
     // A schedule row can stand for several identical units (Vehicles!X), so
@@ -112,13 +235,7 @@ const ENGINE = (() => {
        (0.95) and Long Haul-1001+ (1.20) — existed in the table but had no key
        mapping to them, so no quote could ever select the cheapest or the most
        expensive band. A production payload rating at 0.95 is what exposed it. */
-    const RAD_LABEL = {
-      "local_200": "Local-200",
-      "local_intermediate": "Intermediate-300",
-      "12_western": "Statewide-500",
-      "48_states": "Regional-1000",
-      "long_haul": "Long Haul-1001+",
-    };
+    const RAD_LABEL = VX.truckRadiusKeyToLabel;
     const radLabel = RAD_LABEL[i.radiusClass] || "Intermediate-300";
     const rad = find(VX.truckRadius, r => r.label === radLabel);
     const rc = find(VX.truckRatingClass, r => r.ratingClass === i.ratingClass);
@@ -128,7 +245,7 @@ const ENGINE = (() => {
     const naics = find(VX.truckNAICS, n => n.code === i.naicsCode, VX.truckNAICS[0]);
     const lcm = VX.programParams.find(p => p.param === "Liability LCM").value; // ProgramDeviations!B2 — confirmed current (1.67) against ams-service's udf_iso_new_rater_liab_calculations_0564.sql, which hardcodes the same value with a "changed lcm factor" comment
     const minRate = VX.programParams.find(p => p.param === "APD Absolute Minimum Rate").value; // Table26[APDMinRate]
-    const stTax = (VX.taxes.find(t => t.state === st) || { surplusTax: 2 }).surplusTax / 100;
+    const stTax = surplusTaxFor("Commercial Trucking", st, i.tenantId, i.product);
     /* ---- Territory & loss cost ----
        When the full extracted workbook tables are loaded (rate-data-full.js)
        the territory is resolved from the garaging ZIP against the real
@@ -417,7 +534,26 @@ const ENGINE = (() => {
       const vCovApd = v.covApd === undefined ? cob.includes("Physical Damage") : !!v.covApd;
       const qty = Math.max(1, +v.units || 1);              // Vehicles!X — one row can be several identical units
 
-      const prim = find(VX.truckPrimary, p => p.code === v.primaryClass);
+      /* Primary class is DERIVED, not supplied. Resolve it from the unit's
+         size class, business use and radius band the way ams-service resolves
+         primary_code out of iso_new_rater_service_radius_primarycode; an
+         explicit code on the row still wins, because a real submission can
+         carry a class the carrier assigned directly and this must not
+         silently overrule it. `primClassSource` records which path was taken
+         so the rating trace can show it rather than leaving both
+         indistinguishable. */
+      const vRadBand = VX.truckRadiusBand(vRad.label);
+      const primResolved = v.sizeClass
+        ? VX.truckPrimaryResolve(v.sizeClass, v.businessUse || "", vRadBand, asOf)
+        : null;
+      const primExplicit = v.primaryClass
+        ? primaryTable.find(p => p.code === v.primaryClass) : null;
+      const prim = primExplicit
+        || (primResolved && primResolved.row)
+        || primaryTable.find(p => p.code === "321")
+        || VX.truckPrimary[0];
+      const primClassSource = primExplicit ? "explicit"
+        : (primResolved && primResolved.row) ? "resolved" : "default";
       const vAge = Math.max(0, CUR - (+v.year || CUR));
       const age = find(VX.truckAge, a => a.vehicleAge == Math.min(vAge, 27));
       const milesRow = find(VX.truckMiles, m => m.radiusCategory === vRad.category && +v.miles >= m.min && +v.miles <= m.max, VX.truckMiles[0]);
@@ -432,7 +568,7 @@ const ENGINE = (() => {
         : null;
       const fleetRow = fleetPPTRow
         ? { factor: fleetPPTRow[1], label: fleetPPTRow[0], vehicleType: "Private Passenger Types" }
-        : find(VX.truckFleetSize, f => f.vehicleType === prim.fleetType && units >= f.min && units <= f.max, { factor: 1 });
+        : find(fleetTable, f => f.vehicleType === prim.fleetType && units >= f.min && units <= f.max, { factor: 1 });
       /* OCN bands on the AUTO LIABILITY value, which is not the same figure as
          the stated value used for physical damage. A production payload carried
          stated_value 500,000 and al_value 106,586: banding on the stated value
@@ -474,7 +610,7 @@ const ENGINE = (() => {
         HeavyFarmFactor: useRow.farm, HeavyDumpingFactor: useRow.dumping,
         MilesDrivenFactor: milesRow.factor, RatingClassFactor: vRc.factor, DashcamFactor: dash.factor,
         CDLExpDiscFactor: cdlExpDiscFctr, DriverClassFactor: driverClassFctr, AccountFactor: liabAcct,
-      }, liabDefault);
+      }, liabDefault, v.desc || ("Unit " + v.n));
       const l = vCovLiab ? Math.round(liabR.value) * qty : 0;
 
       // APD — Vehicles!BW10: VehicleValue × MAX(full chain, floor)
@@ -492,12 +628,18 @@ const ENGINE = (() => {
         TrailerPhysDamFactor: trailerPdFactor, MilesDrivenFactor: milesRow.factor, RatingClassFactor: vRc.factor,
         DashcamFactor: dash.factor, APDStateFactor: apdStateFactor, APDPackageFactor: vApdPackage,
         CDLExpDiscFactor: cdlExpDiscFctr, DriverClassFactor: driverClassFctr, AccountFactor: pdAcct,
-      }, fullChainDefault);
+      }, fullChainDefault, v.desc || ("Unit " + v.n));
       const floorRate = minRate * vApdDed.factor * apdStateFactor;
       const a = vCovApd ? Math.round((+v.value || 0) * Math.max(apdR.value, floorRate)) * qty : 0;
 
       const tiv = ((+v.value || 0) + (trl.type.startsWith("None") ? 0 : (+v.trailerValue || 0))) * qty;
       return { ...v, vAge, qty, primDesc: prim.desc, primFactor: prim.liability,
+        /* The RESOLVED class, not whatever the row arrived with — otherwise a
+           unit rated by resolution reports a blank class in the trace. */
+        primaryClass: prim.code, primClassSource, primClassKey: primResolved ? primResolved.key : null,
+        primClassAmbiguous: !!(primResolved && primResolved.ambiguous && primClassSource === "resolved"),
+        primClassCandidates: primResolved && primResolved.ambiguous
+          ? primResolved.candidates.map(c => c.code) : null,
         ageFactor: isPPT ? age.pptLiability : age.tttLiability,
         milesFactor: milesRow.factor, trailerFactor: trailerPdFactor, fleetFactor: fleetRow.factor, ocnFactor: ocnRow.factor,
         radiusLabel: vRad.label, ratingClassName: vRc.ratingClass, naicsUsed: vNaics.code,
@@ -555,9 +697,20 @@ const ENGINE = (() => {
             driver: null, input: null, table: "ProgramDeviations", matched: "Program constant — same for every quote", base: lcm,
             note: "Carrier-selected loading for expenses and profit. Not driven by anything the insured enters." }),
           trace({ label: "Primary Class Factor", value: primSp.varies ? primSp.max : primSp.value, kind: "x", varies: primSp.varies,
-            driver: "Vehicle Class (per unit)", input: primSp.varies ? `${units} units, mixed classes` : perVehicle[0].primDesc,
-            table: "CA_PrimaryFactors", matched: primSp.varies ? `${units} classes matched` : `Class ${perVehicle[0].primaryClass}`,
-            note: vNote(primSp) || "No neutral row — every vehicle class is looked up." }),
+            driver: perVehicle[0].primClassSource === "resolved"
+              ? "Size class + business use + radius (per unit)" : "Vehicle Class (per unit)",
+            input: primSp.varies ? `${units} units, mixed classes`
+              : (perVehicle[0].primClassSource === "resolved" ? perVehicle[0].primClassKey : perVehicle[0].primDesc),
+            table: "CA_PrimaryFactors", matched: primSp.varies ? `${units} classes matched` : `Class ${perVehicle[0].primaryClass} — ${perVehicle[0].primDesc}`,
+            note: (vNote(primSp) || "No neutral row — every vehicle class is looked up.")
+              + (perVehicle[0].primClassSource === "resolved"
+                  ? ` Class code DERIVED from ${perVehicle[0].primClassKey}, not entered — the real system resolves primary_code the same way (size, use, radius) before looking the factor up.`
+                  : perVehicle[0].primClassSource === "explicit"
+                    ? " Class code supplied directly on the vehicle, so no resolution was performed."
+                    : "")
+              + (perVehicle[0].primClassAmbiguous
+                  ? ` AMBIGUOUS: ${perVehicle[0].primClassCandidates.join(", ")} all match this size/use/radius. The inputs that separate them are not recoverable from the filed source, so the first was taken.`
+                  : "") }),
           trace({ label: "Secondary Class Factor", value: secSp.varies ? secSp.max : secSp.value, kind: "x", varies: secSp.varies,
             driver: "Secondary Class (per unit)", input: secSp.varies ? `${units} units, mixed classes` : (perVehicle[0] && perVehicle[0].secondaryDesc),
             table: "CA_SecondaryFactors", matched: secSp.varies ? "mixed secondary classes" : (perVehicle[0] && perVehicle[0].secondaryDesc),
@@ -565,7 +718,7 @@ const ENGINE = (() => {
             note: vNote(secSp) || "The full 43-code table ranges 0.49x–2.35x by what the vehicle actually hauls. Not selected here, so the account default applies." }),
           trace({ label: "Fleet Size Factor", value: fleetSp.varies ? fleetSp.max : fleetSp.value, kind: "x", varies: fleetSp.varies,
             driver: "Number of rated power units", input: `${units} unit${units === 1 ? "" : "s"}`,
-            table: "CA_Fleet_TTT", matched: `${units}-unit band, ${perVehicle[0] && find(VX.truckPrimary, p => p.code === perVehicle[0].primaryClass).fleetType} curve`,
+            table: "CA_Fleet_TTT", matched: `${units}-unit band, ${perVehicle[0] && (find(primaryTable, p => p.code === perVehicle[0].primaryClass, {}).fleetType || "—")} curve`,
             base: 1.00, note: vNote(fleetSp) || "Larger, more predictable fleets move along this curve — add or remove a vehicle and this changes." }),
           trace({ label: "Vehicle Age Factor", value: ageSp.varies ? ageSp.max : ageSp.value, kind: "x", varies: ageSp.varies,
             driver: "Model Year (per unit)", input: primSp.varies || ageSp.varies ? `${units} units` : `${perVehicle[0].vAge} yr old`,
@@ -844,11 +997,33 @@ const ENGINE = (() => {
 
     const r = assemble("Commercial Trucking", groups, 1, stTax, st, {
       minRule: 2500, acctLabel: "Account-Level Factor (already applied per-vehicle)",
-      version: "v2026.03",
+      /* The version actually selected for this quote's rating date — not a
+         hardcoded label. Falls back to the seeded filing when no version
+         record covers the date, so a quote still rates and says so. */
+      version: (ratingVersionRec && ratingVersionRec.version) || "v2026.03",
       formula: "Per vehicle: Base LC × (ILF − Ded) × LCM × Primary × Secondary × Fleet × Age × OCN × Radius × NAICS × Tort × Miles × RatingClass × Dashcam × CDL × DriverClass × Account  →  summed × Experience Mod",
       units, drivers: drivers.length, surchargedDrivers: surcharged, driverFactor: 1,
       input: i,
     });
+    /* Rate-version selection, reported rather than asserted — explain() used
+       to claim the transaction date had picked a version when nothing had
+       actually looked at a date. assemble() now resolves this for every line
+       and returns it as r.ratingVersion; these stay as flat aliases so the
+       one resolution has a single source rather than two that can disagree. */
+    r.asOf = r.ratingVersion.asOf;
+    r.asOfBasis = r.ratingVersion.asOfBasis;
+    r.versionResolved = r.ratingVersion.resolved;
+    r.versionAmbiguous = r.ratingVersion.ambiguous;
+    r.versionCandidates = r.ratingVersion.candidates;
+    r.versionRecord = r.ratingVersion.resolved || r.ratingVersion.fallback
+      ? { version: r.ratingVersion.version, status: r.ratingVersion.status,
+          effectiveStart: r.ratingVersion.effectiveStart, effectiveEnd: r.ratingVersion.effectiveEnd,
+          product: r.ratingVersion.product }
+      : null;
+    r.rateTableGenerations = {
+      "CA_PrimaryFactors": primaryTable.length,
+      "CA_Fleet_TTT": fleetTable.length,
+    };
     r.perVehicle = perVehicle;
     r.perDriver = rated;
     r.accountFactor = acct;
@@ -919,166 +1094,15 @@ const ENGINE = (() => {
 
     return r;
   }
-  function truckingModelA(i) {
-    const st = i.state || "TX";
-    const vehicles = (i.vehicles && i.vehicles.length) ? i.vehicles
-      : [{ n: 1, desc: "Unit 1", primaryClass: "321" }];
-    const drivers = (i.drivers && i.drivers.length) ? i.drivers
-      : [{ n: 1, name: "Driver 1", cdlYears: 8 }];
-    const units = vehicles.reduce((s, v) => s + Math.max(1, +v.units || 1), 0);
-    const stTax = (VX.taxes.find(t => t.state === st) || { surplusTax: 2 }).surplusTax / 100;
-
-    const avgCdl = drivers.length ? drivers.reduce((a, d) => a + (+d.cdlYears || 0), 0) / drivers.length : 5;
-    const drvExpBand = avgCdl < 2 ? "Under 2 years CDL" : avgCdl < 5 ? "2–5 years CDL" : avgCdl < 10 ? "5–10 years CDL" : "10+ years CDL";
-    const drvExpRow = find(VX.modelADriverExperience, r => r.band === drvExpBand, VX.modelADriverExperience[1]);
-    const safetyRow = find(VX.modelASafetyRating, r => r.rating === (i.carrierSafetyRating || "Satisfactory"), VX.modelASafetyRating[0]);
-    const radiusRow = find(VX.modelARadius, r => r.key === (i.radiusClass || "48_states"), VX.modelARadius[3]);
-    const fleetRow = find(VX.modelAFleetDiscount, r => units >= r.min && units <= r.max, VX.modelAFleetDiscount[1]);
-    const baseRate = VX.modelAConstants.baseRate;
-
-    /* Underwriter judgment, layered on top of the classification chain —
-       real quote-portal.html input (uwCreditDebit), clamped to the same
-       filed band the removed real formula used (VX.truckUwCreditDebit).
-       Applied once to the whole model premium via assemble()'s own acct
-       multiplier slot, not per vehicle. */
-    const uwBand = VX.truckUwCreditDebit || { min: 0.75, max: 1.25, neutral: 1 };
-    const uwRaw = i.uwCreditDebit == null ? uwBand.neutral : +i.uwCreditDebit;
-    const uwFactor = Math.min(uwBand.max, Math.max(uwBand.min, isNaN(uwRaw) ? uwBand.neutral : uwRaw));
-
-    const perVehicleFactors = [];
-    let subtotal = 0;
-    vehicles.forEach(v => {
-      const qty = Math.max(1, +v.units || 1);
-      const clsRow = find(VX.modelAVehicleClass, r => r.code === v.primaryClass, VX.modelAVehicleClass[2]);
-      const unitPremium = Math.round(baseRate * clsRow.factor * radiusRow.factor * drvExpRow.factor * safetyRow.factor * fleetRow.factor);
-      subtotal += unitPremium * qty;
-      perVehicleFactors.push(trace({
-        label: `Unit ${v.n}${v.desc ? " — " + v.desc : ""} (${clsRow.code} — ${clsRow.desc})`,
-        value: unitPremium * qty, kind: "money", driver: "Vehicle Class", input: v.primaryClass,
-        matched: clsRow.desc, table: "Model A — Vehicle Class (candidate)",
-        note: qty > 1 ? `${qty} units at $${unitPremium.toLocaleString("en-US")} each` : null,
-      }));
-    });
-
-    const groups = [{
-      name: "Model A — Classification Rating", icon: "fa-truck", color: "var(--cat-1)",
-      subtotal, factors: [
-        trace({ label: "Base Rate", value: baseRate, kind: "money", table: "Model A — candidate constant",
-          note: "Illustrative starting rate per power unit — not filed." }),
-        trace({ label: "Radius of Operation Factor", value: radiusRow.factor, kind: "x",
-          driver: "Radius of Operation", input: i.radiusClass || "48_states", matched: radiusRow.label, base: 1.00,
-          table: "Model A — Radius (candidate)" }),
-        trace({ label: "Driver Experience Factor", value: drvExpRow.factor, kind: "x",
-          driver: "Avg. CDL Experience across drivers", input: avgCdl.toFixed(1) + " yrs", matched: drvExpRow.band, base: 1.00,
-          table: "Model A — Driver Experience (candidate)" }),
-        trace({ label: "Safety Rating Factor", value: safetyRow.factor, kind: "x",
-          driver: "FMCSA Carrier Safety Rating", input: i.carrierSafetyRating || "Satisfactory", matched: safetyRow.rating, base: 0.92,
-          table: "Model A — Safety Rating (candidate)" }),
-        trace({ label: "Fleet Size Discount Factor", value: fleetRow.factor, kind: "x",
-          driver: "Rated power units", input: String(units), matched: `${fleetRow.min}–${fleetRow.max === 999999 ? "50+" : fleetRow.max} units`, base: 1.00,
-          table: "Model A — Fleet Discount (candidate)" }),
-        ...perVehicleFactors,
-      ],
-    }];
-
-    const r = assemble("Commercial Trucking", groups, uwFactor, stTax, st, {
-      minRule: 2000, acctLabel: "Underwriter Credit / Debit",
-      version: "Model A (candidate — not filed)",
-      formula: "Per vehicle: Base Rate × Vehicle Class Factor × Radius Factor × Driver Experience Factor × Safety Rating Factor × Fleet Discount Factor — summed across the fleet, then × Underwriter Credit/Debit",
-      units, drivers: drivers.length, surchargedDrivers: 0, driverFactor: 1, input: i,
-    });
-    r.modelId = "A";
-    r.modelName = "Classification (Manual) Rating";
-    return r;
-  }
-
-  function truckingModelB(i) {
-    const st = i.state || "TX";
-    const vehicles = (i.vehicles && i.vehicles.length) ? i.vehicles
-      : [{ n: 1, desc: "Unit 1", primaryClass: "321", miles: 65000 }];
-    const drivers = (i.drivers && i.drivers.length) ? i.drivers
-      : [{ n: 1, name: "Driver 1", violations: 0 }];
-    const units = vehicles.reduce((s, v) => s + Math.max(1, +v.units || 1), 0);
-    const stTax = (VX.taxes.find(t => t.state === st) || { surplusTax: 2 }).surplusTax / 100;
-
-    const totalMiles = vehicles.reduce((s, v) => s + Math.max(1, +v.units || 1) * (+v.miles || 65000), 0);
-    const territoryRel = VX.modelBTerritory[st] != null ? VX.modelBTerritory[st] : VX.modelBTerritory.DEFAULT;
-    const totalViolations = drivers.reduce((a, d) => a + (+d.violations || 0), 0);
-    const avgViolations = drivers.length ? totalViolations / drivers.length : 0;
-    /* Composite risk score: safety rating (0/2/5/8 points) + average driver
-       violations, banded — additive, not multiplicative, matching this
-       model's own structure. */
-    const safetyPts = { "Satisfactory": 0, "None": 2, "Conditional": 5, "Unsatisfactory": 8 }[i.carrierSafetyRating || "Satisfactory"] ?? 2;
-    const compositeScore = safetyPts + avgViolations;
-    const riskRow = find(VX.modelBRiskScore, r => compositeScore <= r.max, VX.modelBRiskScore[VX.modelBRiskScore.length - 1]);
-
-    const C = VX.modelBConstants;
-    const mileagePremium = Math.round(totalMiles * C.lossCostPerMile * territoryRel);
-    const riskLoad = Math.round(mileagePremium * (riskRow.factor - 1));
-    const unitExposureCharge = Math.round(C.perUnitExposureCharge * units);
-    const subtotal = mileagePremium + riskLoad + unitExposureCharge + C.fixedExpenseLoad;
-
-    /* Same real underwriter judgment input as Model A, same filed clamp
-       band — layered on top of this model's own exposure-based subtotal via
-       assemble()'s acct multiplier, same mechanism as Model A. */
-    const uwBand = VX.truckUwCreditDebit || { min: 0.75, max: 1.25, neutral: 1 };
-    const uwRaw = i.uwCreditDebit == null ? uwBand.neutral : +i.uwCreditDebit;
-    const uwFactor = Math.min(uwBand.max, Math.max(uwBand.min, isNaN(uwRaw) ? uwBand.neutral : uwRaw));
-
-    const groups = [{
-      name: "Model B — Exposure-Based Rating", icon: "fa-road", color: "var(--cat-3)",
-      subtotal, factors: [
-        trace({ label: "Mileage Premium", value: mileagePremium, kind: "money",
-          driver: "Total Annual Fleet Miles", input: totalMiles.toLocaleString("en-US") + " mi",
-          matched: `${totalMiles.toLocaleString("en-US")} mi × $${C.lossCostPerMile}/mi × ${territoryRel}× territory`,
-          table: "Model B — Loss Cost Per Mile × Territory (candidate)" }),
-        trace({ label: "Territory Relativity", value: territoryRel, kind: "x",
-          driver: "Garaging State", input: st, matched: st, base: 1.00,
-          table: "Model B — Territory (candidate)" }),
-        trace({ label: "Risk Score Load", value: riskLoad, kind: "money",
-          driver: "Safety Rating + Avg. Driver Violations", input: `score ${compositeScore.toFixed(1)}`,
-          matched: riskRow.band, table: "Model B — Risk Score (candidate)",
-          note: `${riskRow.factor}× applied to the mileage premium (composite score: ${safetyPts} safety pts + ${avgViolations.toFixed(1)} avg violations).` }),
-        trace({ label: "Per-Unit Exposure Charge", value: unitExposureCharge, kind: "money",
-          driver: "Rated power units", input: String(units), matched: `$${C.perUnitExposureCharge}/unit × ${units}`,
-          table: "Model B — Exposure Charge (candidate)" }),
-        trace({ label: "Fixed Expense Load", value: C.fixedExpenseLoad, kind: "money",
-          table: "Model B — candidate constant", note: "Flat per-policy expense load — not filed." }),
-      ],
-    }];
-
-    const r = assemble("Commercial Trucking", groups, uwFactor, stTax, st, {
-      minRule: 2000, acctLabel: "Underwriter Credit / Debit",
-      version: "Model B (candidate — not filed)",
-      formula: "[(Total Fleet Miles × Loss Cost Per Mile × Territory Relativity) + Risk Score Load + (Per-Unit Exposure Charge × Units) + Fixed Expense Load] × Underwriter Credit/Debit",
-      units, drivers: drivers.length, surchargedDrivers: 0, driverFactor: 1, input: i,
-    });
-    r.modelId = "B";
-    r.modelName = "Exposure-Based (Mileage/Usage) Rating";
-    return r;
-  }
 
 
-  /* The real formula is primary — its own output is what every page reads
-     at the top level (r.finalPremium, r.groups, r.perVehicle,
-     r.accountFactorLines, r.cargoBreakdown, ...), exactly as before this
-     was ever touched. Model A / Model B are computed alongside it purely
-     for comparison and attached as r.modelA / r.modelB — additive, not a
-     replacement, for pages built during the comparison exercise (Quote
-     Portal's Premium tab, Quote JSON's factor tabs) that want to show them. */
-  function trucking(i) {
-    const real = truckingReal(i);
-    const modelA = truckingModelA(i);
-    const modelB = truckingModelB(i);
-    real.modelA = modelA;
-    real.modelB = modelB;
-    real.modelDiffPctA = real.finalPremium ? ((modelA.finalPremium - real.finalPremium) / real.finalPremium) * 100 : null;
-    real.modelDiffPctB = real.finalPremium ? ((modelB.finalPremium - real.finalPremium) / real.finalPremium) * 100 : null;
-    // Kept for compatibility with the comparison UI built while the real
-    // formula was removed — that UI compares A directly against B.
-    real.modelDiffPct = modelA.finalPremium ? ((modelB.finalPremium - modelA.finalPremium) / modelA.finalPremium) * 100 : null;
-    return real;
-  }
+
+  /* Commercial Trucking rates on the real, filed formula and nothing else.
+     Two candidate models were built alongside it during a comparison
+     exercise and both have since been removed at the user's request, so this
+     is a direct call rather than an orchestrator. truckingReal() keeps its
+     name because every page and test refers to it. */
+  function trucking(i) { return truckingReal(i); }
 
 
   /* ---------------- Professional Liability (MPL) — formula verified against workbook ---------------- */
@@ -1096,7 +1120,7 @@ const ENGINE = (() => {
     const stMod = 1.0;
     const uwMod = Math.max(0.75, 1 + (+i.uwAdjust || 0));
     const st = i.state || "TX";
-    const stTax = (VX.taxes.find(t => t.state === st) || { surplusTax: 2 }).surplusTax / 100;
+    const stTax = surplusTaxFor("Professional Liability (MPL)", st, i.tenantId, i.product);
 
     const f = [
       ["Basic Limit Loss Cost", baseLC, "money"], ["Loss Cost Multiplier", lcm, "x"],
@@ -1129,7 +1153,7 @@ const ENGINE = (() => {
     const lcm = VX.programParams.find(p => p.param === "LCM" && p.lob === "Commercial Property").value;
     const tiv = (+i.buildingValue || 0) + (+i.bppValue || 0);
     const st = i.state || "TX";
-    const stTax = (VX.taxes.find(t => t.state === st) || { surplusTax: 2 }).surplusTax / 100;
+    const stTax = surplusTaxFor("Commercial Property", st, i.tenantId, i.product);
     const irpm = 1 + (+i.irpm || 0);
 
     const base = (tiv / 100) * 0.42;
@@ -1192,7 +1216,7 @@ const ENGINE = (() => {
     const elp = find(VX.glELP, e => e.limit == i.limit);
     const cob = find(VX.industryClasses, c => c.code === i.classCode, VX.industryClasses[6]);
     const st = i.state || "TX";
-    const stTax = (VX.taxes.find(t => t.state === st) || { surplusTax: 2 }).surplusTax / 100;
+    const stTax = surplusTaxFor("General Liability", st, i.tenantId, i.product);
     const lcm = 1.62, sched = 1 + (+i.schedMod || 0), exp = Math.max(0.9, +i.expMod || 1);
     const base = Math.round((+i.revenue / 1000) * 4.15);
 
@@ -1228,7 +1252,7 @@ const ENGINE = (() => {
     const lim = find(VX.cyberLimits, l => l.limit == i.limit);
     const ret = find(VX.cyberRetentions, r => r.retention == i.retention);
     const st = i.state || "TX";
-    const stTax = (VX.taxes.find(t => t.state === st) || { surplusTax: 2 }).surplusTax / 100;
+    const stTax = surplusTaxFor("Cyber", st, i.tenantId, i.product);
     const baseDev = VX.programParams.find(p => p.param === "Base Rate Deviation").value;
     const revF = +i.revenue > 100000000 ? 1.8 : +i.revenue > 25000000 ? 1.35 : +i.revenue > 5000000 ? 1.0 : 0.85;
     const sched = 1 + (+i.schedMod || 0);
@@ -1402,18 +1426,72 @@ const ENGINE = (() => {
      a second tenant with its own Active Workers' Compensation formula is what
      surfaced it: without this filter, that formula would have silently rated
      every OTHER tenant's Workers' Compensation quotes too, not just its own. */
-  function applySavedFormula(lobName, cobKey, varMap, defaultValue) {
+  /* ---------------- Calculation log ----------------
+     Every formula application, recorded as it happens.
+
+     The platform could already say WHICH factors applied (the trace) and
+     WHETHER a saved formula ran (ratedBy), but not what arithmetic was
+     actually performed — so "why is this premium what it is" ended at a list
+     of factors. Capturing it here, at the point of evaluation, rather than
+     rebuilding it for display means the walkthrough shows what genuinely
+     ran; a reconstruction can drift from the code, which is exactly the bug
+     the formula tester had.
+
+     Capped so a large fleet can't produce an unbounded payload. */
+  let CALC_LOG = [];
+  const CALC_LOG_MAX = 400;
+  function calcLogReset() { CALC_LOG = []; }
+  function calcLogPush(step) { if (CALC_LOG.length < CALC_LOG_MAX) CALC_LOG.push(step); }
+
+  /* Render the arithmetic with the real values in place, e.g.
+     "837 × (2.06 − 0) × 1.67 × 1.8 = 5,182.42". Values, not names, because
+     the names are already shown beside them in the variable list. */
+  function substituteTokens(tokens, vars) {
+    return tokens.map(t => {
+      if (t.t !== "var") return t.v;
+      /* RemainingFactors is a catch-all the evaluator computes rather than
+         reads (the product of every supplied factor the formula does not
+         name). Leaving the identifier here would show the reader a symbol
+         where the arithmetic has a number — and the whole point of this
+         string is that it can be checked by hand. */
+      if (t.v === REMAINING) return +remainingProduct(tokens, vars).value.toFixed(6);
+      const v = vars[t.v];
+      return v == null ? t.v : (typeof v === "number" ? +v.toFixed(6) : v);
+    }).join(" ");
+  }
+
+  function applySavedFormula(lobName, cobKey, varMap, defaultValue, context) {
     const tid = (typeof VX !== "undefined") ? VX.activeTenantId : null;
     const f = (typeof VX !== "undefined" && VX.savedFormulas || [])
       .find(x => x.status === "Active" && x.lob === lobName && x.cob === cobKey
         && (x.tenantId == null || tid == null || x.tenantId === tid));
-    if (!f) return { value: defaultValue, ratedBy: { mode: "default" } };
+    /* Only the variables this evaluation actually had — reported alongside
+       the result so a reader can check the arithmetic themselves. */
+    const vars = Object.keys(varMap || {})
+      .filter(k => typeof varMap[k] === "number" && isFinite(varMap[k]))
+      .map(k => ({ name: k, value: varMap[k] }));
+
+    if (!f) {
+      calcLogPush({ lob: lobName, coverage: cobKey, context: context || null,
+        mode: "default", formulaName: null, expression: null, substituted: null,
+        vars, result: defaultValue });
+      return { value: defaultValue, ratedBy: { mode: "default" } };
+    }
     try {
       const value = evalTokens(f.tokens, varMap);
+      calcLogPush({ lob: lobName, coverage: cobKey, context: context || null,
+        mode: "formula", formulaName: f.name,
+        expression: f.tokens.map(t => t.v).join(" "),
+        substituted: substituteTokens(f.tokens, varMap),
+        vars, result: value });
       return { value, ratedBy: { mode: "formula", name: f.name, updated: f.updated,
         version: (f.attachments && f.attachments[0] && f.attachments[0].ratingVersion) || null } };
     } catch (e) {
       // Never let a bad saved formula break a quote — fall back and say why.
+      calcLogPush({ lob: lobName, coverage: cobKey, context: context || null,
+        mode: "default", formulaName: f.name, failed: true, error: e.message,
+        expression: f.tokens.map(t => t.v).join(" "), substituted: null,
+        vars, result: defaultValue });
       return { value: defaultValue, ratedBy: { mode: "default", error: e.message } };
     }
   }
@@ -1574,13 +1652,15 @@ const ENGINE = (() => {
 
     /* ---- fees: fixed (× quantity) or percent (of a chosen basis, min/max capped) ---- */
     /* FEE_SLFILE is a real, non-admitted-only regulatory fee — its name says
-       so. Every other line on this platform is written non-admitted, but
-       Workers' Compensation (see D.lobs' licenceBasis note) is not, so it is
-       the one explicit exception rather than a second "lob: All-minus-one"
-       concept bolted onto the fee schema for a single row. */
+       so. It is therefore gated on the LICENCE BASIS, not on a hardcoded LOB
+       name: previously this excluded it for Workers' Compensation only,
+       which charged an admitted carrier a surplus-lines filing fee on every
+       other line it wrote. See isAdmitted(). */
+    const admitted = isAdmitted(lob, o.input && o.input.tenantId, o.input && o.input.product);
     const applicable = VX.fees.filter(f => f.active && (f.lob === "All" || f.lob === lob))
-      .filter(f => !(f.code === "FEE_SLFILE" && lob === "Workers' Compensation"))
+      .filter(f => !(f.code === "FEE_SLFILE" && admitted))
       .filter(ofTenant);
+    o.__admitted = admitted;
     const preTax = Math.round(afterAdj * taxPct);
     const BASIS = {
       "Premium Before Fees": afterAdj,
@@ -1642,8 +1722,54 @@ const ENGINE = (() => {
     const minApplied = final < o.minRule;
     if (minApplied) final = o.minRule;
 
+    /* Rating-version resolution for EVERY line, not just Trucking. Any caller
+       — the API included — needs to know which filed version produced a
+       premium, and previously only Trucking resolved one while the other five
+       carried a hardcoded label. Resolved here so all six behave the same.
+       `o.version` stays the engine's own built-in filing label and is used
+       when nothing on file covers the date. */
+    const vAsOf = resolveRatingAsOf(o.input || {});
+    const vPick = resolveRatingVersion(lob, vAsOf.asOf, (o.input || {}).product);
+    const useRec = vPick.rec && !vPick.ambiguous ? vPick.rec : null;
+    const ratingVersion = {
+      asOf: vAsOf.asOf,
+      asOfBasis: vAsOf.basis,
+      resolved: !!useRec && !vPick.fallback,
+      version: useRec ? useRec.version : o.version,
+      status: useRec ? useRec.status : null,
+      product: useRec ? useRec.product : null,
+      effectiveStart: useRec ? useRec.effectiveStart : null,
+      effectiveEnd: useRec ? (useRec.effectiveEnd || null) : null,
+      /* Set when no version was in force on the rating date and the engine
+         rated on the nearest one instead — surfaced, never silent. */
+      fallback: useRec ? vPick.fallback : null,
+      ambiguous: vPick.ambiguous,
+      candidates: (vPick.ambiguous || vPick.fallback) ? vPick.candidates : null,
+      /* Every version on file for this line, so a caller with no active one
+         can see what it could rate on instead. */
+      available: (VX.versions || [])
+        .filter(v => v.lob === lob && v.effectiveStart)
+        .map(v => ({ version: v.version, product: v.product, status: v.status,
+                     effectiveStart: v.effectiveStart, effectiveEnd: v.effectiveEnd || null })),
+    };
+
     return {
-      lob, state, version: o.version, formula: o.formula, groups,
+      lob, state, version: useRec && !vPick.ambiguous ? useRec.version : o.version,
+      formula: o.formula, groups,
+      ratingVersion,
+      /* Every formula evaluation this quote performed, in order — what the
+         engine actually calculated, not a re-derivation for display. */
+      calculationSteps: CALC_LOG.slice(),
+      /* Whether any Active saved formula rated this quote, or the whole thing
+         ran on the engine's built-in chains. */
+      usedSavedFormula: CALC_LOG.some(s => s.mode === "formula"),
+      /* Set when an Active saved formula threw and the engine fell back —
+         a quote that silently rated on a different chain than configured. */
+      formulaFailures: CALC_LOG.filter(s => s.failed)
+        .map(s => ({ coverage: s.coverage, formulaName: s.formulaName, error: s.error })),
+      /* Which paper this was rated on, and therefore why surplus-lines tax
+         and the SL filing fee are or are not on the bill. */
+      admitted, licenceBasis: admitted ? "Admitted" : "Surplus Lines",
       coveragePremium: coverage, accountFactor: acct, acctLabel: o.acctLabel, afterAccount: afterAcct,
       driverFactor: drvF, afterDriver, units: o.units, driverCount: o.drivers, surchargedDrivers: o.surchargedDrivers,
       discounts, surcharges, discountTotal: dTot, surchargeTotal: sTot, creditsSkipped,
@@ -1694,8 +1820,23 @@ const ENGINE = (() => {
     rate: (lobCode, input) => {
       const fn = MAP[lobCode];
       if (!fn) throw new Error("No rating calculator registered for LOB " + lobCode);
+      /* One log per quote — reset here, at the single entry point, so steps
+         from a previous quote can never leak into this one's walkthrough. */
+      calcLogReset();
       return fn(input);
     },
+    /* The formula builder's "Evaluate Formula" button used to run its own,
+       simpler evaluator: it substituted variables and handed the string to
+       Function() with no MIN/MAX/ROUND/ABS in scope. Every formula using one
+       — including the seeded, real Account-Level Factor chains, which are
+       MIN(max, MAX(min, ...)) — threw ReferenceError and reported "Invalid
+       expression", so the real formulas could not be tested at all.
+
+       Worse than the error: a builder that evaluates differently from the
+       engine can pass a formula the engine will rate differently. Exposing
+       the engine's own evaluator means "tested" means tested against what
+       actually rates. Throws on a bad formula so the caller can show why. */
+    evalFormula: (tokens, vars) => evalTokens(tokens, vars || {}),
     explain: r => {
       const all = ENGINE_TRACE(r).filter(t => t.kind === "x");
       const top = all.slice().sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact)).slice(0, 3);
@@ -1705,7 +1846,24 @@ const ENGINE = (() => {
         drivers: top.map(t => `${t.label} (${t.value.toFixed(3)}×) in the ${t.group} chain ${t.value > 1 ? "added" : "saved"} about ${vxMoney(Math.abs(t.impact))}` +
           (t.driver ? ` — driven by ${t.driver} = "${t.input}"` : "")),
         taxes: `State premium tax of ${(r.taxPct * 100).toFixed(2)}% (${vxMoney(r.tax)}) and ${vxMoney(r.fees)} in policy fees were applied.`,
-        version: `Rating version ${r.version} was selected because the transaction date falls inside its effective window.`,
+        /* Report what selection actually happened. This previously asserted
+           that the transaction date had chosen the version even on LOBs where
+           nothing consulted a date at all — an explanation of work the engine
+           had not done. */
+        version: (() => {
+          const rv = r.ratingVersion;
+          if (!rv) return `Labelled rating version ${r.version}.`;
+          if (rv.resolved) {
+            return `Rating version ${rv.version} (${rv.status}, effective ${rv.effectiveStart}${rv.effectiveEnd ? " to " + rv.effectiveEnd : " onward"}) was selected because the rating date ${rv.asOf} falls inside its effective window. That date is the ${rv.asOfBasis}.`;
+          }
+          if (rv.ambiguous) {
+            return `Rated as of ${rv.asOf} (the ${rv.asOfBasis}). More than one product on this line has a version covering that date (${rv.candidates.map(c => `${c.version} on ${c.product}`).join(", ")}), and the quote names no product — so no single version can be said to have rated it. The engine's own ${rv.version} tables were used. Name a product on the quote to resolve this.`;
+          }
+          if (rv.fallback) {
+            return `Rated as of ${rv.asOf} (the ${rv.asOfBasis}): ${rv.fallback}. This is a fallback, not the version in force — publish a version covering this date to make the selection exact.`;
+          }
+          return `Rated as of ${rv.asOf} (the ${rv.asOfBasis}), but no rating version is on file for ${r.lob} at all — the engine used its built-in ${rv.version} tables.`;
+        })(),
         warnings: r.minApplied ? [`Calculated premium fell below the ${vxMoney(r.minRule)} program minimum — the minimum premium rule was applied.`] : [],
       };
     },

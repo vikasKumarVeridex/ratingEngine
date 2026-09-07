@@ -158,7 +158,7 @@ document.getElementById("vxBody").innerHTML = `
       <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-mute)">Scope</span>
       <select class="form-select form-select-sm" id="pgLob" style="width:auto"><option value="">All lines of business</option>
         ${LOB_OPTS.map(l => `<option>${l}</option>`).join("")}</select>
-      <select class="form-select form-select-sm" id="pgCarrier" style="width:auto"><option value="">All carriers (IC)</option>
+      <select class="form-select form-select-sm" id="pgCarrier" style="width:auto"><option value="">All reinsurers</option>
         ${CARRIER_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
       <select class="form-select form-select-sm" id="pgMga" style="width:auto"><option value="">All MGAs</option>
         ${MGA_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
@@ -232,7 +232,7 @@ document.getElementById("vxBody").innerHTML = `
             <option value="up">Increase indicated</option><option value="flat">On target</option><option value="down">Room to decrease</option></select>
           <select class="form-select form-select-sm" id="stStatus" style="width:auto"><option value="">All quote statuses</option>
             ${STATUS_OPTS.map(s => `<option>${s}</option>`).join("")}</select>
-          <select class="form-select form-select-sm" id="stCarrier" style="width:auto"><option value="">All carriers (IC)</option>
+          <select class="form-select form-select-sm" id="stCarrier" style="width:auto"><option value="">All reinsurers</option>
             ${CARRIER_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
           <select class="form-select form-select-sm" id="stMga" style="width:auto"><option value="">All MGAs</option>
             ${MGA_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
@@ -261,7 +261,7 @@ document.getElementById("vxBody").innerHTML = `
             ${STATUS_OPTS.map(s => `<option>${s}</option>`).join("")}</select>
           <select class="form-select form-select-sm" id="ctState" style="width:auto"><option value="">All states</option>
             ${STATE_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
-          <select class="form-select form-select-sm" id="ctCarrier" style="width:auto"><option value="">All carriers (IC)</option>
+          <select class="form-select form-select-sm" id="ctCarrier" style="width:auto"><option value="">All reinsurers</option>
             ${CARRIER_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
           <select class="form-select form-select-sm" id="ctMga" style="width:auto"><option value="">All MGAs</option>
             ${MGA_OPTS.map(x => `<option>${x}</option>`).join("")}</select>

@@ -439,16 +439,28 @@ document.getElementById("vxBody").innerHTML = `
     </div>
     <div class="col-lg-5">
       <div class="vx-card vx-anim">
-        <h2>Factor cross-check</h2>
-        <div class="sub">What this engine <b>derived from the inputs</b>, against what the production rater resolved.</div>
+        <h2>Derived factors</h2>
+        <div class="sub">Every factor below was <b>resolved by this engine from the inputs</b> — none was read from the payload. Where a payload does carry pre-resolved factors, they are cross-checked against ours rather than used.</div>
         <div id="notRated"></div>
       </div>
     </div>
   </div>`;
 
-/* A faithful trimmed copy of the real app_type 483 payload — same shape and
-   the same values, with the driver schedule cut to four so the box stays
-   readable. Trimming is noted rather than silent. */
+/* A trimmed copy of the real app_type 483 payload, reduced to the INPUT
+   contract: risk characteristics only.
+
+   The production payload also carries every factor the rater resolved
+   (liab_primary_factor, radius_factor, driver_factor, …) and the premiums it
+   computed. Those are outputs. Sending them into a rating call is asking the
+   engine to multiply numbers somebody else already derived, which is not
+   rating — so they are removed here and this engine resolves each one from
+   the characteristics that drive it. A payload that still contains them is
+   accepted and cross-checked (see CROSSCHECK below), never trusted.
+
+   The one field that looks like a factor and is genuinely an input is
+   uw_credit_debit_factor: an underwriter's own judgment entry, which the
+   engine reads and clamps to the filed band. filingInfo.safer_factor is
+   likewise a safety-rating CODE, not a rate factor. */
 const SAMPLE_TRUCK = {
   insured_id: 1150142, submission_id: 45537, quote_id: 1071611,
   endorsement_number: 0, endorsement_type: null,
@@ -484,9 +496,11 @@ const SAMPLE_TRUCK = {
   commoditiesSelected: [2],
   commoditiesInfo: { secondary_class: "Truckers" },
   uwReviewInfo: {
-    driver_factor: 1.429, og_driver_count: 5, cr_driver_count: 5,
-    al_pollution: "Low", al_pollution_factor: "1.03",
-    uw_credit_debit_factor: "1", loss_experience_factor: "1",
+    og_driver_count: 5, cr_driver_count: 5,
+    al_pollution: "Low",
+    /* An underwriter's own judgment entry, not a resolved factor — the
+       engine reads this one and clamps it to the filed band. */
+    uw_credit_debit_factor: "1",
     min_earn_factor: 25, broker_fee_amount: 2574,
     original_driver_exclude_count: 7,
   },
@@ -497,36 +511,26 @@ const SAMPLE_TRUCK = {
     stated_value: 500000, al_value: 106586, miles_driven: 4,
     no_of_units: 1, no_of_ppt_units: 0, vehicle_age: 3,
     Liability: "Yes", pd_opted: "Yes", naics_code: 484110,
-    liab_baserate: 837, liab_ilf_factor: 2.06, liab_ded_factor: 0,
-    liab_lcm_factor: 1.67, liab_primary_factor: 1.8, liab_secondary_factor: 1.98,
-    liab_fleet_factor: 0.97, vehicle_age_factor: 1.12, liab_ocn_factor: 1.14,
-    radius_factor: 0.95, naics_factor: 1.1, tort_limitation_factor: 1,
-    miles_driven_factor: 1.03, rating_class_factor: 1, dashcam_factor: 1,
-    cdl_exp_disc_factor: 1, driver_class_factor: 2.413, liab_acc_level_factor: 1,
-    vehicle_owned_factor: 0.95, driver_criteria_factor: 1, payment_plan_factor: 1,
-    heavy_farm_factor: 1, heavy_dumping_factor: 1, uw_credit_debit_factor: 1,
-    al_premium_wo_mod_factor: 33010.514, liability_premium: 31360,
-    pd_premium: 42070, pd_base_rate: 4.75, pd_deductible_factor: 0.875,
   }],
   drivers: [
     { id: 942561, given_name: "Test", last_name: "2nd Dr", dob: "01/01/2003",
       licensestate: "CA", licenseclasstype: "Class A", experience: "", tenure: 0,
-      exclude: 0, status: "Added", driver_factor: 2.4125,
+      exclude: 0, status: "Added",
       violations: [{ violationDate: "02/25/2026", violation: 164, occurrence: 1 }] },
     { id: 942564, given_name: "Travon Antonio", last_name: "Hadley", dob: "10/19/2000",
       licensestate: "TX", licenseclasstype: "Class A", experience: 3, tenure: 3,
-      exclude: 0, status: "Added", driver_factor: 1.39,
+      exclude: 0, status: "Added",
       violations: [{ violation: "391", occurrence: 1 }, { violation: "161", occurrence: 1 }] },
     { id: 942568, given_name: "GAMBOA", last_name: "LAMBERTO S JR", dob: "06/18/1985",
       licensestate: "IN", licenseclasstype: "Class A", experience: 2, tenure: 0,
-      exclude: 0, status: "Added", driver_factor: 0.95, violations: [] },
+      exclude: 0, status: "Added", violations: [] },
     { id: 942562, given_name: "test", last_name: "case9", dob: "05/05/1995",
       licensestate: "AR", licenseclasstype: "Class B", experience: "", tenure: 0,
-      exclude: 1, status: "Excluded", driver_factor: 1.25, violations: [] },
+      exclude: 1, status: "Excluded", violations: [] },
   ],
   broker_info: { agencyname: 900109, agencyPhone: "1234567890", agencyuserid: "11370" },
   secondary_class: "Truckers", user_id: "11370", agency_id: "900109",
-  _note: "Trimmed from the production payload: driver schedule cut to 4 of 12, servicing/document/endorsement sections omitted. Rating-relevant values are unchanged.",
+  _note: "Trimmed from the production payload: driver schedule cut to 4 of 12, servicing/document/endorsement sections omitted. Every resolved factor and computed premium the production payload carried (liab_primary_factor, driver_factor, liability_premium and the rest) has been removed — those are rating OUTPUTS, not inputs, and this engine derives each one from the risk characteristics above. What remains is the input contract.",
 };
 
 /* One payload per line so every adapter is exercisable. Only the trucking one
@@ -742,6 +746,26 @@ function renderOut() {
       quote: {
         lob: result.lob, state: result.state,
         ratingVersion: result.version,
+        /* Which filed version actually rated this, how the rating date was
+           chosen, and — when nothing is in force on that date — that the
+           engine fell back and to what. A caller previously got only a bare
+           version label with no way to tell a real selection from a default.
+           `available` lists every version on file for the line so a caller
+           with no active one can see what it could rate on instead. */
+        ratingVersionInfo: result.ratingVersion ? {
+          asOf: result.ratingVersion.asOf,
+          asOfBasis: result.ratingVersion.asOfBasis,
+          resolved: result.ratingVersion.resolved,
+          version: result.ratingVersion.version,
+          status: result.ratingVersion.status,
+          product: result.ratingVersion.product,
+          effectiveStart: result.ratingVersion.effectiveStart,
+          effectiveEnd: result.ratingVersion.effectiveEnd,
+          fallback: result.ratingVersion.fallback,
+          ambiguous: result.ratingVersion.ambiguous,
+          available: result.ratingVersion.available,
+        } : null,
+        licenceBasis: result.licenceBasis,
         coveragePremium: result.coveragePremium,
         discounts: result.discounts, surcharges: result.surcharges,
         creditsNotApplied: (result.creditsSkipped || []).map(c => ({
@@ -779,7 +803,17 @@ function renderOut() {
   document.getElementById("outSummary").innerHTML = `
     <div class="d-flex gap-2 flex-wrap align-items-center" style="font-size:11.8px">
       <span class="vx-b green">${vxMoney(result.finalPremium)}</span>
-      <span class="vx-b blue">${result.version}</span>
+      ${(() => {
+        /* The version chip used to read the same whether a real filed version
+           was selected or the engine had defaulted — the one thing a caller
+           most needs to distinguish. */
+        const rv = result.ratingVersion;
+        if (!rv) return `<span class="vx-b blue">${result.version}</span>`;
+        if (rv.resolved) return `<span class="vx-b blue" title="${rv.status}, effective ${rv.effectiveStart}${rv.effectiveEnd ? " to " + rv.effectiveEnd : " onward"} — selected from the rating date ${rv.asOf}">${rv.version}</span>`;
+        if (rv.ambiguous) return `<span class="vx-b amber" title="More than one product on this line has a version covering ${rv.asOf}. Name a product on the payload to resolve it.">${rv.version} · not resolved</span>`;
+        if (rv.fallback) return `<span class="vx-b amber" title="${rv.fallback}">${rv.version} · fallback</span>`;
+        return `<span class="vx-b gray" title="No rating version on file for this line">${rv.version} · engine default</span>`;
+      })()}
       <span class="vx-b gray">${adapted.mapped.length} fields mapped</span>
       ${w.length ? `<span class="vx-b amber">${w.length} warning${w.length === 1 ? "" : "s"}</span>` : ""}
       <button class="btn btn-outline-secondary btn-sm ms-auto" onclick="showPremium()">
@@ -817,33 +851,48 @@ function renderMapping() {
     loss_experience_factor: "Loss Experience Factor",
   };
   const cc = LAST.adapted.crosscheck || [];
-  const rows = cc.map(([k, theirs, from]) => {
-    const label = OURS[k];
-    const t = label ? trace.find(x => x.label === label) : null;
-    const ours = t ? +t.value : null;
-    const match = ours != null && Math.abs(ours - (+theirs)) < 1e-6;
-    return { k, from, theirs: +theirs, ours, match, label };
+  /* Their value, indexed by OUR label, so the table below can be driven by
+     what WE derived rather than by what they happened to send. */
+  const theirsByLabel = {};
+  cc.forEach(([k, v, from]) => { if (OURS[k]) theirsByLabel[OURS[k]] = { v: +v, from }; });
+
+  /* Show every multiplicative factor this engine resolved — not only the
+     handful the payload also carried. The panel used to list just the
+     overlap, so a payload with no pre-resolved factors (which is the normal,
+     correct case) rendered an empty box that read like a failure, and the
+     factors we DID derive were invisible here. */
+  const derived = trace.filter(t => t.kind === "x");
+  const rows = derived.map(t => {
+    const theirs = theirsByLabel[t.label];
+    return { label: t.label, group: t.group, driver: t.driver, input: t.input,
+             ours: +t.value, theirs: theirs ? theirs.v : null,
+             match: theirs ? Math.abs(+t.value - theirs.v) < 1e-6 : null };
   });
-  const agree = rows.filter(r => r.match).length;
+  const compared = rows.filter(r => r.theirs != null);
+  const agree = compared.filter(r => r.match).length;
+
   document.getElementById("notRated").innerHTML = rows.length ? `
-    <div class="d-flex gap-2 mb-2" style="font-size:11.5px">
-      <span class="vx-b ${agree === rows.length ? "green" : "amber"}">${agree} of ${rows.length} agree</span>
+    <div class="d-flex gap-2 mb-2 flex-wrap" style="font-size:11.5px">
+      <span class="vx-b blue">${rows.length} factor${rows.length === 1 ? "" : "s"} derived</span>
+      ${compared.length
+        ? `<span class="vx-b ${agree === compared.length ? "green" : "amber"}" title="Factors the payload also carried a resolved value for">${agree} of ${compared.length} match the payload</span>`
+        : `<span class="vx-b gray" title="The payload carried no pre-resolved factors, so there is nothing to disagree with">payload carried no resolved factors</span>`}
     </div>
-    <div class="vx-tw"><table class="vx-t" style="font-size:11.6px">
-      <thead><tr><th>Factor</th><th>Derived from</th><th style="text-align:right">Ours</th>
-        <th style="text-align:right">Theirs</th><th></th></tr></thead>
+    <div class="vx-tw" style="max-height:420px;overflow-y:auto"><table class="vx-t" style="font-size:11.6px">
+      <thead><tr><th>Factor</th><th>Driven by</th><th style="text-align:right">Ours</th>
+        <th style="text-align:right">Payload</th><th></th></tr></thead>
       <tbody>${rows.map(r => `<tr>
-        <td>${r.label || r.k}</td>
-        <td style="font-size:10.8px;color:var(--text-mute)">${r.from}</td>
-        <td style="text-align:right;font-variant-numeric:tabular-nums">${r.ours == null ? "—" : r.ours.toFixed(3)}</td>
-        <td style="text-align:right;font-variant-numeric:tabular-nums">${r.theirs.toFixed(3)}</td>
-        <td style="text-align:right">${r.match
-          ? '<i class="fa-solid fa-check" style="color:var(--good)"></i>'
-          : '<i class="fa-solid fa-xmark" style="color:var(--bad)"></i>'}</td>
+        <td>${r.label}${r.group ? `<div style="font-size:10.2px;color:var(--text-mute)">${r.group}</div>` : ""}</td>
+        <td style="font-size:10.8px;color:var(--text-mute)">${r.driver ? r.driver + (r.input ? `: ${String(r.input).slice(0, 28)}` : "") : "—"}</td>
+        <td style="text-align:right;font-variant-numeric:tabular-nums">${r.ours.toFixed(3)}</td>
+        <td style="text-align:right;font-variant-numeric:tabular-nums;color:${r.theirs == null ? "var(--text-mute)" : "inherit"}">${r.theirs == null ? "—" : r.theirs.toFixed(3)}</td>
+        <td style="text-align:right">${r.theirs == null ? ""
+          : r.match ? '<i class="fa-solid fa-check" style="color:var(--good)"></i>'
+                    : '<i class="fa-solid fa-xmark" style="color:var(--bad)"></i>'}</td>
       </tr>`).join("")}</tbody></table></div>
     ${LAST.adapted.notRated.length ? `<div style="font-size:11.3px;color:var(--text-dim);margin-top:9px">
       Still unmodelled: ${LAST.adapted.notRated.map(([k]) => `<code>${k.split(".").pop()}</code>`).join(", ")}</div>` : ""}`
-    : `<div class="vx-empty" style="padding:18px"><i class="fa-solid fa-check"></i>No resolved factors on this payload to compare.</div>`;
+    : `<div class="vx-empty" style="padding:18px"><i class="fa-solid fa-sliders"></i>This line's engine exposes no multiplicative factor trace.</div>`;
 }
 
 /* ==========================================================================
@@ -937,23 +986,6 @@ function factorTabsData() {
     key: g.name, label: g.name, icon: g.icon, color: g.color,
     count: (g.factors || []).length, sub: vxMoney(g.subtotal), group: g,
   }));
-  // Commercial Trucking also carries two candidate models alongside the
-  // real formula (r.modelA / r.modelB — see engine.js), purely for
-  // comparison — additional tabs, clearly labelled, not a replacement for
-  // the real coverage tabs above. Each tab carries its own group object
-  // directly (group: g), so groupPanelHtml() never has to re-resolve which
-  // model a tab's group came from.
-  if (r.modelA && r.modelB) {
-    const label = (g, m) => `${m} (candidate) — ${g.name}`;
-    (r.modelA.groups || []).forEach(g => tabs.push({
-      key: "A:" + g.name, label: label(g, "Model A"), icon: "fa-truck", color: "var(--cat-1)",
-      count: (g.factors || []).length, sub: vxMoney(g.subtotal), group: g,
-    }));
-    (r.modelB.groups || []).forEach(g => tabs.push({
-      key: "B:" + g.name, label: label(g, "Model B"), icon: "fa-road", color: "var(--cat-3)",
-      count: (g.factors || []).length, sub: vxMoney(g.subtotal), group: g,
-    }));
-  }
   return tabs;
 }
 

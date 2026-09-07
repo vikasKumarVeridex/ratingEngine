@@ -34,7 +34,33 @@
      Bumping this stamp forces exactly one full reset of every persisted key
      on the next load, for every browser, no manual cache-clearing required;
      unchanged on later deploys, so normal edits after this one stay durable. */
-  const VX_DATA_VERSION = "2026-09-03-trucking-restore-1";
+  /* ---------- Effective-dated rate rows (rate versioning) ----------
+     A filed rate table is not one set of numbers, it is a series of them,
+     each in force for a window. ams-service models this by physically
+     copying the whole table per filing (iso_new_rater_primary_factor and
+     iso_new_rater_primary_factor_12152025, chosen by an if/else on the
+     quote's lock_rate_date). That works but multiplies tables per filing and
+     buries the cutover date inside a stored procedure.
+
+     This platform uses row-level effective dating instead: a revision ADDS
+     rows and closes the superseded ones, so one table carries its own
+     history and "what did we charge on <date>" is answerable by query.
+
+     A row with no effectiveStart is treated as always-in-force — that keeps
+     every table that has not been given a revision history working exactly
+     as before rather than silently rating to nothing. */
+  /* This prototype's standing "today". Every date-relative table here rates
+     off this rather than the browser clock, so a quote produces the same
+     premium on any machine on any day — the same reason the PRNG is seeded. */
+  D.referenceDate = "2026-09-01";
+
+  D.tableAsOf = (rows, asOf) => {
+    if (!asOf) return rows;
+    return rows.filter(r => (!r.effectiveStart || r.effectiveStart <= asOf)
+                         && (!r.effectiveEnd || r.effectiveEnd >= asOf));
+  };
+
+  const VX_DATA_VERSION = "2026-09-04-derived-class-and-rate-versioning";
   try {
     if (localStorage.getItem("vxDataVersion") !== VX_DATA_VERSION) {
       localStorage.clear();
@@ -111,6 +137,23 @@
     { id: 10, code: "UMB", name: "VeriDex Umbrella Advantage", lob: "Umbrella / Excess", cob: ["Excess Liability"], states: 50, version: "v2026.07-draft", status: "Draft", owner: "J. Romero", updated: "2026-07-10", quotes: 0, gwp: 0, appTypeId: 495, raterType: "Custom" },
     { id: 11, code: "WCPROG", name: "VeriDex Workers' Comp Program", lob: "Workers' Compensation", cob: ["Workers' Compensation"], states: 46 /* overridden below: real ND/OH/WA/WY monopolistic-fund exclusion, not a slice */, version: "v2026.08", status: "Active", owner: "M. Alvarez", updated: "2026-08-15", quotes: 0, gwp: 0, appTypeId: 491, raterType: "Custom" },
   ];
+  /* ---------------- Product licence basis ----------------
+     Which paper a PRODUCT is written on. This sits on the product, not the
+     line, because the same carrier group routinely writes one trucking
+     program on admitted paper and another on E&S — the line itself is not
+     inherently one or the other. It decides two real money items: the
+     surplus-lines premium tax and the surplus-lines filing fee, neither of
+     which an admitted carrier owes.
+
+     Left UNSET on every product here, which means "inherit" — the engine
+     falls back to the line's own basis (Workers' Compensation is
+     statutorily admitted) and then to the writing carrier's licence. Set it
+     on a product to override, e.g. an admitted trucking program.
+
+     One rule is not overridable: a statutorily admitted line stays admitted
+     whatever a product says, because no private surplus-lines carrier can
+     write it standalone. See isAdmitted() in engine.js. */
+  D.productLicenceOptions = ["", "Admitted", "Surplus Lines"];
   D.products = loadPersisted("vxProductsState", D.products);
 
   /* ---------------- Program parameters [REAL from workbooks] ---------------- */
@@ -204,6 +247,12 @@
     ["7398","PPT - Misc A",1.15],["7399","PPT - Misc B",0.92],
   ].map(([code, desc, f], i) => ({ id: i + 1, code, desc, liability: f,
     category: f < 0.3 ? "Trailer" : (+code >= 7000 ? "Private Passenger Type" : "Truck / Truck-Tractor"),
+    /* One generation on file. A revision would ADD rows carrying the next
+       version's effectiveStart and set effectiveEnd on these, rather than
+       overwriting them — see D.tableAsOf. No second generation is seeded
+       because no second filing's values are known; inventing one would put
+       unfiled numbers in front of a user as though they were rates. */
+    ratingVersion: "v2026.03", effectiveStart: "2026-03-01", effectiveEnd: "",
     effectiveDate: "2026-03-01", active: true }));
   /* Fleet Size / OCN "vehicle type" bucket each Primary Class code rolls up
      to (PrimaryClasses!TTT_Fleet_Type_Liab / OCN_Vehicle_Type_Liab) — drives
@@ -231,6 +280,103 @@
   };
   D.truckPrimary.forEach(p => { const m = FLEET_OCN_MAP[p.code]; if (m) { p.fleetType = m[0]; p.ocnType = m[1]; } });
 
+  /* ---------- Primary Class RESOLUTION (the derived-key gap) ----------
+     A primary class code is not something an insured supplies — in the real
+     system it is the OUTPUT of a composite lookup. ams-service resolves it as
+
+       vehicle.model  -> ins_vehicle_models   -> major_class_code
+       vehicle.weight -> ins_vehicle_type_new -> vehicle_type_id
+       (class code, type id, radius, vehicle use)
+                      -> iso_new_rater_service_radius_primarycode
+                      -> primary_code  (+ fleet_type_liability, ocn_vehicle_type)
+       primary_code   -> iso_new_rater_primary_factor -> liability_factor
+
+     …and only that LAST step is a flat lookup. This platform previously
+     skipped the whole resolution and took the class code as a raw input.
+
+     What is real here vs. not, stated plainly:
+       - REAL: the resolution SHAPE above, verified against ams-service's
+         own UDFs, and the size/use/radius decomposition below, which is read
+         out of each class row's own filed description ("Light, Service,
+         Local Truck" genuinely IS size=Light, use=Service, radius=Local).
+       - NOT RECOVERABLE: the contents of iso_new_rater_service_radius_-
+         primarycode itself. Only its DDL is in source control; the mapping
+         rows live in a production database. So this resolves against the
+         curated class list's own descriptions rather than that table.
+       - CONSEQUENCE: where the filed list carries several variants at one
+         (size, use, radius) — the Long Distance A/B/C/D codes — this cannot
+         tell them apart, because the inputs that separate them are exactly
+         the ones that were not recoverable. Those resolve to the first
+         candidate and are reported `ambiguous`, never silently picked. */
+  const SIZE_CLASSES = [
+    [/^Extra-Heavy (?:TT|Truck-Tractor)/i, "Extra-Heavy Truck-Tractor"],
+    [/^Heavy Truck-Tractor/i,              "Heavy Truck-Tractor"],
+    [/^Medium Truck/i,                     "Medium Truck"],
+    [/^Light/i,                            "Light Truck"],
+    [/^PPT/i,                              "Private Passenger Type"],
+  ];
+  const RADIUS_BANDS = ["Special Hauling", "Interstate", "Long Distance", "Intermediate", "Local"];
+  const USE_TYPES = ["Service", "Retail", "Commercial"];
+  D.truckPrimary.forEach(p => {
+    const hit = SIZE_CLASSES.find(([re]) => re.test(p.desc));
+    p.sizeClass = hit ? hit[1] : (p.category === "Trailer" ? "Trailer" : "");
+    /* Business use is only a real distinction for power units. "Service/
+       Utility Trailer" contains the word Service but is a trailer body
+       style, not a service-use truck — reading a use out of it would be
+       inventing a distinction the filed list does not draw. */
+    p.businessUse = p.category === "Truck / Truck-Tractor"
+      ? (USE_TYPES.find(u => new RegExp("[ ,-]" + u, "i").test(p.desc)) || "")
+      : "";
+    p.radiusBand = p.category === "Trailer"
+      ? "" : (RADIUS_BANDS.find(b => new RegExp(b, "i").test(p.desc)) || "");
+  });
+
+  /* Radius-of-operation key (what the quote form and the ams-ui submission
+     both carry) -> the label the rate table is keyed on. Lives here so the
+     engine and every screen read ONE mapping; it was previously a private
+     const inside engine.js that other callers had to restate. */
+  D.truckRadiusKeyToLabel = {
+    "local_200": "Local-200",
+    "local_intermediate": "Intermediate-300",
+    "12_western": "Statewide-500",
+    "48_states": "Regional-1000",
+    "long_haul": "Long Haul-1001+",
+  };
+
+  /* Radius rows carry their own band in their label ("Local-200",
+     "Long Haul-1001+"), so the quote's radius selection maps to a resolution
+     band without a second invented table. */
+  D.truckRadiusBand = label => {
+    const l = String(label || "");
+    if (/^Local/i.test(l)) return "Local";
+    if (/^Intermediate/i.test(l)) return "Intermediate";
+    return "Long Distance";   // Statewide / Regional / Long Haul
+  };
+
+  /* The resolver. Returns the resolution CHAIN, not just an answer, so the
+     rating trace can show how the class was arrived at — and so an ambiguous
+     resolution is visible rather than looking like a determined one. */
+  D.truckPrimaryResolve = (sizeClass, businessUse, radiusBand, asOf) => {
+    const pool = D.tableAsOf(D.truckPrimary, asOf)
+      .filter(p => p.sizeClass === sizeClass);
+    let cands = pool;
+    if (businessUse) {
+      const byUse = cands.filter(p => p.businessUse === businessUse);
+      if (byUse.length) cands = byUse;
+    }
+    if (radiusBand) {
+      const byRad = cands.filter(p => p.radiusBand === radiusBand);
+      if (byRad.length) cands = byRad;
+    }
+    if (!cands.length) return { row: null, candidates: [], ambiguous: false, resolved: false };
+    return { row: cands[0], candidates: cands, ambiguous: cands.length > 1, resolved: true,
+      key: [sizeClass, businessUse || "—", radiusBand || "—"].join(" / ") };
+  };
+  /* Every size class a vehicle may be assigned, for the quote form's picker —
+     read off the class list itself so the two can never drift apart. */
+  D.truckSizeClasses = [...new Set(D.truckPrimary.map(p => p.sizeClass).filter(Boolean))];
+  D.truckBusinessUses = USE_TYPES.slice();
+
   D.truckAge = [
     ["Current Model Year",0,1.04,0.92],["1st Preceding",1,1.08,0.99],["2nd Preceding",2,1.10,1.03],["3rd Preceding",3,1.12,1.07],
     ["4th Preceding",4,1.13,1.09],["5th Preceding",5,1.09,1.06],["6th Preceding",6,1.05,1.03],["7th Preceding",7,1.02,1.00],
@@ -257,7 +403,9 @@
   };
   D.truckFleetSize = [];
   { let id = 1; Object.entries(FLEET_CURVES).forEach(([type, factors]) => {
-    factors.forEach((f, i) => D.truckFleetSize.push({ id: id++, vehicleType: type, label: FLEET_BANDS[i], min: FLEET_MINMAX[i][0], max: FLEET_MINMAX[i][1], factor: f })); }); }
+    factors.forEach((f, i) => D.truckFleetSize.push({ id: id++, vehicleType: type, label: FLEET_BANDS[i],
+      min: FLEET_MINMAX[i][0], max: FLEET_MINMAX[i][1], factor: f,
+      ratingVersion: "v2026.03", effectiveStart: "2026-03-01", effectiveEnd: "" })); }); }
 
   /* OCN Factor — CA_OCN_Liability, value-banded (vehicle stated value), one
      column per "OCN_Vehicle Type_Liab" bucket. Was entirely missing before. */
@@ -1294,97 +1442,6 @@
     { id: 4, cls: "D — Elevated", pts: "7–9", factor: 1.45, desc: "Major violation or multiple at-fault accidents" },
     { id: 5, cls: "E — High Risk", pts: "10+", factor: 1.85, desc: "DUI / reckless / suspension in past 36 months" },
   ];
-  /* ==========================================================================
-     Two CANDIDATE Commercial Trucking rating models — built at the user's
-     explicit request to compare two structurally different actuarial
-     approaches after the real, filed formula and its factor registry were
-     removed (see the note on FACTORS below and on SEED_FORMULAS above).
-
-     Neither model is a filed rate. Both are disclosed as candidate/
-     experimental throughout this platform (Rating Versions, Rate Tables,
-     Formula Builder). Every value below is illustrative, chosen to be a
-     plausible order of magnitude for commercial trucking, not sourced from
-     any filed manual or workbook.
-
-     Model A — Classification (manual) rating: a per-vehicle chain of
-     multiplicative class/risk factors, summed across the fleet. This is
-     the traditional manual-rating paradigm — the same STRUCTURE the real,
-     removed formula used, rebuilt from scratch with new candidate factors
-     and values, not a restoration of the deleted one.
-
-     Model B — Exposure-based (usage/mileage) rating: premium driven by
-     total fleet exposure (annual miles) and a composite risk score, with
-     additive components rather than a per-unit multiplicative chain. This
-     mirrors real telematics/usage-based commercial auto programs — a
-     different, equally real actuarial paradigm, chosen specifically so the
-     two models' outputs diverge for a structural reason, not an arbitrary
-     one. ========================================================================== */
-  D.modelAVehicleClass = [
-    { code: "311", desc: "Light Truck (<10,000 lbs)", factor: 0.82 },
-    { code: "312", desc: "Medium Truck (10,001–26,000 lbs)", factor: 0.95 },
-    { code: "321", desc: "Heavy Truck (26,001–33,000 lbs)", factor: 1.10 },
-    { code: "322", desc: "Heavy Truck (33,001+ lbs)", factor: 1.22 },
-    { code: "331", desc: "Truck-Tractor, Single Axle", factor: 1.28 },
-    { code: "341", desc: "Truck-Tractor, Tandem Axle", factor: 1.35 },
-    { code: "351", desc: "Truck-Tractor, Tri-Axle", factor: 1.48 },
-    { code: "671", desc: "Semi-Trailer, Single", factor: 0.65 },
-    { code: "672", desc: "Semi-Trailer, Tandem", factor: 0.72 },
-  ];
-  D.modelARadius = [
-    { key: "local_200", label: "Local (200 mi)", factor: 0.85 },
-    { key: "local_intermediate", label: "Local / Intermediate", factor: 0.95 },
-    { key: "12_western", label: "12 Western States", factor: 1.10 },
-    { key: "48_states", label: "48 States", factor: 1.20 },
-    { key: "long_haul", label: "Long Haul (1001+ mi)", factor: 1.35 },
-  ];
-  D.modelADriverExperience = [
-    { band: "Under 2 years CDL", factor: 1.25 },
-    { band: "2–5 years CDL", factor: 1.08 },
-    { band: "5–10 years CDL", factor: 0.95 },
-    { band: "10+ years CDL", factor: 0.88 },
-  ];
-  D.modelASafetyRating = [
-    { rating: "Satisfactory", factor: 0.92 },
-    { rating: "None", factor: 1.05 },
-    { rating: "Conditional", factor: 1.35 },
-    { rating: "Unsatisfactory", factor: 1.90 },
-  ];
-  D.modelAFleetDiscount = [
-    { min: 1, max: 3, factor: 1.05 },
-    { min: 4, max: 9, factor: 1.00 },
-    { min: 10, max: 24, factor: 0.94 },
-    { min: 25, max: 49, factor: 0.88 },
-    { min: 50, max: 999999, factor: 0.82 },
-  ];
-  D.modelBTerritory = (() => {
-    // Candidate territory relativities keyed by state, defaulting the rest
-    // to 1.00 — same "known states get a real-shaped row, everything else
-    // is an honest neutral default" pattern this platform already uses
-    // elsewhere (e.g. D.truckBaseLC's DEFAULT key).
-    const named = { TX: 1.05, CA: 1.22, FL: 1.15, NY: 1.18, IL: 1.02, OH: 0.95,
-      PA: 0.98, GA: 1.04, NC: 0.96, AZ: 1.00, OK: 0.90, NM: 0.92, LA: 1.08, AR: 0.88 };
-    return { ...named, DEFAULT: 1.00 };
-  })();
-  D.modelBRiskScore = [
-    // Composite score band -> premium load. Driven by the same safety
-    // rating + prior-claims answers Model A's own risk factors read, but
-    // combined additively into a single "risk load" component rather than
-    // a multiplicative chain — the structural difference between the two
-    // models, not just different numbers on the same shape.
-    { band: "Excellent", max: 0, factor: 0.80 },
-    { band: "Good", max: 2, factor: 1.00 },
-    { band: "Fair", max: 5, factor: 1.25 },
-    { band: "Poor", max: 999, factor: 1.70 },
-  ];
-  D.modelBConstants = {
-    lossCostPerMile: 0.085,     // $/mile — candidate, illustrative
-    perUnitExposureCharge: 450, // $/power unit — candidate fixed exposure load
-    fixedExpenseLoad: 600,      // $ flat per policy — candidate expense load
-  };
-  D.modelAConstants = {
-    baseRate: 2850, // $/power unit before factors — candidate, illustrative
-  };
-
   /* ---------------- Rating factors — the REAL registry ----------------
      This used to be 500 generated records with `defaultValue: rf(0.5, 2.2)`
      — random numbers the engine never read. That made the Rating Factors
@@ -1430,22 +1487,6 @@
     ["DRV_CLASS","Driver Class Factor","Commercial Trucking","Account Level","Computed","Driver age & violations","Drivers!AF20","driverClasses",()=>stat(VXBASE.driverClasses,"factor"),1.00,false],
     ["DRV_CDL","CDL Experience Discount","Commercial Trucking","Account Level","Computed","Driver CDL experience","Drivers!AF19",null,null,1.00,true],
     ["EXP_MOD","Experience Mod","Commercial Trucking","Account Level","Computed","3yr loss history","Loss History",null,null,1.00,true],
-    /* Model A / Model B are two independent CANDIDATE rating models kept
-       alongside the real registry above, purely for comparison — not filed
-       rates. See engine.js's truckingModelA()/truckingModelB(). */
-    // --- Commercial Trucking · Model A (Classification / Manual Rating — candidate, not filed) ---
-    ["MA_BASE","Base Rate","Commercial Trucking","Model A — Classification","Constant",null,"candidate",null,null,D.modelAConstants.baseRate,false],
-    ["MA_CLASS","Vehicle Class Factor","Commercial Trucking","Model A — Classification","Lookup","Vehicle Class","candidate","modelAVehicleClass",()=>stat(VXBASE.modelAVehicleClass,"factor"),null,false],
-    ["MA_RADIUS","Radius of Operation Factor","Commercial Trucking","Model A — Classification","Lookup","Radius of Operation","candidate","modelARadius",()=>stat(VXBASE.modelARadius,"factor"),null,false],
-    ["MA_DRVEXP","Driver Experience Factor","Commercial Trucking","Model A — Classification","Lookup","Avg. CDL Experience","candidate","modelADriverExperience",()=>stat(VXBASE.modelADriverExperience,"factor"),null,false],
-    ["MA_SAFETY","Safety Rating Factor","Commercial Trucking","Model A — Classification","Lookup","FMCSA Safety Rating","candidate","modelASafetyRating",()=>stat(VXBASE.modelASafetyRating,"factor"),null,false],
-    ["MA_FLEET","Fleet Size Discount Factor","Commercial Trucking","Model A — Classification","Lookup","Rated power units","candidate","modelAFleetDiscount",()=>stat(VXBASE.modelAFleetDiscount,"factor"),null,false],
-    // --- Commercial Trucking · Model B (Exposure-Based / Mileage Rating — candidate, not filed) ---
-    ["MB_LCPM","Loss Cost Per Mile","Commercial Trucking","Model B — Exposure-Based","Constant",null,"candidate",null,null,D.modelBConstants.lossCostPerMile,false],
-    ["MB_TERR","Territory Relativity","Commercial Trucking","Model B — Exposure-Based","Lookup","Garaging State","candidate","modelBTerritory",()=>stat(Object.entries(VXBASE.modelBTerritory).filter(([k])=>k!=="DEFAULT").map(([,v])=>({v})),"v"),null,false],
-    ["MB_RISK","Risk Score Load","Commercial Trucking","Model B — Exposure-Based","Computed","Safety rating + prior claims","candidate","modelBRiskScore",()=>stat(VXBASE.modelBRiskScore,"factor"),null,false],
-    ["MB_UNITCHG","Per-Unit Exposure Charge","Commercial Trucking","Model B — Exposure-Based","Constant",null,"candidate",null,null,D.modelBConstants.perUnitExposureCharge,false],
-    ["MB_EXPFEE","Fixed Expense Load","Commercial Trucking","Model B — Exposure-Based","Constant",null,"candidate",null,null,D.modelBConstants.fixedExpenseLoad,false],
     // --- Commercial Property ---
     ["PR_CONSTR","Construction Type Factor","Commercial Property","Building & BPP","Lookup","Construction Type","CP_BG1","propConstruction",()=>stat(VXBASE.propConstruction,"factor"),1.00,false],
     ["PR_PPC","Protection Class Factor","Commercial Property","Building & BPP","Lookup","Protection Class","PPC","propPPC",()=>stat(VXBASE.propPPC,"factor"),1.00,false],
@@ -2034,6 +2075,11 @@
       detail: pick(["Primary Class 321: 1.58 → 1.62","OOS Vehicle Surcharge: 8% → 10%","CA T2 Base Loss Cost: $4,750 → $4,890","Dashcam Factor corrected: 1.00 → 1.20","LCM updated per filing","Added 3 new NAICS classes","Retired expired version","Effective date shifted +30 days"]),
       version: pick(["v2026.03","v2026.01","v2025.10","v2024.12"]), ip: `10.${ri(0,40)}.${ri(0,255)}.${ri(1,254)}` };
   });
+  /* Persisted, so a change a user actually makes still appears on the Audit
+     History screen after navigating to it. Without this the audit log reset
+     to seed data on every page load and could only ever show fabricated
+     history — never the edit the user had just made. */
+  D.audit = loadPersisted("vxAuditState", D.audit);
 
   /* ---------------- Rating factor change log ----------------
      "Who changed a rating factor value, and to what" — the generic audit log
@@ -2075,6 +2121,7 @@
         version: pick(["v2026.03","v2026.01","v2025.10"]) };
     }).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   })();
+  D.factorChangeLog = loadPersisted("vxFactorChangeLog", D.factorChangeLog);
 
   /* ---------------- System settings ---------------- */
   D.settings = [
@@ -2305,7 +2352,14 @@
     { id: 7, name: "Trucking — Cargo", lob: "Commercial Trucking", scope: "Class of Business", cob: "Motor Truck Cargo",
       attachments: [{ product: "Digital Trucking Program", ratingVersion: "v2026.03" }],
       status: "Active", createdBy: "J. Romero", updated: "2026-08-19", tested: true, lastTestedAt: "2026-08-19",
-      tokens: ["(","CargoLimit","÷","100",")","×","CargoRatePer100","×","CargoRadiusFactor"]
+      /* CargoRatePer100 until the Cargo rebuild: that flat placeholder rate
+         was replaced by a real classification chain, and the engine now
+         supplies CargoLossCostFactor instead. This formula still named the
+         retired variable, so it threw "missing value for CargoRatePer100" on
+         every quote and the engine silently fell back to its default chain —
+         an Active formula that had never actually rated anything. Matches
+         engine.js's cargoDefault exactly, so activating it changes nothing. */
+      tokens: ["(","CargoLimit","÷","100",")","×","CargoLossCostFactor","×","CargoRadiusFactor"]
         .map(v => ({ t: v === "(" || v === ")" || v === "×" || v === "÷" ? "op" : (v === "100" ? "num" : "var"), v })) },
   ];
   D.savedFormulas = loadPersisted("vxSavedFormulas", SEED_FORMULAS);

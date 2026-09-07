@@ -316,6 +316,12 @@ function vehicleDetail(x, i) {
     <div class="row g-2">
       ${f("Number of Units", "units", numV("units", x.units || 1, "width:80px"), "One row can stand for several identical units")}
       ${f("Vehicle Type", "vehType", selV("vehType", [["Trucks, Tractors And Trailers","Trucks/Tractors/Trailers"],["Private Passenger Types","Private Passenger Types"]], x.vehType), "Selects the TTT or PPT factor columns")}
+      ${/* The two inputs a primary class is DERIVED from, together with the
+            radius below. Leave Vehicle Class set to "derive" in the schedule
+            above and these drive it — matching how the real rater resolves a
+            primary_code rather than being handed one. */""}
+      ${f("Size Class", "sizeClass", selV("sizeClass", VX.truckSizeClasses.map(s => [s, s]), x.sizeClass, true), "Used to derive the vehicle class")}
+      ${f("Business Use", "businessUse", selV("businessUse", VX.truckBusinessUses.map(u => [u, u]), x.businessUse, true), "Service / Retail / Commercial")}
       ${f("Garaging Zip", "garageZip", txtV("garageZip", x.garageZip || ""), "Rater resolves territory from ZIP")}
       ${f("Garaging City", "garageCity", txtV("garageCity", x.garageCity || ""))}
       ${f("Valuation Basis", "valuationBasis", selV("valuationBasis", VX.truckValuationBasis.map(b => [b, b]), x.valuationBasis))}
@@ -353,7 +359,19 @@ function vehicleSchedule() {
         <td><input class="form-control form-control-sm V" data-i="${i}" data-f="vin" value="${x.vin || ""}"
           placeholder="17-char VIN" maxlength="17" style="min-width:170px;text-transform:uppercase"></td>
         <td><select class="form-select form-select-sm V" data-i="${i}" data-f="primaryClass" style="min-width:190px">
-          ${cls.map(c => `<option value="${c.code}" ${c.code === x.primaryClass ? "selected" : ""}>${c.code} — ${c.desc}</option>`).join("")}</select></td>
+          ${/* A class code is normally DERIVED (size class + business use +
+                radius), not chosen — that is how the real rater resolves it.
+                Choosing one here is an explicit carrier assignment and
+                overrides the derivation, so it stays available. */""}
+          <option value="" ${!x.primaryClass ? "selected" : ""}>— derive from size / use / radius —</option>
+          ${cls.map(c => `<option value="${c.code}" ${c.code === x.primaryClass ? "selected" : ""}>${c.code} — ${c.desc}</option>`).join("")}</select>
+          ${!x.primaryClass ? (() => {
+            const radLabel = VX.truckRadiusKeyToLabel[x.radiusClass || S.v.radiusClass] || "Intermediate-300";
+            const r = VX.truckPrimaryResolve(x.sizeClass || "", x.businessUse || "", VX.truckRadiusBand(radLabel));
+            return r.resolved
+              ? `<small class="d-block" style="font-size:9.8px;color:var(--text-mute);line-height:1.3">→ ${r.row.code} ${r.row.desc}${r.ambiguous ? ` <span class="vx-b amber" style="font-size:8.5px" title="${r.candidates.map(c => c.code).join(", ")} all match — the inputs that separate them are not in the filed source">ambiguous</span>` : ""}</small>`
+              : `<small class="d-block" style="font-size:9.8px;color:var(--warn);line-height:1.3">Set Size Class in per-unit detail to derive a class</small>`;
+          })() : ""}</td>
         <td><input type="number" class="form-control form-control-sm V" data-i="${i}" data-f="year" value="${x.year}" style="width:82px"></td>
         <td><input type="number" class="form-control form-control-sm V" data-i="${i}" data-f="value" value="${x.value}" style="width:106px"></td>
         <td>${(() => { const m = (S.v.trailers || []).filter(t => +t.unit === +x.n);
@@ -1855,6 +1873,75 @@ function ratedByBadge(rb) {
   return `<span class="vx-b gray ms-2" style="font-size:9px">Default engine</span>`;
 }
 
+/* ==========================================================================
+   Calculation performed — the arithmetic, not just the factors.
+
+   The Premium tab could already say which factors applied and what each was
+   worth, but not what the engine actually computed with them. This shows
+   every formula evaluation in the order it ran, with the real values
+   substituted, so a premium can be checked by hand rather than trusted.
+
+   Steps come from r.calculationSteps, recorded by the engine AT evaluation
+   time (see applySavedFormula in engine.js) — not rebuilt here, because a
+   display-side rebuild can drift from the code that actually rated.
+   ========================================================================== */
+function calculationWalkthrough(r) {
+  const steps = r.calculationSteps || [];
+  if (!steps.length) return "";
+  const num = v => typeof v === "number"
+    ? (Math.abs(v) >= 1000 ? v.toLocaleString("en-US", { maximumFractionDigits: 2 })
+                           : +v.toFixed(4) + "")
+    : v;
+
+  const stepCard = (s, i) => {
+    const head = `${s.context ? `<span class="vx-b gray" style="font-size:9px">${s.context}</span> ` : ""}${s.coverage.replace(/^__|__$/g, "").replace(/_/g, " ")}`;
+    const mode = s.failed
+      ? `<span class="vx-b amber" style="font-size:9px" title="${s.error}"><i class="fa-solid fa-triangle-exclamation me-1"></i>saved formula failed — engine default used</span>`
+      : s.mode === "formula"
+        ? `<span class="vx-b blue" style="font-size:9px"><i class="fa-solid fa-wand-magic-sparkles me-1"></i>${s.formulaName}</span>`
+        : `<span class="vx-b gray" style="font-size:9px">engine default chain</span>`;
+    return `<div style="border:1px solid var(--border);border-radius:10px;padding:11px 14px;margin-bottom:9px">
+      <div class="d-flex align-items-center gap-2 flex-wrap" style="font-size:12.6px;font-weight:650">
+        <span style="color:var(--text-mute);font-variant-numeric:tabular-nums">${i + 1}.</span>${head}${mode}
+        <span class="ms-auto" style="font-variant-numeric:tabular-nums;font-weight:800">${num(s.result)}</span>
+      </div>
+      ${s.expression ? `<div style="font-size:11.4px;color:var(--text-dim);margin-top:6px;word-break:break-word">
+        <div style="font-family:var(--mono, monospace)">${s.expression}</div>
+        ${s.substituted ? `<div style="font-family:var(--mono, monospace);color:var(--text);margin-top:3px">${s.substituted} <b>= ${num(s.result)}</b></div>` : ""}
+      </div>` : `<div style="font-size:11.4px;color:var(--text-mute);margin-top:5px">
+        Rated by the engine's built-in chain for this coverage — no saved formula is Active on it.</div>`}
+      ${s.failed ? `<div style="font-size:11.2px;color:var(--warn);margin-top:5px"><b>${s.error}</b> — the quote completed on the default chain instead.</div>` : ""}
+      ${s.vars.length ? `<details style="margin-top:6px">
+        <summary style="font-size:11.2px;color:var(--text-mute);cursor:pointer">${s.vars.length} values used</summary>
+        <div class="vx-tw" style="max-height:220px;overflow:auto;margin-top:5px"><table class="vx-t" style="font-size:11.4px">
+          <tbody>${s.vars.map(v => `<tr><td>${v.name}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums">${num(v.value)}</td></tr>`).join("")}</tbody>
+        </table></div></details>` : ""}
+    </div>`;
+  };
+
+  const failed = (r.formulaFailures || []).length;
+  return `<div class="vx-card vx-anim">
+    <div class="vx-card-head">
+      <div><h2>Calculation performed</h2>
+        <div class="sub">Every formula the engine evaluated for this quote, in order, with the real values substituted.</div></div>
+      <div class="d-flex gap-2 align-items-center">
+        <span class="vx-b ${r.usedSavedFormula ? "blue" : "gray"}">${r.usedSavedFormula ? "saved formulas in use" : "all engine defaults"}</span>
+        ${failed ? `<span class="vx-b amber" title="${(r.formulaFailures || []).map(f => f.coverage + ": " + f.error).join("; ")}">${failed} formula failed</span>` : ""}
+      </div>
+    </div>
+    ${failed ? `<div class="mb-3" style="border:1px solid var(--border);border-left:3px solid var(--warn);background:rgba(198,137,15,.08);border-radius:0 10px 10px 0;padding:10px 13px;font-size:12.2px;line-height:1.6">
+      <i class="fa-solid fa-triangle-exclamation me-1" style="color:var(--warn)"></i>
+      <b>${failed} Active formula ${failed === 1 ? "did" : "each"} not evaluate and the engine rated on its default chain instead.</b>
+      The premium is still correct for the default chain, but it is not what the saved formula would have produced — fix the formula or deactivate it.
+    </div>` : ""}
+    ${steps.map(stepCard).join("")}
+    <div style="font-size:11.2px;color:var(--text-mute);margin-top:4px">
+      Recorded by the engine as each formula ran, so this is the arithmetic that actually produced the premium above — not a re-derivation.
+    </div>
+  </div>`;
+}
+
 /* A factor is almost never a constant — it's a row selected out of a rate
    table by one of the insured's own answers. These renderers show that whole
    chain (default → what was entered → which row matched → what applied →
@@ -2018,11 +2105,10 @@ function eligBanner() {
    its output) was removed at the user's explicit request, alongside its
    factor registry and saved formulas — see data.js/engine.js. Those rollups
    (vehicleTypeRollup, driverStateDistribution, lossRatio3yr/5yr,
-   cargoBreakdown) are not computed by either new candidate model, so this
-   summary is rebuilt around what the two models actually produce: a direct
-   side-by-side comparison. r.modelA / r.modelB are the two full results
-   (see engine.js's trucking()); r itself mirrors Model A for callers that
-   read the plain shape. */
+   cargoBreakdown) all come from the real formula, which was later restored
+   and is what this summary renders. Two candidate models were briefly shown
+   beside it during a comparison exercise; both have been removed, so this is
+   the filed formula's own breakdown and nothing else. */
 function truckPremiumSummary(r) {
   if (r.lob !== "Commercial Trucking") return "";
   const money = v => vxMoney(v);
@@ -2100,52 +2186,8 @@ function truckPremiumSummary(r) {
     </div>
   </div>
 
-  ${candidateModelComparison(r)}
 
   ${truckFactorTabs(r)}`;
-}
-
-/* Two candidate rating models (Model A / Model B — see engine.js), computed
-   alongside the real formula above purely for a side-by-side rate-
-   indication comparison. Not filed rates, not what this policy is actually
-   charged (the real breakdown above that IS). Only rendered when both are
-   present on the result. */
-function candidateModelComparison(r) {
-  const a = r.modelA, b = r.modelB;
-  if (!a || !b) return "";
-  const money = v => vxMoney(v);
-  const diffPct = r.modelDiffPct;
-  const higher = b.finalPremium > a.finalPremium ? "B" : "A";
-
-  const modelCard = (m, label, color) => `
-    <div class="col-lg-6">
-      <div class="vx-card vx-anim">
-        <h2 style="font-size:14px;margin-bottom:2px"><span class="vx-b" style="background:${color}22;color:${color}">${label}</span></h2>
-        <div class="sub" style="margin-top:2px">${m.formula}</div>
-        <table class="vx-t pt" style="margin-top:8px">
-          <tbody>
-            <tr><td>Coverage Premium</td><td class="pt-num">${money(m.coveragePremium)}</td></tr>
-            ${m.accountFactor !== 1 ? `<tr><td>${m.acctLabel} (${m.accountFactor.toFixed(2)}×)</td><td class="pt-num">${money(m.afterAccount - m.coveragePremium)}</td></tr>` : ""}
-            <tr><td class="pt-mute">Fees</td><td class="pt-num pt-mute">${money(m.fees)}</td></tr>
-            <tr><td class="pt-mute">Surplus Lines Tax</td><td class="pt-num pt-mute">${money(m.tax)}</td></tr>
-            ${m.countyTax ? `<tr><td class="pt-mute">County Tax</td><td class="pt-num pt-mute">${money(m.countyTax)}</td></tr>` : ""}
-            <tr class="pt-final"><td><b>Final Premium</b></td><td class="pt-num"><b style="font-size:15px">${money(m.finalPremium)}</b></td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>`;
-
-  return `
-  <h2 style="font-size:14px;margin:20px 0 10px"><i class="fa-solid fa-flask me-2" style="color:var(--primary)"></i>Candidate Model Comparison <span class="vx-b gray" style="font-size:9px">not filed</span></h2>
-  <div class="vx-ai mb-3" style="padding:11px 15px">
-    <i class="fa-solid fa-circle-info me-1"></i>
-    Two candidate rating models, computed alongside the real formula above purely for a rate-indication comparison — neither is a filed rate, and neither is what this policy actually charges (the real breakdown above that is).
-    Model ${higher} rates <b>${Math.abs(diffPct).toFixed(1)}%</b> ${higher === "B" ? "higher" : "lower than Model B"} than Model ${higher === "B" ? "A" : "B"} for this exact risk.
-  </div>
-  <div class="row g-3 mb-3">
-    ${modelCard(a, "Model A — Classification (Manual) Rating", "var(--cat-1)")}
-    ${modelCard(b, "Model B — Exposure-Based (Mileage) Rating", "var(--cat-3)")}
-  </div>`;
 }
 
 /* Tabs come from the rated result, not a fixed list: "Account", then one tab
@@ -2156,13 +2198,6 @@ function factorTabNames(r) {
   const names = [];
   if (r.accountFactorLines && r.accountFactorLines.length) names.push("Account");
   (r.groups || []).forEach(g => { if (!names.includes(g.name)) names.push(g.name); });
-  // Model A / Model B's own tabs, alongside the real coverage tabs above —
-  // additional, not a replacement (see candidateModelComparison()). Their
-  // group names already read "Model A — ..." / "Model B — ...".
-  if (r.modelA && r.modelB) {
-    (r.modelA.groups || []).forEach(g => { if (!names.includes(g.name)) names.push(g.name); });
-    (r.modelB.groups || []).forEach(g => { if (!names.includes(g.name)) names.push(g.name); });
-  }
   return names.length ? names : ["Account"];
 }
 
@@ -2255,13 +2290,10 @@ function truckFactorTabs(r) {
      blank one. */
   function groupPanel(name) {
     let g = (r.groups || []).find(x => x.name === name);
-    if (!g && name.startsWith("Model A — ") && r.modelA) g = (r.modelA.groups || []).find(x => x.name === name);
-    if (!g && name.startsWith("Model B — ") && r.modelB) g = (r.modelB.groups || []).find(x => x.name === name);
     if (!g) return `<div class="vx-empty" style="padding:20px"><i class="fa-solid fa-shield-halved"></i>${name} is not selected on this quote.</div>`;
-    const isCandidate = name.startsWith("Model A \u2014 ") || name.startsWith("Model B \u2014 ");
     const fs = g.factors || [];
     if (!fs.length) return `<div class="vx-empty" style="padding:20px"><i class="fa-solid fa-shield-halved"></i>${name} carries no itemised factors \u2014 subtotal ${money(g.subtotal)}.</div>`;
-    return `${isCandidate ? `<div class="vx-ai" style="padding:9px 12px;font-size:12.3px;margin-bottom:10px"><i class="fa-solid fa-flask"></i> Candidate model \u2014 not a filed rate. Shown for comparison only.</div>` : ""}<div class="sub">${fs.length} factor${fs.length === 1 ? "" : "s"} applied \u2014 subtotal ${money(g.subtotal)}.</div>
+    return `<div class="sub">${fs.length} factor${fs.length === 1 ? "" : "s"} applied \u2014 subtotal ${money(g.subtotal)}.</div>
       <div class="vx-tw"><table class="vx-t pt" style="min-width:820px">
       <thead><tr><th>Factor</th><th>Driven by</th><th>Matched</th><th class="pt-num">Applied</th><th class="pt-num">Base</th></tr></thead>
       <tbody>${fs.map(x => `<tr>
@@ -2357,7 +2389,7 @@ function paint() {
   // Premium Calculation tab: full transparent build-up.
   const pane = document.getElementById("premiumPane");
   if (pane) {
-    pane.innerHTML = eligBanner() + truckPremiumSummary(r) + premiumTable(r);
+    pane.innerHTML = eligBanner() + truckPremiumSummary(r) + premiumTable(r) + calculationWalkthrough(r);
     pane.querySelectorAll("[data-truck-tab]").forEach(a => a.onclick = e => {
       e.preventDefault(); S.truckFactorTab = a.dataset.truckTab; paint();
     });

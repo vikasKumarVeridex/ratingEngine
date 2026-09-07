@@ -284,47 +284,9 @@ const RATE_TABLES = [
 ].concat(FULL_TABLES);
 
 /* Commercial Trucking's real formula was briefly removed, then restored —
-   the 34 entries above tagged Commercial Trucking are read by the engine
-   again (truckingReal() in engine.js), same as before. The two candidate
-   models below (Model A / Model B) are kept as an ADDITIONAL comparison,
-   not a replacement — their own tables, same "read straight off VX" live
-   pattern as every other entry above; values are candidate/illustrative
-   (see the comment on data.js's model-A/model-B tables), not filed. */
-RATE_TABLES.push(
-  { id: "modelAVehicleClass", lob: "Commercial Trucking", cov: "Model A — Classification", name: "Vehicle Class Factor (Model A, candidate)",
-    drives: "Model A's per-vehicle premium", verified: false,
-    note: "Candidate/illustrative — not a filed rate. Reuses the platform's real vehicle class codes with new, non-filed factor values.",
-    cols: [{ k: "code", l: "Class Code" }, { k: "desc", l: "Description" }, { k: "factor", l: "Factor", f: true }],
-    rows: () => VX.modelAVehicleClass || [] },
-  { id: "modelARadius", lob: "Commercial Trucking", cov: "Model A — Classification", name: "Radius of Operation Factor (Model A, candidate)",
-    drives: "Model A's per-vehicle premium", verified: false,
-    note: "Candidate/illustrative — not a filed rate.",
-    cols: [{ k: "label", l: "Radius Band" }, { k: "factor", l: "Factor", f: true }],
-    rows: () => VX.modelARadius || [] },
-  { id: "modelADriverExperience", lob: "Commercial Trucking", cov: "Model A — Classification", name: "Driver Experience Factor (Model A, candidate)",
-    drives: "Model A's per-vehicle premium", verified: false,
-    note: "Candidate/illustrative — not a filed rate.",
-    cols: [{ k: "band", l: "Avg. CDL Experience" }, { k: "factor", l: "Factor", f: true }],
-    rows: () => VX.modelADriverExperience || [] },
-  { id: "modelASafetyRating", lob: "Commercial Trucking", cov: "Model A — Classification", name: "Safety Rating Factor (Model A, candidate)",
-    drives: "Model A's per-vehicle premium", verified: false,
-    note: "Candidate/illustrative — not a filed rate.",
-    cols: [{ k: "rating", l: "FMCSA Safety Rating" }, { k: "factor", l: "Factor", f: true }],
-    neutral: r => r.rating === "Satisfactory", rows: () => VX.modelASafetyRating || [] },
-  { id: "modelAFleetDiscount", lob: "Commercial Trucking", cov: "Model A — Classification", name: "Fleet Size Discount Factor (Model A, candidate)",
-    drives: "Model A's per-vehicle premium", verified: false,
-    note: "Candidate/illustrative — not a filed rate.",
-    cols: [{ k: "min", l: "Min Units" }, { k: "max", l: "Max Units" }, { k: "factor", l: "Factor", f: true }],
-    rows: () => VX.modelAFleetDiscount || [] },
-  { id: "modelBTerritory", lob: "Commercial Trucking", cov: "Model B — Exposure-Based", name: "Territory Relativity (Model B, candidate)",
-    drives: "Model B's Mileage Premium", verified: false,
-    note: "Candidate/illustrative — not a filed rate. Unlisted states default to 1.00, same pattern as Territory Base Loss Cost's own DEFAULT row.",
-    cols: [{ k: "state", l: "State" }, { k: "relativity", l: "Relativity", f: true }],
-    neutral: r => r.relativity === 1, rows: () => Object.entries(VX.modelBTerritory || {}).filter(([k]) => k !== "DEFAULT").map(([state, relativity]) => ({ state, relativity })) },
-  { id: "modelBRiskScore", lob: "Commercial Trucking", cov: "Model B — Exposure-Based", name: "Risk Score Load (Model B, candidate)",
-    drives: "Model B's Risk Score Load", verified: false,
-    note: "Candidate/illustrative — not a filed rate. Composite score = FMCSA safety rating points + average driver violations.",
-    cols: [{ k: "band", l: "Risk Band" }, { k: "max", l: "Score ≤" }, { k: "factor", l: "Factor", f: true }],
-    rows: () => VX.modelBRiskScore || [] },
-);
+   the entries above tagged Commercial Trucking are read by the engine again
+   (truckingReal() in engine.js), same as before. Two candidate rating models
+   were also built during that exercise and had their own tables listed here;
+   both models and their tables have since been removed, so every Commercial
+   Trucking entry above is once more a real, filed table the engine rates on. */
 

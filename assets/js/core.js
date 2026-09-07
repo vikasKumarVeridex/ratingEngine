@@ -3,11 +3,15 @@
    ========================================================================== */
 
 const NAV = [
+  /* Loss Run Analytics sits directly under Dashboard: both are read-only
+     views of how the book is performing, and that is what you look at before
+     going near a quote. The two quote screens follow as the "do something"
+     pair. */
   { g: "Main", items: [
     { h: "dashboard.html", i: "fa-gauge-high", l: "Dashboard" },
+    { h: "loss-runs.html", i: "fa-triangle-exclamation", l: "Loss Run Analytics" },
     { h: "quote-portal.html", i: "fa-flask", l: "Sandbox Quote Generation" },
     { h: "quote-json.html", i: "fa-code", l: "Quote JSON" },
-    { h: "loss-runs.html", i: "fa-triangle-exclamation", l: "Loss Run Analytics" },
   ]},
   /* Configuration sits above Rating: you define the line of business, the
      coverages under it and the product that sells them BEFORE the factors and
@@ -774,6 +778,67 @@ function vxLoading(sel, msg) {
 
 /* ---------- autosave indicator ---------- */
 let _asT;
+/* ---------- Audit writing ----------
+   The Audit History screen was reading a purely seeded log: real changes made
+   through the UI never reached it, so the one screen whose job is "who
+   changed what" could not answer that for anything a user had actually done.
+   These append REAL entries and persist them, so an edit survives the
+   navigation to the audit screen that is meant to show it.
+
+   Kept deliberately small and generic — any page that mutates configuration
+   can call vxAudit(); factor edits additionally write the purpose-built
+   before/after row that the Loss Run and factor-history views read. */
+function vxCurrentUser() {
+  const u = (VX.users || []).find(x => x.role === "Rating Administrator") || (VX.users || [])[0];
+  return (u && u.email) || "unknown@veridex.io";
+}
+function vxNowStamp() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function vxAudit(area, action, detail, extra) {
+  try {
+    VX.audit = VX.audit || [];
+    const rec = { id: Math.max(0, ...VX.audit.map(a => +a.id || 0)) + 1,
+      timestamp: vxNowStamp(), user: vxCurrentUser(), area, action, detail,
+      version: (extra && extra.version) || "—", ip: "local", ...(extra || {}) };
+    VX.audit.unshift(rec);
+    localStorage.setItem("vxAuditState", JSON.stringify(VX.audit.slice(0, 500)));
+    return rec;
+  } catch (e) { return null; }
+}
+/* Records a factor's value actually moving. Writes BOTH logs: the generic
+   audit trail (so Audit History shows it) and the factor change log (so the
+   before/after and % change are queryable). Silent when nothing changed —
+   an edit that touches a label should not fabricate a rate change. */
+function vxLogFactorChange(before, after, reason) {
+  const from = before ? before.defaultValue : null;
+  const to = after ? after.defaultValue : null;
+  const changed = String(from ?? "") !== String(to ?? "");
+  const name = (after && after.name) || (before && before.name) || "Rating factor";
+  if (changed) {
+    try {
+      VX.factorChangeLog = VX.factorChangeLog || [];
+      VX.factorChangeLog.unshift({
+        id: Math.max(0, ...VX.factorChangeLog.map(r => +r.id || 0)) + 1,
+        timestamp: vxNowStamp(), user: vxCurrentUser(),
+        factorCode: after.code, factorName: name, lob: after.lob, state: "All",
+        from: from == null ? "" : +from, to: to == null ? "" : +to,
+        pctChange: (from && to) ? +(((to / from) - 1) * 100).toFixed(1) : 0,
+        reason: reason || "Edited on the Rating Factors screen",
+        version: (after.attachments && after.attachments[0] && after.attachments[0].ratingVersion) || "—" });
+      localStorage.setItem("vxFactorChangeLog", JSON.stringify(VX.factorChangeLog.slice(0, 500)));
+    } catch (e) {}
+  }
+  vxAudit("Rating Factors",
+    !before ? "Created new record" : (changed ? "Updated factor value" : "Edited factor definition"),
+    !before ? `${name} (${after.code}) created — default ${to ?? "none"}`
+            : (changed ? `${name} (${after.code}): ${from ?? "none"} → ${to ?? "none"}`
+                       : `${name} (${after.code}) edited — no change to its value`),
+    { version: (after && after.attachments && after.attachments[0] && after.attachments[0].ratingVersion) || "—" });
+}
+
 function vxAutoSave() {
   clearTimeout(_asT);
   const id = "vxAS";

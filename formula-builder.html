@@ -101,7 +101,7 @@ const COB_VARS = {
     { n: "AccountFactor", v: 0.85 },
   ],
   "Motor Truck Cargo": [
-    { n: "CargoLimit", v: 100000 }, { n: "CargoRatePer100", v: 0.65 },
+    { n: "CargoLimit", v: 100000 }, { n: "CargoLossCostFactor", v: 0.798 },
     { n: "CargoRadiusFactor", v: 1.125 },
   ],
   "General Liability": [
@@ -160,9 +160,7 @@ const COB_WARN = {
 /* Starting templates — AL/PD match engine.js's real per-vehicle formula
    term-for-term; GL/Property/MPL/Cyber match engine.js's working
    approximation for those LOBs. Loading a coverage gives the analyst a
-   working formula to adjust rather than a blank canvas. Model A / Model B
-   (Trucking's two candidates) are hardcoded in engine.js, not authored
-   here — they don't get a template of their own. */
+   working formula to adjust rather than a blank canvas. */
 const DEFAULT_TOKENS = {
   "Auto Liability": ["BaseLossCost","×","(","ILF","−","LiabDeductibleFactor",")","×","LCM","×","PrimaryClassFactor","×",
     "SecondaryClassFactor","×","FleetSizeFactor","×","VehicleAgeFactor","×","OCNFactor","×","RadiusFactor","×",
@@ -173,7 +171,7 @@ const DEFAULT_TOKENS = {
   "Physical Damage": ["VehicleValue","×","APDRate","×","APDDeductibleFactor","×","APDRadiusFactor","×","TrailerPhysDamFactor","×",
     "MilesDrivenFactor","×","RatingClassFactor","×","DashcamFactor","×","APDStateFactor","×","APDPackageFactor","×",
     "CDLExpDiscFactor","×","DriverClassFactor","×","AccountFactor"],
-  "Motor Truck Cargo": ["(","CargoLimit","÷","100",")","×","CargoRatePer100","×","CargoRadiusFactor"],
+  "Motor Truck Cargo": ["(","CargoLimit","÷","100",")","×","CargoLossCostFactor","×","CargoRadiusFactor"],
   "General Liability": ["BasicLimitLossCost","×","IncreasedLimitsFactor","×","LCM","×","ClassFactor","×","ScheduleRatingMod","×","ExperienceMod"],
   "Property": ["(","TotalInsuredValue","÷","100",")","×","BaseRatePer100","×","ConstructionFactor","×","ProtectionClassFactor","×",
     "OccupancyFactor","×","WindHailFactor","×","DeductibleFactor","×","LCM","×","IRPM"],
@@ -265,7 +263,7 @@ const VAR_META = {
   APDStateFactor: { l: "APD State Factor", d: "State-specific adjustment to the Physical Damage rate.", u: "x" },
   APDPackageFactor: { l: "APD Package Factor", d: "Credit for bundling Liability and Physical Damage on the same vehicle.", u: "x" },
   CargoLimit: { l: "Cargo Limit", d: "The Cargo limit of insurance selected.", u: "money" },
-  CargoRatePer100: { l: "Cargo Rate per $100", d: "Placeholder cargo rate — not sourced from a filed manual.", u: "num" },
+  CargoLossCostFactor: { l: "Cargo Loss Cost Factor", d: "Derived from the commodity classification chain: Total Basic Charge × loss ratio ÷ 1000.", u: "num" },
   CargoRadiusFactor: { l: "Cargo Radius Factor", d: "Radius-of-operation adjustment for Cargo — borrows the same radius answer as Physical Damage.", u: "x" },
   BasicLimitLossCost: { l: "Basic Limit Loss Cost", d: "Loss cost at the program's basic (reference) limit.", u: "money" },
   IncreasedLimitsFactor: { l: "Increased Limits Factor", d: "General Liability's version of the ILF.", u: "x" },
@@ -354,7 +352,7 @@ const VAR_SOURCE = {
     rows: () => [{ l: "Liability + Physical Damage together", v: VX.truckApdPackage.yes }, { l: "Physical Damage alone", v: VX.truckApdPackage.no }] },
   CargoRadiusFactor: { kind: "lookup", driver: "Radius of Operation", table: "RadiusFctrs — APD (borrowed)", base: 1.00,
     rows: () => VX.truckRadius.map(r => ({ l: `${r.label} (${r.distance})`, v: r.apdFactor })) },
-  CargoRatePer100: { kind: "constant", driver: null, table: null, note: "Not sourced from a filed rating manual — placeholder." },
+  CargoLossCostFactor: { kind: "computed", driver: "Commodities hauled + Basic Load", table: null, note: "Computed per quote from the Cargo classification chain (highest classification factor among coverable commodities), not a stored rate." },
   // --- Property lookups ---
   ConstructionFactor: { kind: "lookup", driver: "Construction Type", table: "Construction Type", base: 1.00,
     rows: () => VX.propConstruction.map(c => ({ l: c.label, v: c.factor })) },
@@ -1134,23 +1132,62 @@ function addNum() {
   addToken({ t: "num", v: n });
   document.getElementById("numIn").value = "";
 }
+/* Evaluate the canvas through the ENGINE's own evaluator, not a second one
+   written here. This screen previously substituted the variables itself and
+   called Function() with nothing in scope, so MIN / MAX / ROUND / ABS — all
+   offered in the palette, and all used by the seeded Account-Level Factor
+   formulas — threw ReferenceError and every such formula reported "Invalid
+   expression". Two evaluators also meant a formula could test clean here and
+   rate differently once activated. There is now one. */
 function test() {
   const vals = {};
-  document.querySelectorAll(".TV").forEach(i => vals[i.dataset.n] = +i.value);
-  const js = TOK.map(t => t.t === "var" ? (vals[t.v] ?? 1) : t.v === "×" ? "*" : t.v === "÷" ? "/" : t.v === "−" ? "-" : t.v).join(" ");
-  let out;
-  try { out = Function('"use strict";return (' + js + ')')(); } catch (e) { out = null; }
-  document.getElementById("testOut").innerHTML = out === null || isNaN(out)
-    ? `<div class="vx-b red">Invalid expression — check operators and parentheses</div>`
-    : `<div class="vx-ai"><span class="tag"><i class="fa-solid fa-flask"></i>Test Result</span>
-       <div style="font-size:22px;font-weight:800;margin:4px 0">${vxMoney(out)}</div>
-       <div style="font-size:11.5px;color:var(--text-dim);word-break:break-all">${js}</div></div>`;
-  if (out !== null && !isNaN(out)) {
-    vxToast("Formula evaluated", "Result: " + vxMoney(out), "ok");
-    canvasTested = true;
-    if (currentFormula) { currentFormula.tested = true; currentFormula.lastTestedAt = new Date().toISOString().slice(0, 10); }
+  document.querySelectorAll(".TV").forEach(i => {
+    const v = parseFloat(i.value);
+    if (!isNaN(v)) vals[i.dataset.n] = v;
+  });
+
+  const out = document.getElementById("testOut");
+  const fail = (title, detail) => {
+    out.innerHTML = `<div style="border:1px solid var(--border);border-left:3px solid var(--bad);
+        background:rgba(210,69,69,.09);border-radius:0 8px 8px 0;padding:10px 13px">
+        <div style="font-size:12.3px;font-weight:700;color:var(--bad)">${title}</div>
+        <div style="font-size:11.6px;color:var(--text-dim);line-height:1.55;margin-top:3px">${detail}</div>
+      </div>`;
+    canvasTested = false;
     renderCanvasContext();
+  };
+
+  if (!TOK.length) return fail("Nothing to evaluate", "The canvas is empty — drag in variables and operators first.");
+
+  const missing = [...new Set(TOK.filter(t => t.t === "var" && t.v !== "RemainingFactors" && vals[t.v] === undefined).map(t => t.v))];
+  if (missing.length) {
+    return fail("Missing test values",
+      `No value entered for ${missing.map(n => `<b>${varLabel(n)}</b>`).join(", ")}. Fill every box above before evaluating.`);
   }
+
+  let result;
+  try {
+    result = ENGINE.evalFormula(TOK, vals);
+  } catch (e) {
+    /* Report what actually went wrong — an unbalanced bracket, a stray
+       operator and a missing value are different problems with different
+       fixes, and "Invalid expression" told the author none of them. */
+    const opens = TOK.filter(t => t.v === "(").length, closes = TOK.filter(t => t.v === ")").length;
+    const hint = opens !== closes
+      ? `Brackets don't balance — ${opens} opening, ${closes} closing.`
+      : `${e.message}. Check for two operators in a row, or an operator at the end.`;
+    return fail("Formula did not evaluate", hint);
+  }
+
+  const expr = TOK.map(t => t.t === "var" ? `${t.v}=${vals[t.v] ?? "…"}` : t.v).join(" ");
+  out.innerHTML = `<div class="vx-ai"><span class="tag"><i class="fa-solid fa-flask"></i>Test Result</span>
+     <div style="font-size:22px;font-weight:800;margin:4px 0">${result.toFixed(4).replace(/\.?0+$/, "")}</div>
+     <div style="font-size:11px;color:var(--text-mute);margin-bottom:5px">Evaluated by the rating engine — the same code that runs this formula once it is Active.</div>
+     <div style="font-size:11.2px;color:var(--text-dim);word-break:break-all">${expr}</div></div>`;
+  vxToast("Formula evaluated", "Result: " + result.toFixed(4).replace(/\.?0+$/, ""), "ok");
+  canvasTested = true;
+  if (currentFormula) { currentFormula.tested = true; currentFormula.lastTestedAt = new Date().toISOString().slice(0, 10); }
+  renderCanvasContext();
 }
 function toggleRules() {
   const body = document.getElementById("rulesBody");

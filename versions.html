@@ -338,9 +338,9 @@ function readinessCell(r) {
    as equally verified. */
 const ENGINE_PIPELINES = {
   /* The real, verified formula was briefly removed then restored — see
-     truckingReal() in engine.js. The two candidate models (candidateModels
-     below) are kept as an ADDITIONAL, clearly-labelled comparison, not a
-     replacement — see engine.js's truckingModelA()/truckingModelB(). */
+     truckingReal() in engine.js. Two candidate models were documented here
+     alongside it during a comparison exercise; both have been removed, so
+     this describes the filed formula and nothing else. */
   "Commercial Trucking": {
     verified: true,
     source: "the filed trucking rating manual",
@@ -353,24 +353,6 @@ const ENGINE_PIPELINES = {
       "Add Cargo — rate not sourced from this workbook, kept as a flagged placeholder",
       "Add policy fees, then state premium tax, to reach Final Premium",
     ],
-    candidateModels: {
-      caveat: "Two independent, deliberately-divergent candidate models, computed alongside the real formula above purely for a side-by-side rate-indication comparison — not filed rates, and not what this platform actually charges. See r.modelA / r.modelB on any Trucking rating result.",
-      models: [
-        { name: "Model A — Classification (Manual) Rating",
-          steps: [
-            "Per vehicle: Base Rate × Vehicle Class Factor × Radius of Operation Factor × Driver Experience Factor × Safety Rating Factor × Fleet Size Discount Factor — rounded",
-            "Sum every vehicle's premium across the fleet",
-            "Add policy fees, then state premium tax, to reach Final Premium",
-          ] },
-        { name: "Model B — Exposure-Based (Mileage) Rating",
-          steps: [
-            "Mileage Premium = Total Annual Fleet Miles × Loss Cost Per Mile × Territory Relativity",
-            "Risk Score Load = Mileage Premium × (Risk Score Factor − 1), where Risk Score bands a composite of Safety Rating + Average Driver Violations",
-            "Add Per-Unit Exposure Charge (× rated units) and a Fixed Expense Load",
-            "Add policy fees, then state premium tax, to reach Final Premium",
-          ] },
-      ],
-    },
   },
   "General Liability": { verified: false, steps: [
     "Premises/Operations: Basic Limit Loss Cost × Increased Limits Factor × LCM × Class Factor × Schedule Rating Mod × Experience Mod",
@@ -456,9 +438,7 @@ function workflowCoverageHtml() {
    This is part of the real engine's definition, not a per-quote answer, so
    it belongs on the rating engine alongside the calculation flow. Every
    range below is computed from the real tables (D.truckAcct*) rather than
-   typed, so it can't drift from what the engine applies. Neither candidate
-   model (Model A / Model B) has an equivalent concept — this section is
-   about the real formula only.
+   typed, so it can't drift from what the engine applies.
    Commercial Trucking only — no other line on this platform has an
    equivalent policy-level factor. */
 function acctFactorSection(rec) {
@@ -534,14 +514,6 @@ function viewEngine(rec) {
       <ol style="padding-left:20px;font-size:12.5px;line-height:1.8">${pipeline.steps.map(s => `<li>${s}</li>`).join("")}</ol>
       ${pipeline.caveat ? `<div style="border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:0 10px 10px 0;padding:9px 13px;font-size:11.5px;color:var(--text-dim);line-height:1.6"><i class="fa-solid fa-circle-info me-1" style="color:var(--accent)"></i>${pipeline.caveat}</div>` : ""}
     ` : `<div style="font-size:12px;color:var(--text-mute)">No calculation flow documented for ${rec.lob} yet.</div>`}
-
-    ${pipeline && pipeline.candidateModels ? `
-    <h6 style="font-size:12.5px;font-weight:700;margin:18px 0 8px"><i class="fa-solid fa-flask me-1" style="color:var(--primary)"></i>Candidate Model Comparison <span class="vx-b gray" style="font-size:9px">not filed</span></h6>
-    ${pipeline.candidateModels.models.map(m => `
-      <h6 style="font-size:12px;font-weight:700;margin:12px 0 6px">${m.name}</h6>
-      <ol style="padding-left:20px;font-size:12.5px;line-height:1.8">${m.steps.map(s => `<li>${s}</li>`).join("")}</ol>`).join("")}
-    ${pipeline.candidateModels.caveat ? `<div style="border:1px solid var(--border);border-left:3px solid var(--primary);background:var(--primary-soft);border-radius:0 10px 10px 0;padding:9px 13px;font-size:11.5px;color:var(--text-dim);line-height:1.6"><i class="fa-solid fa-circle-info me-1" style="color:var(--primary)"></i>${pipeline.candidateModels.caveat}</div>` : ""}
-    ` : ""}
 
     ${acctFactorSection(rec)}
 

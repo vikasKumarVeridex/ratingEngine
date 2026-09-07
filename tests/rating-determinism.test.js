@@ -259,50 +259,266 @@ console.log("\n7. Trucking account factor: Liability and PD are separate");
     `liab ${base.accountFactor}->${withDef.accountFactor}, pd ${base.pdAccountFactor}->${withDef.pdAccountFactor}`);
 }
 
-/* 7b. Two CANDIDATE rating models (Model A: per-vehicle classification/
-   manual rating; Model B: exposure-based mileage/usage rating) are computed
-   alongside the real formula above, purely for a side-by-side actuarial
-   comparison — neither is a filed rate, both disclosed as candidate/
-   experimental throughout the platform (r.modelA / r.modelB on every
-   Trucking rating result). Checks: both rate for real off the same inputs,
-   their outputs diverge significantly (the explicit goal of building two
-   structurally different models), and each model's own distinguishing
-   factor actually moves its own premium. */
-console.log("\n7b. Trucking: two candidate models (Model A / Model B), alongside the real formula");
+/* 7b. Commercial Trucking rates on the real, filed formula and nothing else.
+   Two candidate models (a classification model and an exposure/mileage one)
+   were built alongside it during a comparison exercise and both have since
+   been removed at the user's request. These checks assert they are actually
+   gone — engine functions, data tables, factor rows and result fields — so a
+   stale reference cannot quietly reintroduce an unfiled rate. */
+console.log("\n7b. Trucking: only the real filed formula remains");
+{
+  sb.__truckInput2 = Object.assign({}, CASES.TRUCK);
+  const base = vm.runInContext(`ENGINE.rate("TRUCK", __truckInput2)`, sb);
+
+  check("the quote carries no candidate-model result",
+    base.modelA === undefined && base.modelB === undefined
+      && base.modelDiffPct === undefined && base.modelDiffPctA === undefined
+      && base.modelDiffPctB === undefined);
+  check("no candidate rate tables remain",
+    vm.runInContext(`["modelAVehicleClass","modelARadius","modelADriverExperience","modelASafetyRating",
+      "modelAFleetDiscount","modelAConstants","modelBTerritory","modelBRiskScore","modelBConstants"]
+      .every(k => typeof VX[k] === "undefined")`, sb));
+  check("no candidate rows remain in the rating-factor registry",
+    vm.runInContext(`VX.ratingFactors.filter(f => /^M[AB]_/.test(f.code)).length`, sb) === 0);
+  check("no rate-table registry entry is tagged to a candidate model",
+    vm.runInContext(`typeof RATE_TABLES === "undefined" ? true
+      : RATE_TABLES.filter(t => /Model [AB]/.test(t.cov || "") || /Model [AB]/.test(t.name || "")).length === 0`, sb));
+  check("every factor group on the result belongs to the filed formula",
+    (base.groups || []).every(g => !/^Model [AB]/.test(g.name)),
+    (base.groups || []).map(g => g.name).join(", "));
+  check("the real formula still rates unchanged",
+    base.finalPremium === 9347, `got ${base.finalPremium}`);
+}
+
+/* 7bb. Every formula application is recorded, so "what calculation was
+   performed" is answerable from the result itself.
+
+   This instrumentation immediately caught a real defect: the Active
+   "Trucking — Cargo" formula still named CargoRatePer100, a variable retired
+   by the Cargo rebuild, so it threw on every quote and the engine silently
+   fell back to its default chain. An Active formula that never rated
+   anything is invisible without this — the premium looked correct. */
+console.log("\n7bb. The engine records the calculation it actually performed");
+{
+  const rate = (lob, over) => {
+    sb.__calcInput = Object.assign({}, CASES[lob], over); sb.__calcLob = lob;
+    return vm.runInContext(`ENGINE.rate(__calcLob, __calcInput)`, sb);
+  };
+  const t = rate("TRUCK", {});
+
+  check("a rated quote carries its calculation steps",
+    Array.isArray(t.calculationSteps) && t.calculationSteps.length > 0,
+    `${t.calculationSteps.length} steps`);
+  check("each step names the coverage, mode and result it produced",
+    t.calculationSteps.every(s => s.coverage && s.mode && typeof s.result === "number"));
+  check("NO active saved formula fails and silently falls back",
+    t.formulaFailures.length === 0,
+    t.formulaFailures.map(f => `${f.coverage}: ${f.error}`).join("; "));
+  check("a step that ran a saved formula shows the substituted arithmetic",
+    t.calculationSteps.filter(s => s.mode === "formula")
+      .every(s => s.expression && s.substituted && !/[A-Za-z]{4,}/.test(s.substituted)),
+    (t.calculationSteps.find(s => s.mode === "formula") || {}).substituted);
+  check("per-vehicle steps say which unit they belong to",
+    t.calculationSteps.some(s => s.context));
+
+  /* The seeded Cargo formula must reproduce the default chain exactly —
+     activating a formula that restates the engine's own math must not move
+     a premium. This is the check that would have caught the defect. */
+  const cargoStep = t.calculationSteps.find(s => s.coverage === "Motor Truck Cargo");
+  check("the seeded Cargo formula runs (not silently skipped)",
+    cargoStep && cargoStep.mode === "formula" && !cargoStep.failed,
+    cargoStep ? `${cargoStep.mode}${cargoStep.error ? " — " + cargoStep.error : ""}` : "no cargo step");
+  check("and it reproduces the engine's own default chain",
+    Math.round(cargoStep.result) === (t.groups.find(g => g.name === "Cargo") || {}).subtotal,
+    `${cargoStep.result} vs ${(t.groups.find(g => g.name === "Cargo") || {}).subtotal}`);
+
+  ["GL", "PROP", "MPL", "WC"].forEach(lob => {
+    const r = rate(lob, {});
+    check(`${lob} records its calculation and no formula fails`,
+      r.calculationSteps.length > 0 && r.formulaFailures.length === 0,
+      r.formulaFailures.map(f => f.error).join("; "));
+  });
+}
+
+/* 7c. Primary class is DERIVED from size/use/radius, not taken as a raw
+   input. The real system resolves primary_code out of a composite lookup
+   before the factor lookup ever happens; treating the code as user input
+   skipped that entire step. */
+console.log("\n7c. Trucking: primary class is resolved, not supplied");
 {
   const rate = over => {
-    sb.__truckInput2 = Object.assign({}, CASES.TRUCK, over);
-    return vm.runInContext(`ENGINE.rate("TRUCK", __truckInput2)`, sb);
+    sb.__truckInput3 = Object.assign({}, CASES.TRUCK, over);
+    return vm.runInContext(`ENGINE.rate("TRUCK", __truckInput3)`, sb);
   };
-  const base = rate({});
+  const veh = o => [Object.assign({ n: 1, year: 2022, value: 145000, miles: 65000 }, o)];
 
-  check("both candidate models return a real, positive premium",
-    base.modelA.finalPremium > 0 && base.modelB.finalPremium > 0,
-    `A=${base.modelA.finalPremium} B=${base.modelB.finalPremium}`);
-  check("the two models' premiums diverge significantly (>15%), by design",
-    Math.abs(base.modelDiffPct) > 15,
-    `diff = ${base.modelDiffPct.toFixed(1)}%`);
-  check("the models are structurally different — different group names, not just re-scaled versions of the same chain",
-    base.modelA.groups[0].name !== base.modelB.groups[0].name,
-    `A: "${base.modelA.groups[0].name}" vs B: "${base.modelB.groups[0].name}"`);
-  check("Model A's factor chain has no mileage/exposure concept, Model B's has no vehicle-class concept",
-    !base.modelA.groups[0].factors.some(f => /Mileage|Exposure Charge|Territory Relativity/.test(f.label))
-      && !base.modelB.groups[0].factors.some(f => /Vehicle Class|Fleet Size Discount|Driver Experience/.test(f.label)),
-    `A labels: ${base.modelA.groups[0].factors.map(f => f.label).join(", ")} | B labels: ${base.modelB.groups[0].factors.map(f => f.label).join(", ")}`);
+  const derived = rate({ vehicles: veh({ sizeClass: "Heavy Truck-Tractor" }) });
+  check("a vehicle with no class code still rates, by resolving one",
+    derived.perVehicle[0].primClassSource === "resolved" && derived.finalPremium > 0,
+    `source=${derived.perVehicle[0].primClassSource} premium=${derived.finalPremium}`);
+  check("the resolved code is reported, not left blank",
+    derived.perVehicle[0].primaryClass === "321",
+    `got ${derived.perVehicle[0].primaryClass}`);
+  check("an ambiguous resolution is flagged rather than silently picked",
+    derived.perVehicle[0].primClassAmbiguous === true
+      && derived.perVehicle[0].primClassCandidates.length > 1,
+    `candidates=${JSON.stringify(derived.perVehicle[0].primClassCandidates)}`);
 
-  // Each model's own distinguishing factor must actually move its own premium.
-  const heavierClass = rate({ vehicles: [{ n: 1, primaryClass: "351", year: 2022, value: 145000, miles: 65000 }] });
-  check("Model A: a heavier vehicle class raises Model A's premium",
-    heavierClass.modelA.finalPremium > base.modelA.finalPremium,
-    `${base.modelA.finalPremium} -> ${heavierClass.modelA.finalPremium}`);
+  const explicit = rate({ vehicles: veh({ primaryClass: "321", sizeClass: "Light Truck", businessUse: "Service" }) });
+  check("an explicitly-assigned class code overrides resolution",
+    explicit.perVehicle[0].primClassSource === "explicit" && explicit.perVehicle[0].primaryClass === "321",
+    `source=${explicit.perVehicle[0].primClassSource} code=${explicit.perVehicle[0].primaryClass}`);
 
-  const moreMiles = rate({ vehicles: [{ n: 1, primaryClass: "321", year: 2022, value: 145000, miles: 150000 }] });
-  check("Model B: more annual miles raises Model B's premium",
-    moreMiles.modelB.finalPremium > base.modelB.finalPremium,
-    `${base.modelB.finalPremium} -> ${moreMiles.modelB.finalPremium}`);
-  check("Model A is not moved by a mileage-only change (structural independence)",
-    moreMiles.modelA.finalPremium === base.modelA.finalPremium,
-    `${base.modelA.finalPremium} vs ${moreMiles.modelA.finalPremium}`);
+  const lightLocal = rate({ radiusClass: "local_200", vehicles: veh({ sizeClass: "Light Truck", businessUse: "Service" }) });
+  check("resolution is real: a different size/use/radius resolves a different class and premium",
+    lightLocal.perVehicle[0].primaryClass === "011" && lightLocal.finalPremium !== derived.finalPremium,
+    `code=${lightLocal.perVehicle[0].primaryClass} ${lightLocal.finalPremium} vs ${derived.finalPremium}`);
+  check("radius genuinely participates: same unit, longer radius resolves a different class",
+    rate({ radiusClass: "long_haul", vehicles: veh({ sizeClass: "Light Truck", businessUse: "Service" }) })
+      .perVehicle[0].primaryClass !== lightLocal.perVehicle[0].primaryClass);
+}
+
+/* 7d. Rate versioning: which filed generation rates a quote is a date
+   question, and the date depends on the transaction. */
+console.log("\n7d. Trucking: rate version is selected by date, not hardcoded");
+{
+  const rate = over => {
+    sb.__truckInput4 = Object.assign({}, CASES.TRUCK, over);
+    return vm.runInContext(`ENGINE.rate("TRUCK", __truckInput4)`, sb);
+  };
+  const PROD = "Digital Trucking Program";
+
+  check("the rating date is resolved and reported",
+    !!rate({}).asOf && !!rate({}).asOfBasis, rate({}).asOfBasis);
+  check("policy effective date drives the rating date",
+    rate({ effectiveDate: "2026-07-01" }).asOf === "2026-07-01");
+  check("a rate lock struck before the effective date is honoured",
+    rate({ effectiveDate: "2027-01-15", rateLockDate: "2026-11-20" }).asOf === "2026-11-20");
+  check("an endorsement rates on the ORIGINAL inception date, not today",
+    rate({ policyType: "Endorsement", effectiveDate: "2027-05-01", originalEffectiveDate: "2026-06-01" }).asOf === "2026-06-01");
+
+  const named = rate({ product: PROD });
+  check("naming a product resolves a real version record",
+    named.versionResolved && named.versionRecord.version === named.version,
+    `${named.version} (${named.versionRecord && named.versionRecord.status})`);
+  check("with no product named, an ambiguous line reports the ambiguity instead of adopting a label",
+    rate({}).versionAmbiguous === true && rate({}).versionResolved === false);
+
+  /* Prove the machinery switches generations. Built HERE, in the test, not
+     seeded into the shipped tables — no second filing's real values are
+     known, and inventing them would put unfiled numbers in front of a user. */
+  vm.runInContext(`(() => {
+    const cur = VX.truckPrimary.find(p => p.code === "321");
+    cur.effectiveEnd = "2026-12-10";
+    VX.truckPrimary.push(Object.assign({}, cur, { id: 9001, liability: cur.liability * 2,
+      ratingVersion: "vTEST", effectiveStart: "2026-12-11", effectiveEnd: "" }));
+  })()`, sb);
+
+  const beforeRev = rate({ product: PROD, asOf: "2026-09-01" });
+  const afterRev = rate({ product: PROD, asOf: "2026-12-15" });
+  check("a later rating date picks up the superseding generation",
+    afterRev.perVehicle[0].primFactor === beforeRev.perVehicle[0].primFactor * 2,
+    `${beforeRev.perVehicle[0].primFactor} -> ${afterRev.perVehicle[0].primFactor}`);
+  check("and that actually changes the premium",
+    afterRev.finalPremium > beforeRev.finalPremium,
+    `${beforeRev.finalPremium} -> ${afterRev.finalPremium}`);
+  check("the superseded row is retained, so history stays answerable",
+    vm.runInContext(`VX.truckPrimary.filter(p => p.code === "321").length`, sb) === 2);
+  check("exactly one generation is in force on any given date",
+    vm.runInContext(`VX.tableAsOf(VX.truckPrimary, "2026-09-01").filter(p => p.code === "321").length`, sb) === 1
+      && vm.runInContext(`VX.tableAsOf(VX.truckPrimary, "2026-12-15").filter(p => p.code === "321").length`, sb) === 1);
+  check("a date before any filing rates on no generation rather than a wrong one",
+    vm.runInContext(`VX.tableAsOf(VX.truckPrimary, "2020-01-01").length`, sb) === 0);
+
+  /* Version info must reach a caller on EVERY line, not just Trucking, and a
+     date with nothing in force must still name what it rated on. */
+  const rateLob = (lob, over) => {
+    sb.__vInput = Object.assign({}, CASES[lob], over); sb.__vLob = lob;
+    return vm.runInContext(`ENGINE.rate(__vLob, __vInput)`, sb);
+  };
+  ["GL", "PROP", "MPL", "CYBER", "WC"].forEach(lob => {
+    const rv = rateLob(lob, {}).ratingVersion;
+    check(`${lob} reports rating-version info to the caller`,
+      !!rv && !!rv.asOf && !!rv.version && Array.isArray(rv.available),
+      rv ? `${rv.version}, ${rv.available.length} available` : "missing");
+  });
+
+  const noneInForce = rateLob("GL", { asOf: "2019-01-01", product: "Standard GL Program" });
+  check("with no version in force, the quote still rates",
+    noneInForce.finalPremium > 0, `${noneInForce.finalPremium}`);
+  check("and it names the available version it fell back to, flagged as a fallback",
+    noneInForce.ratingVersion.resolved === false
+      && !!noneInForce.ratingVersion.fallback
+      && !!noneInForce.ratingVersion.version,
+    noneInForce.ratingVersion.fallback || "no fallback reported");
+  check("the caller is told every version it could rate on instead",
+    noneInForce.ratingVersion.available.length > 0,
+    noneInForce.ratingVersion.available.map(a => a.version).join(", "));
+  check("explain() describes the fallback rather than asserting a selection",
+    (() => { sb.__er = noneInForce; return /fallback/i.test(vm.runInContext(`ENGINE.explain(__er).version`, sb)); })());
+}
+
+/* 7e. Admitted vs surplus lines. Two real money items ride on the licence
+   basis, and it used to be decided by matching a hardcoded LOB name — which
+   billed the one admitted tenant surplus-lines tax on every line but WC. */
+console.log("\n7e. Licence basis: admitted paper owes no surplus-lines charges");
+{
+  const rate = (lob, over) => {
+    sb.__licInput = Object.assign({}, CASES[lob], over);
+    sb.__licLob = lob;
+    return vm.runInContext(`ENGINE.rate(__licLob, __licInput)`, sb);
+  };
+  const slFee = r => r.feeLines.some(f => /Surplus Lines Filing/i.test(f.name || ""));
+
+  const sl = rate("GL", { tenantId: 1 });   // VeriDex — non-admitted
+  const ad = rate("GL", { tenantId: 2 });   // Ironclad — admitted
+
+  check("a surplus-lines carrier is charged surplus-lines tax",
+    sl.licenceBasis === "Surplus Lines" && sl.taxPct > 0 && sl.tax > 0, `tax=${sl.tax}`);
+  check("an admitted carrier is charged none",
+    ad.licenceBasis === "Admitted" && ad.taxPct === 0 && ad.tax === 0, `tax=${ad.tax}`);
+  check("the surplus-lines filing fee follows the same rule",
+    slFee(sl) === true && slFee(ad) === false);
+  check("and that genuinely changes what the insured pays",
+    ad.finalPremium < sl.finalPremium, `${sl.finalPremium} -> ${ad.finalPremium}`);
+  check("the coverage premium itself is untouched — only the excise charges differ",
+    ad.coveragePremium === sl.coveragePremium, `${sl.coveragePremium} vs ${ad.coveragePremium}`);
+
+  check("a statutorily-admitted line stays admitted on a non-admitted carrier",
+    rate("WC", { tenantId: 1 }).admitted === true && rate("WC", { tenantId: 1 }).taxPct === 0);
+  check("Trucking on the default (surplus lines) tenant is unchanged",
+    rate("TRUCK", {}).licenceBasis === "Surplus Lines");
+
+  /* Product-level paper: the same line written both ways at once, which is
+     how trucking is actually sold. */
+  const setPaper = (prod, basis) => {
+    sb.__p = prod; sb.__b = basis;
+    vm.runInContext(`VX.products.find(p => p.name === __p).licenceBasis = __b`, sb);
+  };
+  check("a product with no licence basis inherits (nothing changes)",
+    rate("TRUCK", { product: "Digital Trucking Program" }).licenceBasis === "Surplus Lines");
+
+  setPaper("Digital Trucking Program", "Admitted");
+  const admProd = rate("TRUCK", { product: "Digital Trucking Program" });
+  const slProd = rate("TRUCK", { product: "VeriDex Non-Trucking Auto" });
+  check("a product can be written on admitted paper",
+    admProd.licenceBasis === "Admitted" && admProd.tax === 0 && !slFee(admProd),
+    `${admProd.finalPremium}`);
+  check("another product on the SAME line stays surplus lines",
+    slProd.licenceBasis === "Surplus Lines" && slProd.tax > 0 && slFee(slProd),
+    `${slProd.finalPremium}`);
+  check("the two differ only in the excise charges, not the coverage premium",
+    admProd.finalPremium < slProd.finalPremium
+      && admProd.coveragePremium === slProd.coveragePremium);
+
+  setPaper("VeriDex Workers' Comp Program", "Surplus Lines");
+  check("a statutorily admitted line cannot be overridden to surplus lines by a product",
+    rate("WC", { product: "VeriDex Workers' Comp Program" }).admitted === true);
+
+  setPaper("Digital Trucking Program", "");
+  setPaper("VeriDex Workers' Comp Program", "");
+  check("clearing the override restores the inherited basis",
+    rate("TRUCK", { product: "Digital Trucking Program" }).licenceBasis === "Surplus Lines");
 }
 
 /* 8. Same input twice in one session must give the same answer. */

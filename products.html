@@ -293,6 +293,15 @@ vxAgGrid({ el:"#grid", key:"products", name:"Product",
         return '<a href="versions.html?product='+encodeURIComponent(r.name)+'" class="vx-b '+(v?VSTAT[v.status]||"gray":"red")+'" style="text-decoration:none" title="'+(v?'Status: '+v.status:'No matching rating version on file')+'">'
           +r.version+(v?' · '+v.status:' · not found')+' <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:9px;margin-left:3px"></i></a>';}},
       {k:"quotes",l:"Quotes",r:r=>vxNum(r.quotes)},{k:"gwp",l:"GWP",r:r=>vxMoney(r.gwp)},
+      /* Which paper the program is written on. Decides the surplus-lines tax
+         and SL filing fee, so it is real money, not a label. Unset means it
+         inherits — statutory line first, then the writing carrier. */
+      {k:"licenceBasis",l:"Paper",r:r=>{
+        if(r.licenceBasis==="Admitted") return '<span class="vx-b green">Admitted</span>';
+        if(r.licenceBasis==="Surplus Lines") return '<span class="vx-b amber">Surplus Lines</span>';
+        const lob=(VX.lobs||[]).find(l=>l.name===r.lob);
+        const inh=lob&&lob.licenceBasis==="Admitted"?"Admitted (statutory)":"carrier default";
+        return '<span class="vx-b gray" title="No product-level override — falls back to '+inh+'">inherits · '+inh+'</span>';}},
       {k:"status",l:"Status",r:r=>'<span class="vx-b '+(r.status==="Active"?"green":r.status==="Draft"?"amber":"gray")+'">'+r.status+'</span>'},
       {k:"owner",l:"Owner"},{k:"updated",l:"Updated"}],
   form:[{k:"name",l:"Product Name"},{k:"code",l:"Product Code"},
@@ -303,6 +312,15 @@ vxAgGrid({ el:"#grid", key:"products", name:"Product",
       {k:"appTypeId",l:"Application Type",t:"select",
         opts:Object.entries(VX_APP_TYPES).map(([id,a])=>({value:+id,label:`${a.name} · ${a.lob}`}))},
       {k:"raterType",l:"Rater Type",t:"select",opts:["Custom"],def:"Custom"},
+      /* A carrier group often writes one program admitted and another E&S on
+         the same line, so the paper belongs to the product. Leave it on
+         "Inherit" and the line's statutory basis, then the writing carrier's
+         licence, decide it. */
+      {k:"licenceBasis",l:"Paper (licence basis)",t:"select",
+        opts:[{value:"",label:"Inherit — statutory line, then carrier licence"},
+              {value:"Admitted",label:"Admitted — no surplus-lines tax or filing fee"},
+              {value:"Surplus Lines",label:"Surplus Lines — surplus-lines tax and filing fee apply"}],
+        hint:"Decides the surplus-lines premium tax and SL filing fee on every quote for this product."},
       /* Coverages as the real parent/child tree, scoped to the chosen line —
          the flat list this replaced mixed primaries and children from every
          LOB together, so you could tick a Cyber child onto a trucking
