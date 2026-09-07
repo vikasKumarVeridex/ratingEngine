@@ -21,11 +21,11 @@ vxShell("AI Configuration Assistant", "Configure the rating platform in natural 
 const EX = [
   "Create a new Cyber product for California",
   "Add a 7% surcharge for Florida",
-  "Copy Texas Trucking configuration to Oklahoma",
+  "Which rating version will a renewal use?",
+  "Why is there no surplus lines tax on this quote?",
+  "Show me the calculation performed on a Trucking quote",
+  "How is the primary class factor chosen?",
   "Increase Property rates by 5%",
-  "Create a new Class of Business for drone operators",
-  "Import a new rating workbook",
-  "Which factors expire in the next 30 days?",
   "Show me the highest-impact factors on Trucking premium",
 ];
 
@@ -77,17 +77,34 @@ function respond(q) {
         ["Class Factor","—","1.550","add"],["Eligibility","—","Requires FAA Part 107 certification","add"]],
       impact: "Adds 1 class. No existing policies affected. Class becomes selectable in the Quote Portal immediately after publish." };
   }
-  if (/import|workbook|xlsb|excel/.test(s)) {
-    return { text: "I can import a new rating workbook. Five workbooks are already migrated (97 worksheets total). Upload the file and I'll map each worksheet to a factor table, flag structural differences against the existing schema, and stage everything in a draft version.",
-      diff: [["Workbooks currently imported","5","6","add"],["Expected new sheets","—","Detected on upload","info"],
-        ["Auto-mapped factor tables","—","Pending upload","info"],["Target version","—","New draft","add"]],
-      impact: "Nothing is changed until you review the sheet-to-table mapping. <a href='import.html'>Open the Import Workbook page →</a>" };
+  /* This used to offer a workbook importer and link to import.html, a page
+     that does not exist on this platform. Configuration is imported as
+     Product Studio JSON, from Products — so that is what it points at. */
+  if (/import|workbook|xlsb|excel|upload/.test(s)) {
+    return { text: `Workbook import isn't wired on this platform — the ${VX.workbooks.length} source workbooks were migrated offline, and what you can upload here is a <b>Product Studio JSON</b> configuration. It creates or updates a product with its coverages, rating factors, eligibility rules and any rate tables it carries.`,
+      diff: [["Source workbooks already migrated", String(VX.workbooks.length), "—", "info"],
+        ["Upload format", "—", "Product Studio JSON", "info"],
+        ["Creates", "—", "Product + coverages + declared factors", "add"],
+        ["Rating factors imported", "—", "Declared, not wired to the engine", "warn"],
+        ["Target status", "—", "Draft", "add"]],
+      impact: "Imported factors are registered but the engine does not execute configured factors, so they are flagged Not wired rather than silently ignored. <a href='products.html'>Open Products to upload →</a>" };
   }
+  /* This previously claimed "N rating factors expire in the next 30 days" and
+     listed the first six active ones. No rating factor on this platform
+     carries an expiry date at all — only a start — so the whole answer was
+     invented. What genuinely closes is a rating VERSION, which has an
+     effectiveEnd, so that is what gets reported. */
   if (/expir/.test(s)) {
-    const rows = VX.ratingFactors.filter(f => f.active).slice(0, 6);
-    return { text: `I found <b>${rows.length} rating factors</b> with effective-date windows closing in the next 30 days. These will fall back to defaults if not extended before expiry.`,
-      table: rows.map(f => [f.code, f.name, f.lob, f.version]),
-      impact: "Recommend extending expiration dates or publishing replacement values before 2026-09-04." };
+    const today = VX.referenceDate || new Date().toISOString().slice(0, 10);
+    const closing = (VX.versions || []).filter(v => v.effectiveEnd && v.effectiveEnd >= today)
+      .sort((a, b) => a.effectiveEnd.localeCompare(b.effectiveEnd)).slice(0, 8);
+    if (!closing.length) {
+      return { text: `Nothing is scheduled to expire. Rating <b>factors</b> on this platform carry an effective start date but no end date, so none can expire — and no rating <b>version</b> currently has a closing date in the future. A version only gets one when it is superseded by a publish.`,
+        impact: "If you expected an expiry here, it would come from a scheduled replacement version — publish one with a future effective date and the version it supersedes will close automatically." };
+    }
+    return { text: `<b>${closing.length} rating version${closing.length === 1 ? "" : "s"}</b> have a closing date on or after ${today}. Rating factors themselves carry no expiry date on this platform, so they cannot expire — only the version they are attached to closes.`,
+      table: closing.map(v => [v.version, v.product, v.status, "closes " + v.effectiveEnd]),
+      impact: "A quote dated after a version closes resolves to whichever version is in force then, or reports a fallback if none is." };
   }
   if (/highest|impact|driver|top/.test(s)) {
     return { text: "Based on sensitivity analysis across the last 428 Trucking quotes, these factors move premium the most. Values shown are the average absolute deviation from neutral (1.00×).",

@@ -154,6 +154,26 @@
      whatever a product says, because no private surplus-lines carrier can
      write it standalone. See isAdmitted() in engine.js. */
   D.productLicenceOptions = ["", "Admitted", "Surplus Lines"];
+
+  /* ---------------- Rating version by transaction type ----------------
+     New business, renewals and endorsements do not have to rate on the same
+     version, and often shouldn't: a carrier can put new business on its
+     latest filing while renewals stay on the prior one for a transition
+     period, and endorsements normally rate on whatever was in force when the
+     policy incepted.
+
+     Left EMPTY on every product, which means "resolve by date" — the normal
+     behaviour (see resolveRatingAsOf / resolveRatingVersion in engine.js,
+     which already rate an endorsement on its original inception date). Set
+     one to pin that transaction type to a specific version regardless of
+     date. Same value in all three is perfectly valid and simply says so
+     explicitly. */
+  D.productTransactionTypes = [
+    { key: "new", label: "New Business", policyType: "New Business" },
+    { key: "renewal", label: "Renewal", policyType: "Renewal" },
+    { key: "endorsement", label: "Endorsement", policyType: "Endorsement" },
+  ];
+  D.products.forEach(p => { if (!p.versionByTransaction) p.versionByTransaction = { new: "", renewal: "", endorsement: "" }; });
   D.products = loadPersisted("vxProductsState", D.products);
 
   /* ---------------- Program parameters [REAL from workbooks] ---------------- */

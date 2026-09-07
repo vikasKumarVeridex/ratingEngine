@@ -341,6 +341,66 @@ function amsToEngine(p) {
 
   const i = ADAPTERS[lob](p);
 
+  /* ---- Fields every line needs for rate-version selection ----
+     These live on genInfo for all six payload shapes, so they are mapped once
+     here rather than repeated in each adapter — and they were previously
+     mapped in NONE of them. Without the payload's own dates the engine fell
+     back to the platform reference date and reported whatever version that
+     resolved to, which is why a payload effective 07/31/2026 still rated on
+     an older version: its dates never reached the engine.
+
+     ams dates are MM/DD/YYYY; the engine compares ISO strings. */
+  const isoDate = v => {
+    if (!v) return undefined;
+    const m = String(v).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (m) return `${m[3]}-${m[1]}-${m[2]}`;
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(v)) ? String(v) : undefined;
+  };
+  const eff = map(p, "genInfo.effective_date", "effectiveDate", isoDate);
+  if (eff) i.effectiveDate = eff;
+  const lock = map(p, "genInfo.lock_rate_effective_date", "rateLockDate", isoDate);
+  if (lock) i.rateLockDate = lock;
+  /* An endorsement rates on the version in force at the ORIGINAL inception,
+     not on its own effective date — the engine needs that date to do it. */
+  const orig = map(p, "genInfo.original_effective_date", "originalEffectiveDate", isoDate);
+  if (orig) i.originalEffectiveDate = orig;
+
+  /* Which product's filing rates this. Resolved from the application type,
+     which is the routing key the payload actually carries — but only when it
+     identifies exactly ONE product, because two products can share an app
+     type and guessing between them would print a version the quote cannot be
+     said to have rated under. */
+  const byAppType = (VX.products || []).filter(x => x.appTypeId === appType
+    && (x.tenantId == null || x.tenantId === VX.activeTenantId));
+
+  /* Where an app type maps to several products, the COVERAGES the payload
+     selected usually separate them: app type 483 covers both the full
+     trucking program and a non-trucking auto product that writes Auto
+     Liability only, so a payload with Physical Damage on it can only be the
+     former. This is a real discriminator carried by the payload, not a
+     guess — a product that does not write a coverage the payload asked for
+     cannot be the one rating it.
+
+     The engine calls Motor Truck Cargo "Cargo"; products use its full name. */
+  const covAlias = n => n === "Cargo" ? "Motor Truck Cargo" : n;
+  const wanted = (i.cob || []).map(covAlias);
+  let candidates = byAppType;
+  if (byAppType.length > 1 && wanted.length) {
+    const writesAll = byAppType.filter(x => wanted.every(c => (x.cob || []).includes(c)));
+    if (writesAll.length) candidates = writesAll;
+  }
+
+  if (candidates.length === 1) {
+    i.product = candidates[0].name;
+    MAPPED.push([byAppType.length > 1 ? "application_type_id + coveragesInfo" : "genInfo.application_type_id",
+      "product", candidates[0].name]);
+  } else if (candidates.length > 1) {
+    WARN.push(`Application type ${appType} maps to ${candidates.length} products (${candidates.map(x => x.name).join(", ")}) `
+      + `and the selected coverages (${wanted.join(", ") || "none"}) do not separate them. `
+      + "No product was assumed, so the rating version cannot be resolved to one filing — send a product name to pin it.");
+  }
+  if (i.tenantId == null) i.tenantId = VX.activeTenantId;
+
   /* Cross-check is trucking-only: no other payload carries pre-resolved
      factor values to compare against. */
   const v0 = (p.vehicles || [])[0] || {};
@@ -762,6 +822,8 @@ function renderOut() {
           effectiveStart: result.ratingVersion.effectiveStart,
           effectiveEnd: result.ratingVersion.effectiveEnd,
           fallback: result.ratingVersion.fallback,
+          pinnedTo: result.ratingVersion.pinnedTo,
+          pinnedWarning: result.ratingVersion.pinnedWarning,
           ambiguous: result.ratingVersion.ambiguous,
           available: result.ratingVersion.available,
         } : null,
@@ -809,6 +871,8 @@ function renderOut() {
            most needs to distinguish. */
         const rv = result.ratingVersion;
         if (!rv) return `<span class="vx-b blue">${result.version}</span>`;
+        if (rv.pinnedWarning) return `<span class="vx-b amber" title="${rv.pinnedWarning}">${rv.version} · pinned (${rv.status})</span>`;
+        if (rv.pinnedTo) return `<span class="vx-b blue" title="${rv.status}, effective ${rv.effectiveStart || "—"} — pinned to this version for ${rv.pinnedTo} on the product">${rv.version} · pinned</span>`;
         if (rv.resolved) return `<span class="vx-b blue" title="${rv.status}, effective ${rv.effectiveStart}${rv.effectiveEnd ? " to " + rv.effectiveEnd : " onward"} — selected from the rating date ${rv.asOf}">${rv.version}</span>`;
         if (rv.ambiguous) return `<span class="vx-b amber" title="More than one product on this line has a version covering ${rv.asOf}. Name a product on the payload to resolve it.">${rv.version} · not resolved</span>`;
         if (rv.fallback) return `<span class="vx-b amber" title="${rv.fallback}">${rv.version} · fallback</span>`;

@@ -456,6 +456,65 @@ console.log("\n7d. Trucking: rate version is selected by date, not hardcoded");
     noneInForce.ratingVersion.available.map(a => a.version).join(", "));
   check("explain() describes the fallback rather than asserting a selection",
     (() => { sb.__er = noneInForce; return /fallback/i.test(vm.runInContext(`ENGINE.explain(__er).version`, sb)); })());
+
+  /* Per-transaction version pinning: new business, renewals and endorsements
+     need not rate on the same filing. */
+  const TXN_PROD = "Digital Trucking Program";
+  const truckTxn = (policyType, over) => {
+    sb.__txn = Object.assign({}, CASES.TRUCK, { product: TXN_PROD, policyType,
+      effectiveDate: "2026-07-31", originalEffectiveDate: "2025-12-01" }, over || {});
+    return vm.runInContext(`ENGINE.rate("TRUCK", __txn)`, sb);
+  };
+  const setTxnVersions = map => {
+    sb.__m = map; sb.__prod = TXN_PROD;
+    vm.runInContext(`VX.products.find(p => p.name === __prod).versionByTransaction = __m`, sb);
+  };
+
+  setTxnVersions({ new: "", renewal: "", endorsement: "" });
+  check("unset, every transaction type resolves by date",
+    truckTxn("New Business").ratingVersion.pinnedTo === null
+      && truckTxn("Renewal").ratingVersion.pinnedTo === null);
+  check("and an endorsement still rates on the version in force at inception",
+    truckTxn("Endorsement").ratingVersion.version === "v2025.11",
+    truckTxn("Endorsement").ratingVersion.version);
+
+  setTxnVersions({ new: "", renewal: "v2025.11", endorsement: "" });
+  check("a renewal can be pinned to a different version than new business",
+    truckTxn("Renewal").ratingVersion.version === "v2025.11"
+      && truckTxn("Renewal").ratingVersion.pinnedTo === "Renewal"
+      && truckTxn("New Business").ratingVersion.version === "v2026.03",
+    `renewal=${truckTxn("Renewal").ratingVersion.version} new=${truckTxn("New Business").ratingVersion.version}`);
+  check("pinning one transaction type does not pin the others",
+    truckTxn("New Business").ratingVersion.pinnedTo === null);
+
+  setTxnVersions({ new: "v2026.03", renewal: "v2026.03", endorsement: "v2026.03" });
+  check("all three may be pinned to the SAME version — valid, and stated explicitly",
+    ["New Business", "Renewal", "Endorsement"].every(t =>
+      truckTxn(t).ratingVersion.version === "v2026.03" && truckTxn(t).ratingVersion.pinnedTo === t));
+
+  setTxnVersions({ new: "v9999.99", renewal: "", endorsement: "" });
+  check("a pin naming a version that does not exist falls back to date resolution, not to nothing",
+    truckTxn("New Business").ratingVersion.version === "v2026.03",
+    truckTxn("New Business").ratingVersion.version);
+
+  /* A Draft has no effective date, so it is invisible to date resolution.
+     Pinning to one used to match nothing and fall through silently — the
+     product said one version and the quote rated on another, with no sign
+     anything had been ignored. An explicit pin is honoured, and flagged. */
+  setTxnVersions({ new: "v2026.06", renewal: "", endorsement: "" });
+  const draftPin = truckTxn("New Business").ratingVersion;
+  check("pinning to an unpublished Draft is honoured, not silently ignored",
+    draftPin.version === "v2026.06" && draftPin.pinnedTo === "New Business",
+    `${draftPin.version} (pinnedTo=${draftPin.pinnedTo})`);
+  check("and it warns that the pinned version is not what the date would have chosen",
+    !!draftPin.pinnedWarning && /Draft/.test(draftPin.pinnedWarning),
+    draftPin.pinnedWarning || "no warning");
+
+  setTxnVersions({ new: "v2026.03", renewal: "", endorsement: "" });
+  check("pinning to the version the date would pick anyway raises no warning",
+    truckTxn("New Business").ratingVersion.pinnedWarning === null);
+
+  setTxnVersions({ new: "", renewal: "", endorsement: "" });
 }
 
 /* 7e. Admitted vs surplus lines. Two real money items ride on the licence

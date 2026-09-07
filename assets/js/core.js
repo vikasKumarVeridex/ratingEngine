@@ -27,6 +27,7 @@ const NAV = [
   { g: "Rating", items: [
     /* Lines of Business moved up to Configuration — an LOB is something you
        define before rating it, not a rating artefact. */
+    { h: "engine-flow.html", i: "fa-sitemap", l: "Engine Flow" },
     { h: "factors.html", i: "fa-sliders", l: "Rating Factors" },
     { h: "formula-builder.html", i: "fa-square-root-variable", l: "Rating Formulas" },
     { h: "rate-tables.html", i: "fa-database", l: "Rate Tables (live)" },

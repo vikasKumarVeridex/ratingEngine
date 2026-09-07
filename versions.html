@@ -15,6 +15,8 @@
 <script src="assets/js/data.js"></script>
 <script src="assets/js/cosmos-model.js"></script>
 <script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/engine-pipelines.js"></script>
+<script src="assets/js/engine-flowchart.js"></script>
 <script src="assets/js/core.js"></script>
 <script src="assets/js/grid.js"></script>
 <script src="assets/js/ag-grid-adapter.js"></script>
@@ -331,44 +333,6 @@ function readinessCell(r) {
     : `<span class="vx-b green"><i class="fa-solid fa-circle-check me-1"></i>Ready to publish</span>`;
 }
 
-/* What each LOB's engine actually computes, in order. "Commercial Trucking"
-   is verified line-by-line against the source rating workbook (see
-   engine.js's trucking()); the others are engine.js's working
-   approximations for those LOBs and are flagged as such, not fabricated
-   as equally verified. */
-const ENGINE_PIPELINES = {
-  /* The real, verified formula was briefly removed then restored — see
-     truckingReal() in engine.js. Two candidate models were documented here
-     alongside it during a comparison exercise; both have been removed, so
-     this describes the filed formula and nothing else. */
-  "Commercial Trucking": {
-    verified: true,
-    source: "the filed trucking rating manual",
-    caveat: "This flow matches app_type 483's real stored-procedure rater (udf_iso_new_rater_liab_calculations, ams-service) term-for-term — but that SQL has since been hand-patched with several 2026 date-gated overrides the workbook predates (a driver-criteria factor from 2026-03-05, broadened-pollution/defense-addback factors from 2026-03-12, a stated-value-by-year change from 2026-04-15) that aren't modeled here. Every trucking product uses this Custom (483) per-vehicle rater — the legacy 501 account-level rater was retired from the platform, so all trucking products rate through this flow by design.",
-    steps: [
-      "Rate each vehicle's Liability premium: Base Loss Cost × (ILF − Liability Deductible Factor) × LCM × Primary Class × Secondary Class × Fleet Size × Vehicle Age × OCN × Radius × NAICS × Tort Limitation × Miles Driven × Rating Class × Dashcam × CDL Experience Discount × Driver Class × Account-Level Factor — rounded",
-      "Rate each vehicle's Physical Damage premium: Vehicle Value × MAX(full factor chain, floored minimum rate)",
-      "Sum Liability and Physical Damage separately across every vehicle on the schedule",
-      "Multiply both coverage totals by the policy's Experience Mod",
-      "Add Cargo — rate not sourced from this workbook, kept as a flagged placeholder",
-      "Add policy fees, then state premium tax, to reach Final Premium",
-    ],
-  },
-  "General Liability": { verified: false, steps: [
-    "Premises/Operations: Basic Limit Loss Cost × Increased Limits Factor × LCM × Class Factor × Schedule Rating Mod × Experience Mod",
-    "Products/Completed Operations (if selected): 34% of the Premises/Operations premium",
-  ]},
-  "Commercial Property": { verified: false, steps: [
-    "(Total Insured Value / 100) × Base Rate × Construction Type × Protection Class × Occupancy × Wind/Hail Zone × Deductible × LCM × IRPM",
-    "Time Element (if selected): 22% of the base premium",
-  ]},
-  "Professional Liability (MPL)": { verified: false, steps: [
-    "Basic Limit Loss Cost × LCM × ILF (adjusted for retention) × Hazard Group × Defense Cost (ALAE) × Claims-Made/Year-in-Program × Loss Experience × State Mod × Underwriter Mod",
-  ]},
-  "Cyber": { verified: false, steps: [
-    "Base Rate (revenue-scaled) × Base Rate Deviation × Revenue Band × Industry Class × MFA Controls × Aggregate Limit × Retention × Schedule Rating",
-  ]},
-};
 
 /* ==========================================================================
    Post-Rating Workflow Coverage — an honest map of ams-service's real,
@@ -488,6 +452,7 @@ function acctFactorSection(rec) {
       </tbody></table></div>`;
 }
 
+
 function viewEngine(rec) {
   const attached = attachedFormulas(rec);
   const pipeline = ENGINE_PIPELINES[rec.lob];
@@ -514,6 +479,14 @@ function viewEngine(rec) {
       <ol style="padding-left:20px;font-size:12.5px;line-height:1.8">${pipeline.steps.map(s => `<li>${s}</li>`).join("")}</ol>
       ${pipeline.caveat ? `<div style="border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:0 10px 10px 0;padding:9px 13px;font-size:11.5px;color:var(--text-dim);line-height:1.6"><i class="fa-solid fa-circle-info me-1" style="color:var(--accent)"></i>${pipeline.caveat}</div>` : ""}
     ` : `<div style="font-size:12px;color:var(--text-mute)">No calculation flow documented for ${rec.lob} yet.</div>`}
+
+    ${/* The flowchart lived here too, which meant the same diagram was
+          maintained in two places and made this modal long enough that the
+          account-factor detail below it was easy to miss. It has its own
+          page now; this links to it rather than repeating it. */""}
+    <div style="margin-top:10px;font-size:12px">
+      <a href="engine-flow.html"><i class="fa-solid fa-sitemap me-1"></i>See this flow as a diagram on the Engine Flow page →</a>
+    </div>
 
     ${acctFactorSection(rec)}
 
@@ -567,39 +540,136 @@ function viewFormulaDetail(fid, engineRec) {
   }, 300);
 }
 
+/* Publish several versions in one action — a real need when a filing lands
+   across a whole book and every product's next version goes live together.
+
+   The one thing it must not do is publish two versions of the SAME product:
+   only one can rate a product at a time, so the second would immediately
+   retire the first and the user would get a live version they never chose.
+   That is refused with the conflict named, rather than resolved by picking
+   whichever happened to be selected last. */
+function bulkPublishVersions(recs) {
+  const rows = (recs || []).filter(Boolean);
+  if (!rows.length) { vxToast("Nothing selected", "Tick the versions to publish first", "info"); return; }
+
+  const already = rows.filter(r => r.status === "Published");
+  const publishable = rows.filter(r => r.status !== "Published");
+  if (!publishable.length) {
+    vxToast("Already live", `${already.length === 1 ? "That version is" : "Those versions are"} already published`, "info"); return;
+  }
+
+  const byProduct = {};
+  publishable.forEach(r => { (byProduct[r.product] = byProduct[r.product] || []).push(r); });
+  const conflicts = Object.entries(byProduct).filter(([, v]) => v.length > 1);
+  if (conflicts.length) {
+    vxModal("Can't publish two versions of the same product", `
+      <div style="font-size:13px;line-height:1.65">
+        Only one version rates a product at a time, so publishing these together would leave
+        each product live on whichever was applied last — not a choice you made.
+        <div style="margin-top:10px">${conflicts.map(([prod, v]) =>
+          `<div style="margin-bottom:6px"><b>${prod}</b> — ${v.map(x => `<span class="vx-b amber">${x.version}</span>`).join(" ")}</div>`).join("")}</div>
+        <div style="margin-top:10px;color:var(--text-dim)">Deselect all but one version per product and try again.</div>
+      </div>`, [{ t: "OK", c: "secondary" }], "modal-md");
+    return;
+  }
+
+  const reinstates = publishable.filter(r => r.status === "Expired" || r.status === "Archived");
+  const untested = publishable.flatMap(r => attachedFormulas(r).filter(f => !f.tested).map(f => ({ v: r.version, f })));
+  const retiring = publishable.flatMap(r => tenantVersions(r.product)
+    .filter(v => v.status === "Published" && v !== r).map(v => ({ product: r.product, version: v.version })));
+
+  const run = () => {
+    const results = publishable.map(r => ({ rec: r, out: applyPublish(r) }));
+    persistPublish();
+    const scheduled = results.filter(x => x.out.startsInFuture).length;
+    const live = results.length - scheduled;
+    vxToast("Published", `${live} version${live === 1 ? "" : "s"} live`
+      + (scheduled ? `, ${scheduled} scheduled` : "")
+      + (reinstates.length ? `, ${reinstates.length} reinstated` : ""), "ok");
+    grid.reload();
+  };
+
+  vxModal(`Publish ${publishable.length} version${publishable.length === 1 ? "" : "s"}?`, `
+    <div style="font-size:13px;line-height:1.65">
+      <div class="vx-tw" style="max-height:260px;overflow:auto"><table class="vx-t" style="font-size:12.2px">
+        <thead><tr><th>Product</th><th>Version</th><th>Now</th><th>Becomes</th></tr></thead>
+        <tbody>${publishable.map(r => {
+          const future = r.effectiveStart && r.effectiveStart > new Date().toISOString().slice(0, 10);
+          return `<tr><td>${r.product}</td><td><b>${r.version}</b></td>
+            <td>${verStatusChip(r.status)}</td>
+            <td>${verStatusChip(future ? "Scheduled" : "Published")}</td></tr>`;
+        }).join("")}</tbody></table></div>
+      ${retiring.length ? `<div style="margin-top:10px">This retires ${retiring.map(x => `<b>${x.version}</b> on ${x.product}`).join(", ")}.</div>` : ""}
+      ${reinstates.length ? `<div style="margin-top:8px;color:var(--text-dim)">
+        ${reinstates.length} of these ${reinstates.length === 1 ? "is a closed version being reinstated" : "are closed versions being reinstated"}
+        (${reinstates.map(r => r.version).join(", ")}). Policies already written keep rating on the version in force when they incepted, so nothing in force is repriced.</div>` : ""}
+      ${already.length ? `<div style="margin-top:8px;color:var(--text-mute)">${already.length} selected version${already.length === 1 ? " is" : "s are"} already published and will be skipped.</div>` : ""}
+      ${untested.length ? `<div style="margin-top:10px;border:1px solid var(--border);border-left:3px solid var(--warn);
+          background:rgba(198,137,15,.08);border-radius:0 8px 8px 0;padding:9px 12px">
+          <b style="color:var(--warn)"><i class="fa-solid fa-triangle-exclamation me-1"></i>${untested.length} attached formula${untested.length === 1 ? " has" : "s have"} not been evaluated</b>
+          <div style="font-size:11.8px;color:var(--text-dim);margin-top:3px">${untested.map(u => `${u.f.name} (${u.v})`).join(", ")}</div>
+        </div>` : ""}
+    </div>`,
+    [{ t: "Cancel", c: "secondary" },
+     { t: untested.length ? "Publish Anyway" : `Publish ${publishable.length}`, c: untested.length ? "danger" : "primary", fn: run }],
+    "modal-md");
+}
+
+/* The publish mutation itself, with no confirming or reporting around it, so
+   the single-row action and the bulk action perform exactly the same
+   operation rather than two implementations that can drift. Returns what it
+   did; the caller decides how to say so and when to persist. */
+function applyPublish(rec) {
+  const today = new Date().toISOString().slice(0, 10);
+  // Tenant-scoped: publishing must only retire THIS tenant's prior live
+  // version. Unscoped, it expired every tenant's version of the same
+  // product name — the clone pass gives several tenants the same names.
+  const retired = tenantVersions(rec.product).filter(v => v.status === "Published" && v !== rec);
+  retired.forEach(v => { v.status = "Expired"; v.effectiveEnd = today; });
+  // A future effective date means Scheduled, not live yet — publishing
+  // shouldn't claim a version is rating business before its start date.
+  const startsInFuture = rec.effectiveStart && rec.effectiveStart > today;
+  rec.status = startsInFuture ? "Scheduled" : "Published";
+  if (!rec.effectiveStart) rec.effectiveStart = today;
+  rec.effectiveEnd = "";
+  // Formula status is a separate lifecycle from version status — engine.js
+  // matches savedFormulas on status === "Active", so this must stay "Active".
+  const attached = attachedFormulas(rec);
+  attached.forEach(f => f.status = "Active");
+  const prod = VX.products.find(p => p.name === rec.product);
+  if (prod && !startsInFuture) { prod.version = rec.version; prod.status = "Active"; prod.updated = today; }
+  return { startsInFuture, retired: retired.map(v => v.version), attachedCount: attached.length };
+}
+function persistPublish() {
+  localStorage.setItem("vxVersionsState", JSON.stringify(VX.versions));
+  localStorage.setItem("vxSavedFormulas", JSON.stringify(VX.savedFormulas));
+  localStorage.setItem("vxProductsState", JSON.stringify(VX.products));
+}
+
 function publishVersion(rec) {
   if (rec.status === "Published") { vxToast("Already live", rec.version + " is already the published rating engine for " + rec.product, "info"); return; }
-  if (rec.status === "Expired" || rec.status === "Archived") {
-    vxToast(`Can't publish an ${rec.status.toLowerCase()} version`, "Duplicate it into a new draft first", "err"); return;
-  }
+  /* An expired or archived version can be brought back. This used to be
+     refused outright ("duplicate it into a new draft first"), which left no
+     way to back out a bad filing except by creating a new version number
+     that misrepresents the rates as new — when what actually happened is a
+     return to the previous, already-filed ones.
+
+     It is a REINSTATEMENT, not a publish, and it is confirmed as such: it
+     supersedes whatever is live now and changes what new business is
+     charged. The version keeps its own number and its original effective
+     start; only its end date is reopened. */
+  const reinstating = rec.status === "Expired" || rec.status === "Archived";
   const attached = attachedFormulas(rec);
   const untested = attached.filter(f => !f.tested);
 
   const doPublish = () => {
-    const today = new Date().toISOString().slice(0, 10);
-    // Tenant-scoped: publishing must only retire THIS tenant's prior live
-    // version. Unscoped, it expired every tenant's version of the same
-    // product name — the clone pass gives several tenants the same names.
-    tenantVersions(rec.product).filter(v => v.status === "Published")
-      .forEach(v => { v.status = "Expired"; v.effectiveEnd = today; });
-    // A future effective date means Scheduled, not live yet — publishing
-    // shouldn't claim a version is rating business before its start date.
-    const startsInFuture = rec.effectiveStart && rec.effectiveStart > today;
-    rec.status = startsInFuture ? "Scheduled" : "Published";
-    if (!rec.effectiveStart) rec.effectiveStart = today;
-    rec.effectiveEnd = "";
-    // Formula status is a separate lifecycle from version status — engine.js
-    // matches savedFormulas on status === "Active", so this must stay "Active".
-    attached.forEach(f => f.status = "Active");
-    const prod = VX.products.find(p => p.name === rec.product);
-    if (prod && !startsInFuture) { prod.version = rec.version; prod.status = "Active"; prod.updated = today; }
-    localStorage.setItem("vxVersionsState", JSON.stringify(VX.versions));
-    localStorage.setItem("vxSavedFormulas", JSON.stringify(VX.savedFormulas));
-    localStorage.setItem("vxProductsState", JSON.stringify(VX.products));
-    vxToast(startsInFuture ? "Scheduled" : "Published",
-      startsInFuture
+    const r = applyPublish(rec);
+    persistPublish();
+    vxToast(r.startsInFuture ? "Scheduled" : (reinstating ? "Reinstated" : "Published"),
+      r.startsInFuture
         ? `${rec.version} goes live for ${rec.product} on ${rec.effectiveStart}`
-        : `${rec.version} is now the published rating engine for ${rec.product}`, "ok");
+        : `${rec.version} is ${reinstating ? "live again" : "now the published rating engine"} for ${rec.product}`
+          + (reinstating && r.attachedCount ? ` — ${r.attachedCount} formula${r.attachedCount === 1 ? "" : "s"} reactivated` : ""), "ok");
     grid.reload();
   };
 
@@ -616,6 +686,19 @@ function publishVersion(rec) {
           <div style="margin-top:8px"><a href="formula-builder.html">Go test ${untested.length === 1 ? "it" : "them"} first →</a></div>
         </div></div>`,
       [{ t: "Cancel", c: "secondary" }, { t: "Publish Anyway", c: "danger", fn: doPublish }], "modal-md");
+    return;
+  }
+
+  if (reinstating) {
+    const live = tenantVersions(rec.product).filter(v => v.status === "Published").map(v => v.version);
+    vxConfirm(`Reinstate ${rec.version} for ${rec.product}?`,
+      `<b>${rec.version}</b> is ${rec.status.toLowerCase()}${rec.effectiveEnd ? `, closed on ${rec.effectiveEnd}` : ""}. Reinstating brings it back as the live rating engine for <b>${rec.product}</b>` +
+      (live.length ? ` and retires <b>${live.join(", ")}</b>` : "") + `.` +
+      `<div style="margin-top:8px">New business will be rated on this version's already-filed rates from today. Policies already written keep rating on whatever version was in force when they incepted, so this does not reprice anything in force.</div>` +
+      (attached.length
+        ? `<div style="margin-top:8px">It carries <b>${attached.length}</b> formula${attached.length === 1 ? "" : "s"}, which become Active again.</div>`
+        : `<div style="margin-top:8px">No formulas are attached to it.</div>`),
+      doPublish, true);
     return;
   }
 
@@ -673,9 +756,10 @@ const grid = vxAgGrid({ el:"#grid", key:"versions", name:"Rating Version", size:
     {k:"notes",l:"Notes",t:"textarea"}],
   filters:[{k:"status",l:"Status",opts:VVER_ORDER},{k:"lob",l:"LOB",opts:vxLobNames()}],
   extraView:[{k:"notes",l:"Notes"},{k:"createdOn",l:"Created On"}],
+  bulkActions:[{i:"fa-rocket",t:"Publish selected versions",fn:bulkPublishVersions}],
   rowActions:[{i:"fa-diagram-project",t:"View Rating Engine",fn:viewEngine},
     {i:"fa-square-root-variable",t:"Attach / detach formulas",fn:manageFormulas},
-    {i:"fa-rocket",t:"Publish (Go Live)",fn:publishVersion}],
+    {i:"fa-rocket",t:"Publish / reinstate (go live)",fn:publishVersion}],
   onHist: rec => showChanges(rec.id),
   onAfterSave: saveFormulaAttachments,
 });

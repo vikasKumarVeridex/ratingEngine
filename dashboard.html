@@ -37,9 +37,10 @@ d.gwp = tenantProducts.reduce((a, p) => a + (p.gwp || 0), 0);
 const tenantLobCount = new Set(tenantLobs.map(l => l.name)).size;
 const sev = { warning: ["amber","fa-triangle-exclamation"], danger: ["red","fa-circle-exclamation"], info: ["blue","fa-circle-info"] };
 
-document.getElementById("vxPageActions").innerHTML =
-  `<a href="coverages.html" class="btn btn-outline-secondary btn-sm"><i class="fa-solid fa-sitemap me-1"></i>Coverages</a>
-   <a href="quote-portal.html" class="btn btn-primary btn-sm"><i class="fa-solid fa-flask me-1"></i>Sandbox Quote</a>`;
+/* No page actions here: Coverages and Sandbox Quote both sit in the left nav,
+   so the header buttons only repeated navigation the shell already provides.
+   The action bar further down is different — it links to whatever this
+   tenant's configuration actually needs right now, which the nav can't. */
 
 /* Every card is an entry point, so each one links to the screen that owns the
    number it shows. `href` is optional — a card without a destination stays a

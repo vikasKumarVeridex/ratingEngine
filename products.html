@@ -273,6 +273,19 @@ function downloadProductExportJson(r) {
 }
 
 vxAgGrid({ el:"#grid", key:"products", name:"Product",
+  /* The three per-transaction selects are separate form fields (the grid form
+     has no nested-object editor), so fold them back into the single
+     versionByTransaction object the engine reads, and drop the scratch keys
+     rather than persisting them alongside it. */
+  onAfterSave: rec => {
+    if (!rec) return;
+    rec.versionByTransaction = rec.versionByTransaction || {};
+    VX.productTransactionTypes.forEach(t => {
+      const k = "__ver_" + t.key;
+      if (k in rec) { rec.versionByTransaction[t.key] = rec[k] || ""; delete rec[k]; }
+    });
+    localStorage.setItem("vxProductsState", JSON.stringify(VX.products));
+  },
 
   cols:[{k:"name",l:"Product"},{k:"code",l:"Code"},{k:"lob",l:"Line of Business"},
       /* Lead with the application type's NAME — the numeric id is an internal
@@ -321,6 +334,20 @@ vxAgGrid({ el:"#grid", key:"products", name:"Product",
               {value:"Admitted",label:"Admitted — no surplus-lines tax or filing fee"},
               {value:"Surplus Lines",label:"Surplus Lines — surplus-lines tax and filing fee apply"}],
         hint:"Decides the surplus-lines premium tax and SL filing fee on every quote for this product."},
+      /* New business, renewals and endorsements need not rate on the same
+         version — a carrier can put new business on the latest filing while
+         renewals stay on the prior one. Left on "resolve by date" they all
+         behave as before; setting all three the same is valid and simply
+         states it explicitly. */
+      ...VX.productTransactionTypes.map(t => ({
+        k:"__ver_"+t.key, l:t.label+" rates on", t:"select",
+        val:r=>(r.versionByTransaction||{})[t.key]||"",
+        opts:r=>[{value:"",label:"Resolve by date (default)"}]
+          .concat(versionsFor(r.name||'').map(v=>({value:v.version,label:`${v.version} · ${v.status}`}))),
+        hint:t.key==="endorsement"
+          ? "Left on default, an endorsement rates on the version in force when the policy incepted."
+          : undefined,
+      })),
       /* Coverages as the real parent/child tree, scoped to the chosen line —
          the flat list this replaced mixed primaries and children from every
          LOB together, so you could tick a Cyber child onto a trucking
@@ -336,12 +363,18 @@ vxAgGrid({ el:"#grid", key:"products", name:"Product",
         hint:"Surplus-lines licences are per state; a quote can only be written where the product is enabled."},
       {k:"status",l:"Status",t:"select",opts:["Active","Draft","Retired"]},{k:"owner",l:"Owner"}],
   /* A live product is a filed thing: its name, code, LOB, app type and coverage
-     set are what was filed, so they are not editable after creation. Swapping
-     which rating version it points at IS a normal operational change, so that
-     is the one field an edit can touch. Clone / version-history / delete are
-     off for the same reason — a filed product is not duplicated or removed
-     from this screen. */
-  noClone:true, noHist:true, noDelete:true, editOnly:["version"],
+     set are what was filed, so they are not editable after creation.
+
+     What an edit MAY change is how the product is operated: which rating
+     version it points at, which paper it is written on, and which version
+     each transaction type rates against. Those were disabled along with
+     everything else when they were added — the selects rendered greyed out
+     with no way to set them, which made the settings look broken rather than
+     protected. Clone / version-history / delete stay off: a filed product is
+     not duplicated or removed from this screen. */
+  noClone:true, noHist:true, noDelete:true,
+  editOnly:["version", "licenceBasis", "status", "owner"]
+    .concat(VX.productTransactionTypes.map(t => "__ver_" + t.key)),
   filters:[{k:"lob",l:"LOB",opts:vxLobNames()},{k:"status",l:"Status",opts:["Active","Draft","Retired"]},{k:"raterType",l:"Rater Type",opts:["Custom"]}],
   rowActions:[{i:"fa-solid fa-file-export",t:"Export JSON (coverage, complete factors & eligibility — no formula)",fn:r=>downloadProductExportJson(r)}] });
 

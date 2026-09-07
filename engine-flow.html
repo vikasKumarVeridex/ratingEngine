@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#1A1D23">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Engine Flow — Rating | VeriDex</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="assets/css/app.css" rel="stylesheet">
+</head>
+<body><div id="vxApp"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/cosmos-model.js"></script>
+<script src="assets/js/app-types.js"></script>
+<script src="assets/js/engine-pipelines.js"></script>
+<script src="assets/js/engine-flowchart.js"></script>
+<script src="assets/js/tenant-setup.js"></script>
+<script src="assets/js/core.js"></script>
+<script>
+/* The engine flowchart had only one home: a section inside the Versions
+   "Rating Engine" modal, which meant you had to already know it existed and
+   which row to open to find it. It is a reference view of how the platform
+   prices anything, so it gets its own page — same renderer, same pipeline
+   definitions (assets/js/engine-pipelines.js), just reachable directly. */
+vxShell("Engine Flow",
+  "How a quote moves through the rating engine. || Every stage and every decision point, drawn from the pipeline the engine actually runs.",
+  [{ l: "Rating" }, { l: "Engine Flow" }]);
+
+/* Lines that genuinely have a calculator, in nav order. A line without one
+   would render an empty middle stage, so it is not offered. */
+const FLOW_LOBS = vxLobNames().filter(n => ENGINE_PIPELINES[n]);
+let flowLob = FLOW_LOBS.includes("Commercial Trucking") ? "Commercial Trucking" : FLOW_LOBS[0];
+
+document.getElementById("vxPageActions").innerHTML =
+  `<a href="versions.html" class="btn btn-outline-secondary btn-sm"><i class="fa-solid fa-code-branch me-1"></i>Rating Versions</a>
+   <a href="integration.html" class="btn btn-outline-secondary btn-sm"><i class="fa-solid fa-plug me-1"></i>Integration Guide</a>`;
+
+document.getElementById("vxBody").innerHTML = `
+  <div class="vx-exp2 vx-anim" id="expFlow">
+    <div class="hd"><i class="fa-solid fa-sitemap" style="color:var(--primary);font-size:11.5px"></i>
+      <b>One engine, six lines</b>
+      <span>Only the coverage-pricing stage differs per line of business.</span>
+      <button type="button" class="tog" onclick="vxExpToggle('expFlow')">Why?</button></div>
+    <div class="bd">
+      <p>Stages 1, 2, 4, 5 and 6 are <code>assemble()</code> in <code>engine.js</code> — shared by every line, so a
+      change to how tax, fees, credits or the minimum premium work applies everywhere at once. Stage 3 is the only
+      part each line implements for itself.</p>
+      <p>Stage 3 is read from the same pipeline definition the
+      <a href="versions.html">Rating Versions</a> screen documents, so this diagram cannot drift from it.</p>
+    </div>
+  </div>
+
+  <div class="vx-card vx-anim" style="margin-bottom:14px">
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-mute)">Line of business</span>
+      <select class="form-select form-select-sm" id="flowLob" style="width:auto;min-width:230px">
+        ${FLOW_LOBS.map(n => `<option ${n === flowLob ? "selected" : ""}>${n}</option>`).join("")}
+      </select>
+      <span id="flowVerified" class="ms-auto"></span>
+    </div>
+  </div>
+
+  <div id="flowHost"></div>`;
+
+function renderFlow() {
+  const pipeline = ENGINE_PIPELINES[flowLob];
+  /* ratingFlowchart() takes a version record because its usual caller has
+     one; here the page is about the LINE, so it is handed the minimum the
+     renderer reads. */
+  document.getElementById("flowHost").innerHTML = ratingFlowchart({ lob: flowLob }, pipeline);
+  document.getElementById("flowVerified").innerHTML = pipeline && pipeline.verified
+    ? `<span class="vx-b green" title="Verified line-by-line against ${pipeline.source}"><i class="fa-solid fa-circle-check me-1"></i>Verified against ${pipeline.source}</span>`
+    : `<span class="vx-b amber" title="Not yet verified line-by-line against a filed source"><i class="fa-solid fa-triangle-exclamation me-1"></i>Working approximation</span>`;
+}
+document.getElementById("flowLob").onchange = e => { flowLob = e.target.value; renderFlow(); };
+renderFlow();
+</script>
+</body>
+</html>

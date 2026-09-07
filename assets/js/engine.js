@@ -118,9 +118,53 @@ const ENGINE = (() => {
     return ((VX.taxes || []).find(t => t.state === st) || { surplusTax: 2 }).surplusTax / 100;
   }
 
-  function resolveRatingVersion(lobName, asOf, productName) {
-    const all = (VX.versions || []).filter(v => v.lob === lobName && v.effectiveStart
+  /* A product may pin a transaction type to a specific version — new
+     business on the latest filing while renewals stay on the prior one, for
+     instance. Unset means "resolve by date", which is the normal case. */
+  const TXN_KEY = { "New Business": "new", "Renewal": "renewal", "Endorsement": "endorsement" };
+  function productVersionOverride(productName, policyType) {
+    if (!productName || !policyType) return null;
+    const p = (VX.products || []).find(x => x.name === productName);
+    const key = TXN_KEY[policyType];
+    const label = p && p.versionByTransaction && key ? p.versionByTransaction[key] : "";
+    return label || null;
+  }
+
+  function resolveRatingVersion(lobName, asOf, productName, policyType) {
+    /* Date resolution needs an effective date; a version without one cannot
+       be placed on a timeline. An explicit PIN does not — see below. */
+    const dateable = (VX.versions || []).filter(v => v.lob === lobName && v.effectiveStart
       && (!productName || v.product === productName));
+    const all = dateable;
+
+    /* An explicit per-transaction pin beats date resolution — that is the
+       point of setting one.
+
+       Searched across EVERY version of the product, not just the datable
+       ones. Pinning to a Draft (which has no effective date until it is
+       published) used to match nothing and fall through to date resolution
+       silently, so the setting appeared to save and then did nothing —
+       the configuration said one version and the quote rated on another.
+       An unpublished pin is now honoured and reported, so the choice is
+       visible; a pin naming a version that does not exist at all still
+       falls through, because there is nothing to honour. */
+    const pinned = productVersionOverride(productName, policyType);
+    if (pinned) {
+      const everyVersion = (VX.versions || []).filter(v => v.lob === lobName
+        && (!productName || v.product === productName));
+      const rec = everyVersion.find(v => v.version === pinned);
+      if (rec) {
+        const live = rec.status === "Published"
+          || (rec.effectiveStart && rec.effectiveStart <= asOf && (!rec.effectiveEnd || rec.effectiveEnd >= asOf));
+        return { rec, ambiguous: false, fallback: null,
+          pinnedTo: policyType,
+          /* Set when the pinned version is not the one the date would have
+             chosen — an unpublished draft, or a closed filing. */
+          pinnedWarning: live ? null
+            : `${policyType} is pinned to ${rec.version}, which is ${rec.status}${rec.effectiveStart ? "" : " and has no effective date"} — it is not the version the rating date would have selected.`,
+          candidates: everyVersion.map(v => ({ version: v.version, product: v.product, status: v.status })) };
+      }
+    }
     const inWindow = all.filter(v => v.effectiveStart <= asOf && (!v.effectiveEnd || v.effectiveEnd >= asOf));
     /* Published beats a Scheduled/Expired row covering the same instant, and
        the latest start wins among equals — a newer filing supersedes. */
@@ -219,7 +263,7 @@ const ENGINE = (() => {
        one — which reconciles against neither. */
     const asOfInfo = resolveRatingAsOf(i);
     const asOf = asOfInfo.asOf;
-    const versionPick = resolveRatingVersion("Commercial Trucking", asOf, i.product);
+    const versionPick = resolveRatingVersion("Commercial Trucking", asOf, i.product, i.policyType);
     const ratingVersionRec = versionPick.ambiguous ? null : versionPick.rec;
     const primaryTable = VX.tableAsOf(VX.truckPrimary, asOf);
     const fleetTable = VX.tableAsOf(VX.truckFleetSize, asOf);
@@ -1729,7 +1773,7 @@ const ENGINE = (() => {
        `o.version` stays the engine's own built-in filing label and is used
        when nothing on file covers the date. */
     const vAsOf = resolveRatingAsOf(o.input || {});
-    const vPick = resolveRatingVersion(lob, vAsOf.asOf, (o.input || {}).product);
+    const vPick = resolveRatingVersion(lob, vAsOf.asOf, (o.input || {}).product, (o.input || {}).policyType);
     const useRec = vPick.rec && !vPick.ambiguous ? vPick.rec : null;
     const ratingVersion = {
       asOf: vAsOf.asOf,
@@ -1743,6 +1787,10 @@ const ENGINE = (() => {
       /* Set when no version was in force on the rating date and the engine
          rated on the nearest one instead — surfaced, never silent. */
       fallback: useRec ? vPick.fallback : null,
+      /* Set when the product pins this transaction type to a version, so a
+         reader knows the date did not choose it. */
+      pinnedTo: vPick.pinnedTo || null,
+      pinnedWarning: vPick.pinnedWarning || null,
       ambiguous: vPick.ambiguous,
       candidates: (vPick.ambiguous || vPick.fallback) ? vPick.candidates : null,
       /* Every version on file for this line, so a caller with no active one

@@ -480,14 +480,29 @@ function productsForLob(lob) {
   const rows = (typeof COSMOS !== "undefined") ? COSMOS.productsFor(lob) : VX.products.filter(p => p.lob === lob);
   return [...new Set(rows.map(p => p.name))];
 }
+/* Every version this product has, closed ones included.
+
+   Expired and archived versions used to be filtered out, on the reasoning
+   that they "can't take new formulas". But a closed version still rates
+   real business: an endorsement is priced on the version in force when the
+   policy incepted (see resolveRatingAsOf in engine.js), so a policy written
+   under an expired version is still rated by that version's formulas for the
+   rest of its term. Excluding them meant a formula could never be attached
+   or corrected on the version actually doing that rating.
+
+   They are offered, but ordered last and clearly marked closed, so attaching
+   to one is a deliberate act rather than a mis-click — the save dialog warns
+   before it happens. */
 function versionsForProduct(product) {
   const tid = (typeof COSMOS !== "undefined") ? COSMOS.tenantId() : null;
   const rows = VX.versions.filter(v => v.product === product
-    && (tid == null || v.tenantId == null || v.tenantId === tid)
-    && v.status !== "Expired" && v.status !== "Archived");
+    && (tid == null || v.tenantId == null || v.tenantId === tid));
   const seen = new Set();
-  return rows.filter(v => (seen.has(v.version) ? false : (seen.add(v.version), true)));
+  const uniq = rows.filter(v => (seen.has(v.version) ? false : (seen.add(v.version), true)));
+  const closed = v => v.status === "Expired" || v.status === "Archived";
+  return uniq.sort((a, b) => (closed(a) ? 1 : 0) - (closed(b) ? 1 : 0));
 }
+const versionIsClosed = v => v.status === "Expired" || v.status === "Archived";
 
 /* Basic / Advanced — a visibility toggle over UI that already exists, so an
    admin building a normal multiplicative formula isn't shown conditionals,
@@ -1257,7 +1272,7 @@ function saveF() {
       const vers = versionsForProduct(p);
       if (!vers.length) return `<div style="margin-bottom:9px">
         <div style="font-size:11.5px;font-weight:700;color:var(--text-dim)">${p}</div>
-        <div style="font-size:11.5px;color:var(--text-mute);padding-left:10px">No open rating version — expired and archived versions can't take new formulas.</div></div>`;
+        <div style="font-size:11.5px;color:var(--text-mute);padding-left:10px">No rating version on file for this product yet.</div></div>`;
       return `<div style="margin-bottom:9px">
         <div style="font-size:11.5px;font-weight:700;color:var(--text-dim);margin-bottom:2px">${p}</div>
         ${vers.map(v => {
@@ -1266,7 +1281,8 @@ function saveF() {
           return `<div class="form-check" style="padding-left:1.9rem">
             <input class="form-check-input" type="checkbox" id="${id}" data-prod="${p}" data-ver="${v.version}" ${chk ? "checked" : ""}>
             <label class="form-check-label" for="${id}" style="font-size:12.5px">${v.version}
-              <span class="vx-b ${v.status === "Published" ? "green" : v.status === "Draft" ? "amber" : v.status === "Scheduled" ? "blue" : "gray"}">${v.status}</span></label>
+              <span class="vx-b ${v.status === "Published" ? "green" : v.status === "Draft" ? "amber" : v.status === "Scheduled" ? "blue" : "gray"}">${v.status}</span>
+              ${versionIsClosed(v) ? `<span class="vx-b amber" style="font-size:8.5px" title="Closed version. Policies written under it are still rated by it on endorsement, so changing its formulas affects business already in force — not new business.">affects in-force only</span>` : ""}</label>
           </div>`;
         }).join("")}
       </div>`;
