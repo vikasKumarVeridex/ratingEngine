@@ -255,6 +255,21 @@ function vxAgGrid(opt) {
       }
     });
 
+    /* One row of the `columns` field type below — a column name plus its
+       data type. Shared between the initial render and the "Add Column"
+       handler in wire(), which appends a fresh row with the same markup. */
+    const COLUMN_TYPES = ["Text", "Number", "Date", "Boolean"];
+    function colRowHtml(k, c) {
+      c = c || { name: "", type: "Text" };
+      return `<div class="d-flex gap-2 align-items-center mb-2" data-colrow="${k}">
+        <input type="text" class="form-control form-control-sm" placeholder="Column name" data-colname="${k}" value="${(c.name || "").replace(/"/g, "&quot;")}">
+        <select class="form-select form-select-sm" style="max-width:130px" data-colsel="${k}">
+          ${COLUMN_TYPES.map(t => `<option ${t === c.type ? "selected" : ""}>${t}</option>`).join("")}
+        </select>
+        <button type="button" class="vx-icobtn" data-colrm="${k}" title="Remove column" style="width:30px;height:30px;flex:none"><i class="fa-solid fa-xmark"></i></button>
+      </div>`;
+    }
+
     function fieldHtml(f, cur) {
       /* `val` lets a field derive its current value instead of reading a
          stored property — needed where the relationship lives on the OTHER
@@ -383,6 +398,20 @@ function vxAgGrid(opt) {
       }
       if (f.t === "textarea") return `<div class="col-md-12${lk ? " vx-fld-locked" : ""}" data-fw="${f.k}"><label>${f.l}</label>
         <textarea class="form-control form-control-sm" rows="2" data-f="${f.k}">${v}</textarea>${hint}</div>`;
+      /* Dynamic column schema builder — a repeatable list of (name, type)
+         pairs instead of a fixed set of inputs, for records whose structure
+         the user defines rather than the form author. Stored as an array of
+         {name,type} objects on the field key, same as `multi`/`tree` store
+         arrays of their selections. */
+      if (f.t === "columns") {
+        const list = Array.isArray(v) ? v : [];
+        return `<div class="col-md-12${lk ? " vx-fld-locked" : ""}" data-fw="${f.k}">
+          <label class="d-block">${f.l}</label>
+          <div data-fg="${f.k}" data-fgtype="columns">${list.map(c => colRowHtml(f.k, c)).join("")}</div>
+          <div data-colempty="${f.k}" style="font-size:12px;color:var(--text-mute);margin-bottom:8px${list.length ? ";display:none" : ""}">No columns defined yet — add at least one.</div>
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-coladd="${f.k}"${dis}><i class="fa-solid fa-plus me-1"></i>Add Column</button>
+          ${hint}</div>`;
+      }
       return wrap(`<label>${f.l}</label><input type="${f.t || "text"}" ${f.step ? `step="${f.step}"` : ""}
         class="form-control form-control-sm" data-f="${f.k}" value="${v}"${dis}>`);
     }
@@ -416,7 +445,12 @@ function vxAgGrid(opt) {
           r[i.dataset.f] = i.type === "checkbox" ? i.checked : (i.type === "number" ? +i.value : i.value);
         });
         el.querySelectorAll("[data-fg]").forEach(gp => {
-          r[gp.dataset.fg] = [...gp.querySelectorAll("[data-fm]:checked")].map(c => c.value);
+          r[gp.dataset.fg] = gp.dataset.fgtype === "columns"
+            ? [...gp.querySelectorAll("[data-colrow]")].map(row => ({
+                name: row.querySelector("[data-colname]").value.trim(),
+                type: row.querySelector("[data-colsel]").value,
+              })).filter(c => c.name)
+            : [...gp.querySelectorAll("[data-fm]:checked")].map(c => c.value);
         });
         /* A field marked `fanOut` may hold several values on Add; each one
            becomes its own record. Filed data is per-state, so entering the
@@ -459,7 +493,12 @@ function vxAgGrid(opt) {
         r[i.dataset.f] = i.type === "checkbox" ? i.checked : (i.type === "number" ? +i.value : i.value);
       });
       modal.querySelectorAll("[data-fg]").forEach(gp => {
-        r[gp.dataset.fg] = [...gp.querySelectorAll("[data-fm]:checked")].map(c => c.value);
+        r[gp.dataset.fg] = gp.dataset.fgtype === "columns"
+          ? [...gp.querySelectorAll("[data-colrow]")].map(row => ({
+              name: row.querySelector("[data-colname]").value.trim(),
+              type: row.querySelector("[data-colsel]").value,
+            })).filter(c => c.name)
+          : [...gp.querySelectorAll("[data-fm]:checked")].map(c => c.value);
       });
     };
     const updateCount = k => {
@@ -505,6 +544,37 @@ function vxAgGrid(opt) {
       if (!modal.__ddOutside) {
         modal.__ddOutside = true;
         modal.addEventListener("click", () => modal.querySelectorAll("[data-dd]").forEach(x => x.classList.remove("on")));
+      }
+
+      // `columns` field: add/remove a row. Delegated on the modal (not bound
+      // per-button) so a row appended after initial render is removable too.
+      if (!modal.__colWired) {
+        modal.__colWired = true;
+        modal.addEventListener("click", e => {
+          const add = e.target.closest("[data-coladd]");
+          if (add) {
+            e.preventDefault();
+            const k = add.dataset.coladd;
+            const gp = modal.querySelector(`[data-fg="${k}"]`);
+            const tmp = document.createElement("div");
+            tmp.innerHTML = colRowHtml(k, null);
+            gp.appendChild(tmp.firstElementChild);
+            const empty = modal.querySelector(`[data-colempty="${k}"]`);
+            if (empty) empty.style.display = "none";
+            sync();
+            return;
+          }
+          const rm = e.target.closest("[data-colrm]");
+          if (rm) {
+            e.preventDefault();
+            const k = rm.dataset.colrm;
+            rm.closest("[data-colrow]").remove();
+            const gp = modal.querySelector(`[data-fg="${k}"]`);
+            const empty = modal.querySelector(`[data-colempty="${k}"]`);
+            if (empty && gp && !gp.querySelector("[data-colrow]")) empty.style.display = "";
+            sync();
+          }
+        });
       }
 
       // select all / clear

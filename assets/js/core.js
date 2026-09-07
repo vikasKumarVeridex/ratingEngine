@@ -11,7 +11,6 @@ const NAV = [
     { h: "dashboard.html", i: "fa-gauge-high", l: "Dashboard" },
     { h: "loss-runs.html", i: "fa-triangle-exclamation", l: "Loss Run Analytics" },
     { h: "quote-portal.html", i: "fa-flask", l: "Sandbox Quote Generation" },
-    { h: "quote-json.html", i: "fa-code", l: "Quote JSON" },
   ]},
   /* Configuration sits above Rating: you define the line of business, the
      coverages under it and the product that sells them BEFORE the factors and

@@ -42,24 +42,88 @@ document.getElementById("vxBody").innerHTML = `
     Trucking) have real rows extracted and browsable — click <i class="fa-solid fa-table-cells"></i> on those rows.
     The rest are sized but not yet loaded.</div>
   <div class="vx-card vx-anim"><div id="grid"></div></div>`;
-vxAgGrid({ el:"#grid", key:"lookupTables", name:"Lookup Table",
+/* Rows is never typed in — it always reflects reality. A table whose
+   structure has been defined (columns.length) reports the actual number of
+   rows entered through "Add row"; a table nobody has touched yet still shows
+   its original production-scale sizing estimate, unchanged. */
+const rowCount = r => (r.columns && r.columns.length) ? (r.data ? r.data.length : 0) : r.rows;
+
+const grid = vxAgGrid({ el:"#grid", key:"lookupTables", name:"Lookup Table",
 
   cols:[{k:"name",l:"Lookup Table"},{k:"lob",l:"LOB"},{k:"keys",l:"Key Columns"},
-      {k:"rows",l:"Rows",r:r=>'<b>'+vxNum(r.rows)+'</b>'},
-      {k:"records",l:"Records",r:r=>LOOKUP_LIVE[r.name] ? '<span class="vx-b green">Loaded</span>' : vxWiredChip(false,"Not loaded")},
-      {k:"version",l:"Version",r:r=>'<span class="vx-b gray">'+r.version+'</span>'}],
+      {k:"rows",l:"Rows",r:r=>'<b>'+vxNum(rowCount(r))+'</b>'},
+      {k:"records",l:"Records",r:r=>(LOOKUP_LIVE[r.name] || (r.data && r.data.length)) ? '<span class="vx-b green">Loaded</span>' : vxWiredChip(false,"Not loaded")}],
   form:[{k:"name",l:"Table Name"},{k:"lob",l:"LOB",t:"select",opts:vxLobNames()},{k:"keys",l:"Key Columns"},
-      {k:"rows",l:"Row Count",t:"number"},{k:"version",l:"Version"}],
+      {k:"columns",l:"Columns",t:"columns",
+        hint:"Define the table's structure — rows are added afterwards from the grid, and the Rows count updates automatically as you add them."}],
   filters:[{k:"lob",l:"LOB",opts:vxLobNames()}],
-  rowActions:[{i:"fa-table-cells",t:"View records",fn:viewRecords}] });
+  rowActions:[{i:"fa-table-cells",t:"View records",fn:viewRecords},{i:"fa-plus",t:"Add row",fn:addRow}] });
 
 function viewRecords(rec) {
   const tableId = LOOKUP_LIVE[rec.name];
-  if (!tableId) {
-    vxToast("No records loaded", `${rec.name} is sized in the inventory but its rows haven't been extracted yet.`, "warn");
+  if (tableId) { location.href = "rate-tables.html?table=" + encodeURIComponent(tableId); return; }
+  if (rec.data && rec.data.length) { viewLocalData(rec); return; }
+  vxToast("No records loaded", `${rec.name} is sized in the inventory but its rows haven't been extracted yet. Use "Add row" to start entering data.`, "warn");
+}
+
+function viewLocalData(rec) {
+  const cols = rec.columns || [];
+  vxModal(`${rec.name} — ${rec.data.length} row${rec.data.length === 1 ? "" : "s"}`,
+    `<div class="vx-tw"><table class="vx-t"><thead><tr>${cols.map(c => `<th>${c.name}</th>`).join("")}</tr></thead>
+      <tbody>${rec.data.map(row => `<tr>${cols.map(c => `<td>${row[c.name] ?? '<span style="color:var(--text-mute)">—</span>'}</td>`).join("")}</tr>`).join("")}</tbody>
+    </table></div>`,
+    [{ t:"Close", c:"secondary" }, { t:"Add Row", c:"primary", fn:() => { setTimeout(() => addRow(rec), 300); } }], "modal-lg");
+}
+
+/* Entering rows is a separate step from defining the table, and reuses
+   whatever `columns` the Add/Edit form saved — one text/number/date/checkbox
+   input per column, typed to match. The 5 Commercial Trucking tables in
+   LOOKUP_LIVE are the real filed dataset, browsable (not editable) on
+   Rate Tables (live); this only writes to the local, admin-entered rows a
+   table on this screen can otherwise hold. */
+function addRow(rec) {
+  if (LOOKUP_LIVE[rec.name]) {
+    vxToast("Not editable here", `${rec.name} is the filed rate-table dataset — browse it on Rate Tables (live) instead.`, "info");
     return;
   }
-  location.href = "rate-tables.html?table=" + encodeURIComponent(tableId);
+  if (!rec.columns || !rec.columns.length) {
+    vxToast("Define columns first", `${rec.name} has no columns yet — open Edit and add at least one before entering rows.`, "warn");
+    return;
+  }
+  openRowModal(rec);
+}
+
+function openRowModal(rec) {
+  const body = `<div class="row g-3">${rec.columns.map(c => {
+    if (c.type === "Boolean") return `<div class="col-md-6"><label class="d-block">${c.name}</label>
+      <div class="form-check form-switch"><input class="form-check-input" type="checkbox" data-rf="${c.name}"></div></div>`;
+    const type = c.type === "Number" ? "number" : c.type === "Date" ? "date" : "text";
+    return `<div class="col-md-6"><label>${c.name}</label><input type="${type}" class="form-control form-control-sm" data-rf="${c.name}"></div>`;
+  }).join("")}</div>`;
+  vxModal(`Add Row — ${rec.name}`, body,
+    [{ t:"Cancel", c:"secondary" },
+     { t:"Save & Add Another", c:"secondary", fn:() => saveRow(rec, true) },
+     { t:"Save Row", c:"primary", fn:() => saveRow(rec, false) }]);
+}
+
+function saveRow(rec, again) {
+  const el = document.getElementById("vxModal");
+  const row = {};
+  el.querySelectorAll("[data-rf]").forEach(inp => {
+    row[inp.dataset.rf] = inp.type === "checkbox" ? inp.checked : (inp.type === "number" ? +inp.value : inp.value);
+  });
+  if (!Object.values(row).some(v => v !== "" && v !== false)) {
+    vxToast("Nothing to save", "Fill in at least one field.", "warn");
+    return false;
+  }
+  rec.data = rec.data || [];
+  rec.data.push(row);
+  rec.rows = rec.data.length;
+  API.update("lookupTables", rec.id, { data: rec.data, rows: rec.rows }).then(() => {
+    vxToast("Row added", `${rec.name} now has ${rec.data.length} row${rec.data.length === 1 ? "" : "s"}`, "ok");
+    vxAutoSave(); grid.reload();
+    if (again) setTimeout(() => openRowModal(rec), 260);
+  });
 }
 
 </script>

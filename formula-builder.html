@@ -1344,7 +1344,11 @@ fbGrid = vxAgGrid({ el: "#fbGrid", key: "savedFormulas", name: "Formula", size: 
     { k: "_versions", l: "Attached To", sort: false, r: r => {
         const a = r.attachments || [];
         if (!a.length) return '<span class="vx-b gray">Unattached</span>';
-        return a.map(x => `<span class="vx-b blue me-1" title="${x.product}">${x.ratingVersion}</span>`).join("")
+        const first = a[0], rest = a.slice(1);
+        const more = rest.length
+          ? ` <span class="vx-b gray" title="${rest.map(x => `${x.ratingVersion} (${x.product})`).join(", ")}">+${rest.length}</span>`
+          : "";
+        return `<span class="vx-b blue" title="${first.product}">${first.ratingVersion}</span>${more}`
           + `<div style="font-size:10.3px;color:var(--text-mute);margin-top:2px">${[...new Set(a.map(x => x.product))].join(", ")}</div>`;
       } },
     { k: "tested", l: "Evaluated", r: r => r.tested

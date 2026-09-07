@@ -15,7 +15,6 @@
 <script src="assets/js/tenant-setup.js"></script>
 <script src="assets/js/core.js"></script>
 <script src="assets/js/grid.js"></script>
-<script src="assets/js/config-health.js"></script>
 <script>
 vxShell("Dashboard", "Rating activity and configuration health. || Live for the active tenant.", [{ l: "Dashboard" }]);
 const d = VX.dashboard;
@@ -134,23 +133,13 @@ function renderPortfolio() {
   document.getElementById("portfolioStats").innerHTML =
     stat("Quotes", vxNum(Q.length), scope, "flat", "fa-file-invoice", "var(--cat-2)", "loss-runs.html") +
     stat("Premium Quoted", vxMoney(prem), scope, "flat", "fa-sack-dollar", "var(--cat-1)", "loss-runs.html") +
-    stat("Bound Premium", vxMoney(boundPrem), `${bound.length} of ${Q.length} quotes bound`,
+    stat("Bounded Premium", vxMoney(boundPrem), `${bound.length} of ${Q.length} quotes bound`,
       "flat", "fa-handshake", "var(--cat-3)", "loss-runs.html") +
     stat("Avg Premium", vxMoney(Q.length ? Math.round(prem / Q.length) : 0),
       Q.length ? "per quote" : "no quotes in this slice", "flat", "fa-chart-line", "var(--cat-4)", "loss-runs.html");
 }
 
-function latestDraft(lob) {
-  const prods = VX.products.filter(p => p.lob === lob).map(p => p.name);
-  return VX.versions.filter(v => prods.includes(v.product) && v.status === "Draft")
-    .sort((a, b) => (b.effectiveStart || "").localeCompare(a.effectiveStart || ""))[0] || null;
-}
-function healthColor(s) { return s >= 90 ? "var(--good)" : s >= 75 ? "var(--warn)" : "var(--bad)"; }
-
 function renderActionBar() {
-  const h = selLob ? computeHealth(selLob) : computeHealthAll();
-  const issues = h.checks ? h.checks.filter(c => c.status !== "ok") : [];
-  const draft = selLob ? latestDraft(selLob) : null;
   const lobSelect = `<select class="form-select form-select-sm" id="dashLob" style="width:auto;min-width:210px">
       <option value="">All lines of business</option>
       ${LOB_OPTS.map(l => `<option ${l === selLob ? "selected" : ""}>${l}</option>`).join("")}</select>`;
@@ -162,32 +151,7 @@ function renderActionBar() {
         <select class="form-select form-select-sm" id="dashMga" style="width:auto;min-width:170px">
           <option value="">All MGAs</option>
           ${MGA_OPTS.map(m => `<option ${m === selMga ? "selected" : ""}>${m}</option>`).join("")}</select>
-        <span class="dashsep"></span>
-        <span class="hintdot" title="Configuration health${h.byLob ? " — " + h.byLob.map(r => r.lob.replace(" (MPL)", "") + " " + r.score + "%").join(", ") : ""}"
-          style="font-size:12px;color:var(--text-dim)">Health
-          <b style="font-size:16px;color:${healthColor(h.score)};margin-left:4px">${h.score}%</b></span>
-        <span class="dashsep"></span>
-        <span style="font-size:12px;color:var(--text-dim)">Draft
-          <b style="margin-left:4px;color:var(--text)">${draft ? `${draft.version} <span class="vx-b amber">Draft</span>`
-            : (selLob ? '<span style="color:var(--text-mute);font-weight:400">none</span>'
-                      : '<span style="color:var(--text-mute);font-weight:400">pick a LOB</span>')}</b></span>
-        <div class="ms-auto d-flex gap-2 flex-wrap">
-          <button class="btn btn-outline-secondary btn-sm" id="fixBtn" ${issues.length ? "" : "disabled"}>
-            <i class="fa-solid fa-screwdriver-wrench me-1"></i>Fix Issues${issues.length ? ` <span class="vx-b amber ms-1">${issues.length}</span>` : ""}</button>
-          <a class="btn btn-outline-secondary btn-sm" href="quote-portal.html${selLob ? "?lob=" + encodeURIComponent(selLob) : ""}"><i class="fa-solid fa-flask me-1"></i>Test Rating</a>
-          ${draft
-            ? `<a class="btn btn-primary btn-sm" href="versions.html?publish=${draft.id}"><i class="fa-solid fa-rocket me-1"></i>Publish ${draft.version}</a>`
-            : `<a class="btn btn-outline-secondary btn-sm" href="versions.html" title="${selLob ? "No draft version to publish for this line of business — create one first" : "Pick a line of business to publish its draft"}"><i class="fa-solid fa-rocket me-1"></i>Publish</a>`}
-        </div>
       </div>
-      ${issues.length ? `<div id="issueList" style="display:none;margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
-        ${issues.map(c => `<div class="d-flex align-items-start gap-2 py-2" style="border-bottom:1px solid var(--border)">
-          <i class="fa-solid ${c.status === "bad" ? "fa-circle-xmark" : "fa-triangle-exclamation"}" style="color:${c.status === "bad" ? "var(--bad)" : "var(--warn)"};margin-top:3px"></i>
-          <div style="flex:1"><b style="font-size:12.7px">${c.label}</b>
-            <div style="font-size:11.8px;color:var(--text-dim);margin-top:2px">${c.detail}</div></div>
-          <a href="${c.fixHref}" class="btn btn-outline-secondary btn-sm">Open</a></div>`).join("")}
-        </div>` : ""}
-
     </div>`;
 
   document.getElementById("dashLob").onchange = e => {
@@ -197,11 +161,6 @@ function renderActionBar() {
   document.getElementById("dashMga").onchange = e => {
     selMga = e.target.value; sessionStorage.setItem("vxDashMga", selMga);
     renderActionBar(); renderPortfolio(); draw();
-  };
-  const fb = document.getElementById("fixBtn");
-  if (fb && issues.length) fb.onclick = () => {
-    const list = document.getElementById("issueList");
-    list.style.display = list.style.display === "none" ? "block" : "none";
   };
 }
 renderActionBar();
