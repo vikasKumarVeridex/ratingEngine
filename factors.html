@@ -180,6 +180,10 @@ function renderApprovals() {
    the audit entry can report a real before → after. */
 let beforeSnapshot = null;
 const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor", size: 15,
+  // Factors are managed as shared configuration, so cloning and per-row
+  // version-history actions do not apply on this screen.
+  noClone: true,
+  noHist: true,
   /* Factors are entered in runs — a filed table rarely arrives one row at a
      time — so Add keeps going rather than closing after each. */
   addAnother: true,
@@ -583,8 +587,12 @@ function openFactorPanel(rec) {
       <div class="vx-card">
         <div class="d-flex align-items-center justify-content-between">
           <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-mute)">Factor Values</div>
-          <button class="btn btn-outline-secondary btn-sm" onclick="editFactorValues(vxFactorById(${rec.id}))">
-            <i class="fa-solid fa-pen me-1"></i>Edit values</button>
+          <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary btn-sm" onclick="addFactorValue(vxFactorById(${rec.id}))">
+              <i class="fa-solid fa-plus me-1"></i>Add value</button>
+            <button class="btn btn-outline-secondary btn-sm" onclick="editFactorValues(vxFactorById(${rec.id}))">
+              <i class="fa-solid fa-pen me-1"></i>Edit values</button>
+          </div>
         </div>
         <div style="font-size:12.3px;color:var(--text-dim);margin:4px 0 10px">
           ${rec.rowCount
@@ -736,6 +744,71 @@ function setPath(root, path, value) {
   n[path[path.length - 1]] = value;
 }
 
+/* Add a row from the factor panel instead of making an analyst leave the
+   current record. Flat key-to-number tables cover the lookup shape shown in
+   the panel (for example State -> Base Loss Cost); array tables use their
+   registry columns so their row fields stay named after the actual table. */
+function addFactorValue(rec) {
+  const root = rec && rec.tableId && VX[rec.tableId];
+  const table = rec && allRateTables().find(t => t.id === rec.tableId);
+  if (!root || !table) {
+    vxModal(`${rec ? rec.name : "Factor"} — add value`,
+      `<div class="sub">Attach a supported lookup table before adding a value.</div>`,
+      [{ t: "Close", c: "secondary" }]);
+    return;
+  }
+  const cols = table.cols || [];
+  const isFlatMap = !Array.isArray(root) && typeof root === "object"
+    && Object.values(root).every(v => typeof v === "number");
+  const isObjectRows = Array.isArray(root) && root.every(r => r && typeof r === "object" && !Array.isArray(r));
+  if (!isFlatMap && !isObjectRows) {
+    vxModal(`Add value — ${rec.name}`, `<div class="sub">This table has a nested structure. Add rows from <a href="rate-tables.html?table=${encodeURIComponent(rec.tableId)}">Rate Tables</a> so all required lookup keys can be supplied.</div>`,
+      [{ t: "Close", c: "secondary" }]);
+    return;
+  }
+
+  const fields = isFlatMap
+    ? [{ k: "key", l: (cols[0] || {}).l || "Key", numeric: false }, { k: "value", l: (cols[1] || {}).l || "Value", numeric: true }]
+    : cols.map(c => ({ k: c.k, l: c.l, numeric: !!(c.money || c.f) || typeof (root[0] || {})[c.k] === "number" }));
+  const effectiveDate = rec.valueEffectiveDate || VX.referenceDate || new Date().toISOString().slice(0, 10);
+  vxModal(`Add value — ${rec.name}`, `
+    <div class="sub mb-3">Add a new row to <b>${table.name}</b>.</div>
+    <div class="row g-3">${fields.map(f => `<div class="col-md-6"><label>${f.l}</label>
+      <input id="fav-${f.k}" class="form-control" type="${f.numeric ? "number" : "text"}" ${f.numeric ? 'step="any"' : ""}></div>`).join("")}
+      <div class="col-md-6"><label>Effective date</label><input id="fav-effective-date" class="form-control" type="date" value="${effectiveDate}"></div>
+    </div>`,
+    [{ t: "Cancel", c: "secondary" }, { t: "Add value", c: "primary", fn: () => {
+      const row = {};
+      for (const f of fields) {
+        const input = document.getElementById(`fav-${f.k}`);
+        const raw = (input && input.value || "").trim();
+        if (!raw) { vxToast("Value not added", `${f.l} is required`, "err"); return false; }
+        const value = f.numeric ? Number(raw) : raw;
+        if (f.numeric && !Number.isFinite(value)) { vxToast("Value not added", `${f.l} must be a number`, "err"); return false; }
+        row[f.k] = value;
+      }
+      const effectiveDate = document.getElementById("fav-effective-date").value;
+      if (!effectiveDate) { vxToast("Value not added", "Effective date is required", "err"); return false; }
+      if (isFlatMap) {
+        if (Object.prototype.hasOwnProperty.call(root, row.key)) { vxToast("Value not added", `${row.key} already exists`, "err"); return false; }
+        root[row.key] = row.value;
+      } else root.push(row);
+      rec.rowCount = (rec.rowCount || 0) + 1;
+      rec.valueEffectiveDate = effectiveDate;
+      vxAudit("Rating Factors", "Added factor value", `${rec.name} (${rec.code}) — added ${fields.map(f => `${f.l}: ${row[f.k]}`).join(", ")}, effective ${effectiveDate}`,
+        { effectiveDate });
+      vxAutoSave();
+      vxToast("Value added", `Added to ${table.name}`, "ok");
+      grid.reload();
+      /* Repaint the still-open factor panel only after Bootstrap has closed
+         this modal; otherwise its focus trap and the offcanvas compete. */
+      setTimeout(() => {
+        const panel = document.getElementById("vxFactorPanel");
+        if (panel && panel.classList.contains("show")) openFactorPanel(vxFactorById(rec.id));
+      }, 280);
+    } }]);
+}
+
 function editFactorValues(rec) {
   if (!rec.tableId || !VX[rec.tableId]) {
     vxModal(`${rec.name} \u2014 no table attached`, `
@@ -754,6 +827,7 @@ function editFactorValues(rec) {
   }
   const shown = items.slice(0, 250);
   const s = sourceLabel(rec);
+  const effectiveDate = rec.valueEffectiveDate || VX.referenceDate || new Date().toISOString().slice(0, 10);
   /* Named after the FACTOR, but never said which real file or table the
      numbers actually come from \u2014 "Territory Base Loss Cost" told you what
      you were editing, not where it was sourced from or what its 12 rows are
@@ -785,6 +859,11 @@ function editFactorValues(rec) {
         ${items.length > shown.length ? `Showing the first ${vxNum(shown.length)} of ${vxNum(items.length)} rows \u2014 ` : ""}<a href="rate-tables.html?table=${encodeURIComponent(rec.tableId)}">open the full table on Rate Tables \u2192</a>
       </div>
     </div>
+    <div class="row g-2 align-items-end mb-2">
+      <div class="col-sm-5"><label class="mb-1">Effective date</label>
+        <input id="fv-effective-date" class="form-control form-control-sm" type="date" value="${effectiveDate}"></div>
+      <div class="col-sm-7" style="font-size:11.4px;color:var(--text-dim)">Recorded with this change and shown in the audit trail.</div>
+    </div>
     <input class="form-control form-control-sm mb-2" id="fvq" placeholder="Filter rows\u2026"
       oninput="fvFilter(this.value)">
     <div class="vx-tw" style="max-height:400px;overflow:auto"><table class="vx-t">
@@ -806,6 +885,8 @@ function editFactorValues(rec) {
      { t: "Save values", c: "primary", fn: () => {
         let n = 0;
         const edits = [];
+        const effectiveDate = document.getElementById("fv-effective-date").value;
+        if (!effectiveDate) { vxToast("Values not saved", "Effective date is required", "err"); return false; }
         // A Range item edits its From and To bounds through two inputs sharing
         // one data-i \u2014 data-part says which bound each one is.
         document.querySelectorAll(".fv").forEach(inp => {
@@ -821,9 +902,10 @@ function editFactorValues(rec) {
         /* Editing a factor's rows changes what gets charged just as surely as
            editing its default does, so it lands in the audit trail too —
            naming the rows that moved, not just the count. */
+        if (n) rec.valueEffectiveDate = effectiveDate;
         if (n) vxAudit("Rating Factors", "Updated factor value",
           `${rec.name} (${rec.code}) — ${n} row${n === 1 ? "" : "s"} in ${tableName(rec.tableId)}: `
-            + edits.slice(0, 4).join("; ") + (edits.length > 4 ? `; +${edits.length - 4} more` : ""),
+            + edits.slice(0, 4).join("; ") + (edits.length > 4 ? `; +${edits.length - 4} more` : "") + `; effective ${effectiveDate}`,
           { version: (rec.attachments && rec.attachments[0] && rec.attachments[0].ratingVersion) || "—" });
         vxAutoSave();
         vxToast(n ? "Values updated" : "No changes",

@@ -17,10 +17,7 @@ const NAV = [
      formulas that price them, so the nav runs in the order the work is
      actually done — LOB, then its coverages, then the product. */
   { g: "Configuration", items: [
-    { h: "lob.html", i: "fa-layer-group", l: "Lines of Business" },
-    { h: "coverages.html", i: "fa-sitemap", l: "Coverages" },
     { h: "products.html", i: "fa-cubes", l: "Products" },
-    { h: "units.html", i: "fa-ruler-combined", l: "Unit Configuration" },
     { h: "versions.html", i: "fa-code-branch", l: "Versions" },
   ]},
   { g: "Rating", items: [

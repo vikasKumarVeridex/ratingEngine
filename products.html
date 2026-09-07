@@ -277,14 +277,25 @@ vxAgGrid({ el:"#grid", key:"products", name:"Product",
      has no nested-object editor), so fold them back into the single
      versionByTransaction object the engine reads, and drop the scratch keys
      rather than persisting them alongside it. */
-  onAfterSave: rec => {
+  onAfterSave: (rec, isNew) => {
     if (!rec) return;
     rec.versionByTransaction = rec.versionByTransaction || {};
     VX.productTransactionTypes.forEach(t => {
       const k = "__ver_" + t.key;
       if (k in rec) { rec.versionByTransaction[t.key] = rec[k] || ""; delete rec[k]; }
     });
+    /* `owner` is a business-assigned role, typed by whoever fills the form —
+       it can legitimately name someone who never touched this screen. It
+       answers "who owns this product," not "who last changed it," so a
+       separate stamp is needed for the latter — the actual signed-in user,
+       at the actual moment of save, which nothing here recorded before. */
+    const who = vxCurrentUser(), when = new Date().toISOString().slice(0, 10);
+    if (isNew && !rec.createdBy) { rec.createdBy = who; rec.createdOn = when; }
+    rec.updatedBy = who;
+    rec.updated = when;
     localStorage.setItem("vxProductsState", JSON.stringify(VX.products));
+    vxAudit("Products", isNew ? "Created new record" : "Edited record",
+      `${rec.name} (${rec.code}) ${isNew ? "created" : "edited"} by ${who.split("@")[0]}`);
   },
 
   cols:[{k:"name",l:"Product"},{k:"code",l:"Code"},{k:"lob",l:"Line of Business"},
@@ -316,7 +327,16 @@ vxAgGrid({ el:"#grid", key:"products", name:"Product",
         const inh=lob&&lob.licenceBasis==="Admitted"?"Admitted (statutory)":"carrier default";
         return '<span class="vx-b gray" title="No product-level override — falls back to '+inh+'">inherits · '+inh+'</span>';}},
       {k:"status",l:"Status",r:r=>'<span class="vx-b '+(r.status==="Active"?"green":r.status==="Draft"?"amber":"gray")+'">'+r.status+'</span>'},
-      {k:"owner",l:"Owner"},{k:"updated",l:"Updated"}],
+      {k:"owner",l:"Owner"},{k:"updated",l:"Updated"},
+      /* Owner names who is accountable for the product and is typed on the
+         form — it can be someone who never opened this screen. This is who
+         actually saved the last change, stamped automatically in
+         onAfterSave, so "who edited this" has a real answer instead of only
+         a role name that may be stale or aspirational. */
+      {k:"updatedBy",l:"Last edited by",sort:false,r:r=>{
+        if(!r.updatedBy) return '<span style="color:var(--text-mute)" title="Seeded with the platform — never edited here">seed data</span>';
+        return '<span title="'+(r.createdBy?"Created by "+r.createdBy+(r.createdOn?" on "+r.createdOn:"")+". ":"")+'Last edited '+(r.updated||"—")+'">'+r.updatedBy.split("@")[0]+'</span>';
+      }}],
   form:[{k:"name",l:"Product Name"},{k:"code",l:"Product Code"},
       {k:"lob",l:"Line of Business",t:"select",opts:vxLobNames()},
       /* Pick the application type by name, not by typing its id — the id is
