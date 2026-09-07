@@ -264,7 +264,7 @@ function vxAgGrid(opt) {
     flds.forEach(f => {
       if (r[f.k] !== undefined && r[f.k] !== "") return;
       if (f.def !== undefined) { r[f.k] = f.def; return; }
-      if (f.t === "select") {
+      if (f.t === "select" || f.t === "tiles") {
         const first = resolve(f.opts, r)[0];
         if (first !== undefined) r[f.k] = (first && typeof first === "object") ? first.value : first;
       }
@@ -305,19 +305,54 @@ function vxAgGrid(opt) {
     }
 
     function fieldHtml(f, cur) {
+      /* A field can opt out of rendering entirely for the record being
+         edited — e.g. "New value effective from" only means something once
+         a value already exists to move away from, so it has no business
+         appearing on Add at all. `isNew` closes over formModal's own. */
+      if (f.hideIf && f.hideIf(cur, isNew)) return "";
+      if (f.t === "section") return `<div class="col-12 vx-form-section${f.first ? " first" : ""}">
+        <div class="vx-form-section-hd">${f.l}</div>
+        ${f.sub ? `<div class="vx-form-section-sub">${f.sub}</div>` : ""}
+      </div>`;
       /* `val` lets a field derive its current value instead of reading a
          stored property — needed where the relationship lives on the OTHER
          record (a version's attached formulas are stored on each formula's
          `attachments`, not on the version). */
-      const v = typeof f.val === "function" ? f.val(cur) : (cur[f.k] ?? f.def ?? "");
+      const v = typeof f.val === "function" ? f.val(cur, isNew) : (cur[f.k] ?? f.def ?? "");
       const lk = locked(f.k);
+      /* A field can be system-generated rather than merely locked — the
+         value is real and shown, just not something to hand-type. Distinct
+         from `locked`, which is about an EXISTING record's field being off
+         limits; `readonly` is about the value itself having no manual input
+         to begin with. */
+      const ro = typeof f.readonly === "function" ? f.readonly(cur, isNew) : !!f.readonly;
       const dis = lk ? " disabled" : "";
       /* Every field type renders its hint. Only select/multi/dropdown/tree
          did, so a `hint` written on a text or number field silently never
          appeared — which looked like the hint had been forgotten rather than
-         dropped by the renderer. */
-      const hint = f.hint ? `<div style="font-size:10.8px;color:var(--text-dim);margin-top:3px;line-height:1.45">${f.hint}</div>` : "";
-      const wrap = inner => `<div class="col-md-${f.w || 6}${lk ? " vx-fld-locked" : ""}" data-fw="${f.k}">${inner}${hint}</div>`;
+         dropped by the renderer. A function hint lets the same field explain
+         itself differently on Add vs. Edit. */
+      const hintText = typeof f.hint === "function" ? f.hint(cur, isNew) : f.hint;
+      const hint = hintText ? `<div style="font-size:10.8px;color:var(--text-dim);margin-top:3px;line-height:1.45">${hintText}</div>` : "";
+      const wrap = inner => `<div class="col-md-${f.w || 6}${lk ? " vx-fld-locked" : ""}${ro ? " vx-fld-auto" : ""}" data-fw="${f.k}">${inner}${hint}</div>`;
+      if (f.t === "tiles") {
+        const o = resolve(f.opts, cur);
+        return `<div class="col-md-${f.w || 12}${lk ? " vx-fld-locked" : ""}" data-fw="${f.k}">
+          <label class="d-block">${f.l}</label>
+          <div class="vx-tiles">
+            ${o.map((x, i) => {
+              const val = x && typeof x === "object" ? x.value : x;
+              const lab = x && typeof x === "object" ? x.label : x;
+              const desc = x && typeof x === "object" ? x.desc : "";
+              const icon = x && typeof x === "object" ? x.icon : "";
+              const rid = `${id}tl${f.k}${i}`;
+              return `<label class="vx-tile" for="${rid}">
+                <input type="radio" name="${id}${f.k}" id="${rid}" data-f="${f.k}" value="${val}" ${String(val) === String(v) ? "checked" : ""}${dis}>
+                <div class="vx-tile-hd">${icon ? `<i class="fa-solid ${icon}"></i>` : ""}<span>${lab}</span></div>
+                ${desc ? `<div class="vx-tile-desc">${desc}</div>` : ""}
+              </label>`; }).join("")}
+          </div>${hint}</div>`;
+      }
       if (f.t === "select") {
         const o = resolve(f.opts, cur);
         return wrap(`<label>${f.l}</label>
@@ -447,7 +482,7 @@ function vxAgGrid(opt) {
           ${hint}</div>`;
       }
       return wrap(`<label>${f.l}</label><input type="${f.t || "text"}" ${f.step ? `step="${f.step}"` : ""}
-        class="form-control form-control-sm" data-f="${f.k}" value="${v}"${dis}>`);
+        class="form-control form-control-sm" data-f="${f.k}" value="${v}"${dis}${ro ? " readonly" : ""}>`);
     }
 
     const inputs = flds.map(f => fieldHtml(f, r)).join("");
@@ -476,6 +511,11 @@ function vxAgGrid(opt) {
     async function submit(again) {
         const el = document.getElementById("vxModal");
         el.querySelectorAll("[data-f]").forEach(i => {
+          /* A `tiles` field renders one radio per option, all sharing the same
+             data-f — only the checked one should win, or the last option in
+             DOM order would silently overwrite whatever the user actually
+             picked. */
+          if (i.type === "radio") { if (i.checked) r[i.dataset.f] = i.value; return; }
           r[i.dataset.f] = i.type === "checkbox" ? i.checked : (i.type === "number" ? +i.value : i.value);
         });
         el.querySelectorAll("[data-fg]").forEach(gp => {
@@ -521,6 +561,7 @@ function vxAgGrid(opt) {
     // what the user has actually chosen, not the value the form opened with.
     const sync = () => {
       modal.querySelectorAll("[data-f]").forEach(i => {
+        if (i.type === "radio") { if (i.checked) r[i.dataset.f] = i.value; return; }
         r[i.dataset.f] = i.type === "checkbox" ? i.checked : (i.type === "number" ? +i.value : i.value);
       });
       modal.querySelectorAll("[data-fg]").forEach(gp => {
@@ -679,20 +720,28 @@ function vxAgGrid(opt) {
       modal.querySelectorAll('[data-fg] [data-fm]:not([data-grp])').forEach(cb =>
         cb.onchange = () => { updateCount(cb.dataset.fm); sync(); });
 
-      // re-render fields whose options depend on another field
+      // re-render fields whose options depend on another field — `dependsOn`
+      // may name one key or several (e.g. a system-generated code depends on
+      // both Name and Line of Business), and the source itself may be more
+      // than one element (a `tiles` field is a radio per option, all sharing
+      // one data-f), so every matching element gets its own listener.
       flds.filter(f => f.dependsOn).forEach(f => {
-        const src = modal.querySelector(`[data-f="${f.dependsOn}"]`);
-        if (!src) return;
-        src.addEventListener("change", () => {
+        const deps = Array.isArray(f.dependsOn) ? f.dependsOn : [f.dependsOn];
+        deps.forEach(depKey => {
+          modal.querySelectorAll(`[data-f="${depKey}"]`).forEach(src => src.addEventListener("change", () => {
           sync();
           const holder = modal.querySelector(`[data-fw="${f.k}"]`);
           if (!holder) return;
-          // the dependency changed, so a stale selection no longer applies
-          if (f.clearOnChange !== false) r[f.k] = Array.isArray(r[f.k]) ? [] : "";
+          // the dependency changed, so a stale selection no longer applies —
+          // skipped for a field with its own `val`, which recomputes instead
+          // of reading back a stored property.
+          if (f.clearOnChange !== false && typeof f.val !== "function") r[f.k] = Array.isArray(r[f.k]) ? [] : "";
           const tmp = document.createElement("div");
           tmp.innerHTML = fieldHtml(f, r);
-          holder.replaceWith(tmp.firstElementChild);
+          if (tmp.firstElementChild) holder.replaceWith(tmp.firstElementChild);
+          else holder.remove();
           wire();
+          }));
         });
       });
     }

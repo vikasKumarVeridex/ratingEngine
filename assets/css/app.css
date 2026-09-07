@@ -288,6 +288,36 @@ a:hover{text-decoration:underline}
 .vx-fld-locked .vx-dd,.vx-fld-locked .vx-tree,.vx-fld-locked .vx-tree-grp{pointer-events:none}
 .vx-fld-locked label::after{content:" · locked";font-size:9.5px;color:var(--text-mute);
   font-weight:500;text-transform:none;letter-spacing:0}
+/* A field the system fills in rather than one left for the user to type —
+   still fully visible (unlike a locked field, which is dimmed to signal "not
+   yours to touch here"), just marked as generated so a reader doesn't wonder
+   why it's inert. */
+.vx-fld-auto input[data-f]{background:var(--surface-2);color:var(--text-dim);cursor:default}
+.vx-fld-auto label::after{content:" · auto-generated";font-size:9.5px;color:var(--text-mute);
+  font-weight:500;text-transform:none;letter-spacing:0}
+/* Groups a long add/edit form into named sections instead of one flat wall
+   of fields — the divider IS the label, so a section with no fields worth
+   separate framing doesn't need one. */
+.vx-form-section{margin-top:4px}
+.vx-form-section-hd{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--text-mute);border-top:1px solid var(--border);padding-top:12px}
+.vx-form-section.first .vx-form-section-hd{border-top:none;padding-top:0}
+.vx-form-section-sub{font-size:11.3px;color:var(--text-dim);margin-top:3px;line-height:1.4}
+/* A `tiles` field — a single choice presented as labelled cards with their
+   own description, instead of a `<select>` whose options say nothing about
+   what picking one actually means. Backed by real (visually hidden) radio
+   inputs, so keyboard nav, focus and `:checked` all come for free. */
+.vx-tiles{display:flex;flex-wrap:wrap;gap:8px}
+.vx-tile{position:relative;flex:1 1 160px;min-width:140px;border:1px solid var(--border);
+  border-radius:9px;padding:9px 12px;cursor:pointer;transition:.12s;background:var(--surface)}
+.vx-tile:hover{border-color:var(--primary)}
+.vx-tile input[type=radio]{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+.vx-tile:has(input:checked){border-color:var(--primary);background:var(--primary-soft)}
+.vx-tile:has(input:focus-visible){outline:2px solid var(--color-focus);outline-offset:2px}
+.vx-tile-hd{display:flex;align-items:center;gap:7px;font-size:12.8px;font-weight:650;color:var(--text)}
+.vx-tile-hd i{color:var(--text-mute);font-size:12px}
+.vx-tile:has(input:checked) .vx-tile-hd i{color:var(--primary)}
+.vx-tile-desc{font-size:11px;color:var(--text-dim);margin-top:3px;line-height:1.4}
 .dashsep{width:1px;height:22px;background:var(--border);flex:none;margin:0 4px}
 .vx-stat-a{display:block;text-decoration:none;color:inherit;height:100%}
 .vx-stat-a:hover{text-decoration:none}
