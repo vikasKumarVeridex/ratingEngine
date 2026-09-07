@@ -438,24 +438,6 @@ function fmtVarValue(n, v) {
 function lobsWithCob() { return [...new Set(VX.cobParents.map(c => c.lob))]; }
 function cobsForLob(lob) { return VX.cobParents.filter(c => c.lob === lob).map(c => c.name); }
 
-/* ── A/B treatment ─────────────────────────────────────────────────
-   A = control (shipped design). B = the alternate under test.
-   Both arms share every calculation path; only presentation differs, so a
-   measured difference is attributable to the design and not to the logic. */
-const FB_VARIANT = (() => {
-  const q = new URLSearchParams(location.search).get("variant");
-  if (q === "a" || q === "b") { try { localStorage.setItem("vxFbVariant", q); } catch (e) {} return q; }
-  try { return localStorage.getItem("vxFbVariant") || "a"; } catch (e) { return "a"; }
-})();
-const isB = () => FB_VARIANT === "b";
-
-function setVariant(v) {
-  try { localStorage.setItem("vxFbVariant", v); } catch (e) {}
-  const u = new URL(location.href);
-  u.searchParams.set("variant", v);
-  location.href = u.toString();
-}
-
 let currentLob = "Commercial Trucking";
 let currentCob = "Auto Liability";
 let TOK = toTokens(DEFAULT_TOKENS["Auto Liability"], "Auto Liability");
@@ -613,7 +595,6 @@ document.getElementById("vxBody").innerHTML = `
 </div>
 
 <div id="fbBuilder" style="display:none">
-<div class="vx-abbar" id="abBar"></div>
 <div class="vx-card vx-anim" id="pickerCard">
   <div id="pickerBar"></div>
   <div id="pickerFull">
@@ -690,53 +671,7 @@ document.getElementById("vxBody").innerHTML = `
    two orderings that actually matter — what this formula already uses, and
    what a formula for this coverage usually uses — are both derivable from data
    already on hand (TOK and DEFAULT_TOKENS). */
-function palGroupOf(name) {
-  if (TOK.some(t => t.t === "var" && t.v === name)) return 0;          // in this formula
-  const dflt = DEFAULT_TOKENS[currentCob || ACCOUNT_KEY] || [];
-  if (dflt.includes(name)) return 1;                                    // expected here
-  return 2;                                                             // other available
-}
-const PAL_GROUPS = [
-  { l: "In this formula", i: "fa-check", c: "var(--good)" },
-  { l: "Expected for this coverage", i: "fa-star", c: "var(--primary)" },
-  { l: "Other available", i: "fa-ellipsis", c: "var(--text-mute)" },
-];
-
-function palVarsB(f) {
-  const q = (f || "").toLowerCase();
-  const rows = currentVars().filter(v =>
-    !q || v.n.toLowerCase().includes(q) || varLabel(v.n).toLowerCase().includes(q));
-  const buckets = [[], [], []];
-  rows.forEach(v => buckets[palGroupOf(v.n)].push(v));
-
-  document.getElementById("palVar").innerHTML = buckets.map((bucket, gi) => {
-    if (!bucket.length) return "";
-    const g = PAL_GROUPS[gi];
-    return `<div class="palgrp"><i class="fa-solid ${g.i}" style="color:${g.c}"></i>${g.l}
-        <span>${bucket.length}</span></div>` +
-      bucket.map(v => {
-        const src = varSource(v.n), km = KIND_META[src.kind] || KIND_META.constant, rng = varRange(v.n);
-        const val = rng ? `${fmtVarValue(v.n, rng.min)} – ${fmtVarValue(v.n, rng.max)}`
-                        : fmtVarValue(v.n, v.v);
-        /* Three lines at rest instead of six. Driver, raw identifier and the
-           full row list are not removed — they move to the tooltip and the
-           inspect panel, both of which already exist. */
-        return `<div class="vx-vartile slim ${gi === 0 ? "used" : ""}" draggable="true" data-t="var" data-v="${v.n}"
-            title="${v.n}${src.driver ? " · driven by " + src.driver : ""} — click to add, drag to place">
-          <div class="d-flex align-items-center gap-2">
-            <div class="vx-vartile-label" style="flex:1">${varLabel(v.n)}</div>
-            <span class="vx-b ${km.c}" style="font-size:8px;flex:none">${km.l}</span>
-            <button class="vartile-i" data-inspect="1" title="Where this value comes from"
-              onclick="event.stopPropagation();inspectVar('${v.n}')"><i class="fa-solid fa-circle-info"></i></button>
-          </div>
-          <div class="vx-vartile-meta"><b>${val}</b></div>
-        </div>`;
-      }).join("");
-  }).join("") || `<div style="font-size:12px;color:var(--text-mute);padding:8px">No variables match.</div>`;
-}
-
 function palVars(f) {
-  if (isB()) { palVarsB(f); bindDrag(); return; }
   const q = (f || "").toLowerCase();
   document.getElementById("palVar").innerHTML = currentVars()
     .filter(v => !q || v.n.toLowerCase().includes(q) || varLabel(v.n).toLowerCase().includes(q))
