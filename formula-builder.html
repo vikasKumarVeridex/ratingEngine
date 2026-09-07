@@ -619,7 +619,7 @@ document.getElementById("vxBody").innerHTML = `
       <div id="canvasContext" class="mb-2"></div>
       <div class="vx-card-head"><div><h2>Formula Canvas</h2>
         <div class="sub">Click to append, drag to place exactly. <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes.</div></div>
-        <div class="d-flex gap-2 align-items-center"><span id="fbStatus" class="me-2"></span>
+        <div class="d-flex gap-2 align-items-center">
         <button class="btn btn-outline-secondary btn-sm" onclick="undo()"><i class="fa-solid fa-rotate-left"></i></button>
         <button class="btn btn-outline-secondary btn-sm" onclick="clearCanvas()"><i class="fa-solid fa-trash"></i></button></div></div>
       ${currentCob && !ENGINE.runsFormula(currentLob, currentCob) ? `
@@ -756,32 +756,7 @@ function renderCobPicker() {
       ${c.warn ? `<span class="covwarn"><i class="fa-solid fa-triangle-exclamation me-1"></i>${c.warn}</span>` : ""}
     </div></div>`).join("");
   document.querySelectorAll("[data-cob]").forEach(el => el.onclick = () => selectCob(el.dataset.cob || null));
-  renderPickerBar();
 }
-/* B: the picker is a prerequisite, not the purpose of the screen. Once a
-   selection exists it collapses to a single line and gives the ~250px back to
-   the canvas. A is untouched. */
-let pickerOpen = false;
-function renderPickerBar() {
-  const bar = document.getElementById("pickerBar");
-  const full = document.getElementById("pickerFull");
-  if (!bar || !full) return;
-  if (!isB()) { bar.innerHTML = ""; full.style.display = ""; return; }
-
-  const n = currentVars().length;
-  const cobLabel = currentCob || "Account-Level";
-  full.style.display = pickerOpen ? "" : "none";
-  bar.innerHTML = `<div class="d-flex align-items-center gap-2 flex-wrap" style="font-size:13px">
-    <i class="fa-solid fa-diagram-project" style="color:var(--primary)"></i>
-    <b>${currentLob}</b>
-    <i class="fa-solid fa-chevron-right" style="font-size:9px;color:var(--text-mute)"></i>
-    <b>${cobLabel}</b>
-    <span class="vx-b blue">${n} variable${n === 1 ? "" : "s"}</span>
-    <button class="btn btn-outline-secondary btn-sm ms-auto" onclick="togglePicker()">
-      <i class="fa-solid fa-${pickerOpen ? "xmark" : "pen"} me-1"></i>${pickerOpen ? "Done" : "Change"}</button>
-  </div>`;
-}
-function togglePicker() { pickerOpen = !pickerOpen; renderPickerBar(); }
 
 function selectLob(lob) {
   if (lob === currentLob) return;
@@ -810,7 +785,6 @@ function selectCob(cob, skipConfirm) {
    labelled as a generic reference template rather than this tenant's own. */
 function applyCob(cob) {
   currentCob = cob;
-  if (isB()) pickerOpen = false;
   const key = cob || ACCOUNT_KEY;
   hist = [];
   TOK = [];
@@ -950,8 +924,6 @@ function drawTail() {
     </div>`;
   }).join("") : `<div style="font-size:12px;color:var(--text-mute)">No variables in formula yet.</div>`;
   tv.querySelectorAll(".TV").forEach(i => i.oninput = () => { TESTVALS[i.dataset.n] = +i.value; });
-  renderStatusB();
-  if (isB()) palVars(document.getElementById("vq") ? document.getElementById("vq").value : "");
 }
 let hist = [];
 const TESTVALS = {};   // typed test values, keyed by variable name
@@ -1339,26 +1311,7 @@ fbGrid = vxAgGrid({ el: "#fbGrid", key: "savedFormulas", name: "Formula", size: 
 });
 
 document.getElementById("vq").oninput = e => palVars(e.target.value);
-function renderAbBar() {
-  const el = document.getElementById("abBar");
-  if (!el) return;
-  const b = isB();
-  el.innerHTML = `<span class="t">Design test</span>
-    <button class="arm ${b ? "" : "on"}" onclick="setVariant('a')">A · Control</button>
-    <button class="arm ${b ? "on" : ""}" onclick="setVariant('b')">B · Alternate</button>
-    <span class="desc">${b
-      ? "Collapsed picker · grouped palette · grouped tokens · live validity"
-      : "Card picker · flat palette · flat token strip"}</span>`;
-  /* Give the canvas the column B's layout calls for. Done here rather than in
-     the markup so the two arms share one template. */
-  const pal = document.getElementById("colPalette"), can = document.getElementById("colCanvas"),
-        test = document.getElementById("colTest");
-  if (can) { can.className = b ? "col-lg-7" : "col-lg-6"; }
-  if (test) { test.className = b ? "col-lg-2" : "col-lg-3"; }
-  if (pal) { pal.className = "col-lg-3"; }
-}
-renderAbBar();
-renderLobPicker(); renderCobPicker(); renderPickerBar(); palVars(""); draw(); drawRules();
+renderLobPicker(); renderCobPicker(); palVars(""); draw(); drawRules();
 
 /* Land on the grid. ?new opens a blank builder, ?id=<n> opens that formula —
    so the two views are linkable and Back always has somewhere to return to. */
