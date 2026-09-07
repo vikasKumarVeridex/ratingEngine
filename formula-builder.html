@@ -9,13 +9,49 @@
 <link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-theme-quartz.css" rel="stylesheet">
 <link href="assets/css/app.css" rel="stylesheet">
 <style>
-.covcard{border:2px solid var(--border);border-radius:12px;padding:14px;cursor:pointer;transition:.16s;background:var(--surface);height:100%}
-.covcard:hover{border-color:var(--primary);transform:translateY(-1px);box-shadow:var(--shadow)}
-.covcard.on{border-color:var(--primary);background:var(--primary-soft)}
-.covcard i{font-size:19px;margin-bottom:7px;display:block}
-.covcard b{display:block;font-size:13px;margin-bottom:3px}
-.covcard span{font-size:11px;color:var(--text-dim);line-height:1.4;display:block}
-.covcard .covwarn{color:var(--warn);font-weight:600;margin-top:4px}
+/* Step scaffold for the LOB / coverage picker. A numbered chip per step and
+   a rule beneath the label give the two questions ("which line", "which
+   coverage") clear sequence and separation, rather than two card grids
+   sitting back to back with only spacing to imply order. */
+.fb-step{margin-bottom:20px}
+.fb-step:last-child{margin-bottom:0}
+.fb-step-hd{display:flex;align-items:baseline;gap:9px;font-size:13px;font-weight:700;
+  padding-bottom:9px;margin-bottom:12px;border-bottom:1px solid var(--border)}
+.fb-step-n{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;
+  border-radius:50%;background:var(--primary-soft);color:var(--primary);font-size:11px;font-weight:800;flex:none}
+.fb-step-sub{font-weight:400;color:var(--text-mute);font-size:11.5px;margin-inline-start:4px}
+
+/* An intrinsic grid, not a fixed Bootstrap column count. A column count
+   tuned to "7 lines of business" strands the 7th card alone on its own row
+   the moment an 8th is added, or looks sparse the moment one is removed —
+   this balances at whatever width the cards and the viewport actually allow. */
+.fb-picker-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(122px,1fr));gap:8px}
+.fb-picker-grid.cob{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+
+.covcard{position:relative;border:1.5px solid var(--border);border-radius:10px;padding:10px 11px;
+  cursor:pointer;transition:border-color .14s,background-color .14s,box-shadow .14s,transform .14s;
+  background:var(--surface);height:100%}
+.covcard:hover{border-color:var(--primary);box-shadow:var(--shadow)}
+.covcard:active{transform:scale(.98)}
+.covcard.on{border-color:var(--primary);background:var(--primary-soft);box-shadow:0 0 0 1px var(--primary) inset}
+.covcard i{font-size:16px;margin-bottom:5px;display:block}
+.covcard b{display:block;font-size:12.3px;margin-bottom:2px;line-height:1.25}
+.covcard-code{display:inline-block;font-size:9.6px;color:var(--text-mute);background:var(--surface-2);
+  border:1px solid var(--border);border-radius:5px;padding:1px 6px;font-family:ui-monospace,Consolas,monospace}
+.covcard-check{position:absolute !important;top:7px;right:7px;font-size:12px !important;margin:0 !important;
+  color:var(--primary) !important}
+/* One compact status row instead of a stacked engine-badge line plus a full
+   warning sentence — the sentence itself still shows in full once this
+   coverage is actually selected (the banner above the canvas); here it is a
+   tooltip, so a caution does not cost the same vertical space as a heading. */
+.covcard-status{display:flex;align-items:center;gap:6px;margin-top:6px;min-height:15px}
+.covcard-status .vx-b{font-size:8.5px}
+.covwarn-i{color:var(--warn) !important;font-size:11px !important;margin:0 !important;cursor:help}
+/* Compact form used only for the LOB row — same card language, smaller
+   footprint since this step never carries a description line. */
+.covcard.sm{padding:9px 8px;text-align:center}
+.covcard.sm i{font-size:15px;margin-bottom:4px}
+.covcard.sm b{font-size:11.3px;margin-bottom:0}
 .vx-vartile{border:1px solid var(--border);border-radius:8px;padding:7px 9px;margin-bottom:6px;cursor:grab;background:var(--surface);transition:.12s}
 .vx-vartile:hover{border-color:var(--primary);background:var(--primary-soft)}
 .vx-vartile:active{cursor:grabbing}
@@ -543,7 +579,15 @@ function fbBack() {
   fbShowList();
 }
 function fbNewFormula() {
-  currentFormula = null; currentCob = null; TOK = []; canvasTested = false;
+  /* Land on the first real line and its first real coverage, not
+     Account-Level — Account-Level is one option among several, and always
+     defaulting to it made every new formula start on the LEAST common case
+     rather than the most common one. Falls back to Account-Level only for a
+     line that genuinely has no coverages of its own. */
+  currentFormula = null; TOK = []; canvasTested = false;
+  currentLob = lobsWithCob()[0] || currentLob;
+  const firstCob = cobsForLob(currentLob);
+  currentCob = firstCob.length ? firstCob[0] : null;
   renderLobPicker(); renderCobPicker(); draw(); drawRules(); renderCanvasContext();
   fbShowBuilder();
 }
@@ -596,12 +640,15 @@ document.getElementById("vxBody").innerHTML = `
 
 <div id="fbBuilder" style="display:none">
 <div class="vx-card vx-anim" id="pickerCard">
-  <div id="pickerBar"></div>
-  <div id="pickerFull">
-    <h2><i class="fa-solid fa-truck-fast me-2 text-primary"></i>What are you rating?</h2>
-    <div class="sub">1. Pick a line of business, then 2. pick which of its real classes of business you're building a formula for.</div>
-    <div class="row g-2 mb-2" id="lobPicker"></div>
-    <div class="row g-2" id="cobPicker"></div>
+  <h2 class="mb-3"><i class="fa-solid fa-truck-fast me-2 text-primary"></i>What are you rating?</h2>
+  <div class="fb-step">
+    <div class="fb-step-hd"><span class="fb-step-n">1</span>Line of business</div>
+    <div class="fb-picker-grid" id="lobPicker"></div>
+  </div>
+  <div class="fb-step">
+    <div class="fb-step-hd"><span class="fb-step-n">2</span>Class of business
+      <span class="fb-step-sub">Which real coverage under <b id="lobPickerName"></b> you're building a formula for</span></div>
+    <div class="fb-picker-grid cob" id="cobPicker"></div>
   </div>
 </div>
 
@@ -730,31 +777,47 @@ function inspectVar(n) {
      { t: "Browse Rate Tables", c: "primary", fn: () => { location.href = "rate-tables.html"; } }]);
 }
 function renderLobPicker() {
+  /* A CSS grid of intrinsically-sized columns, not a fixed Bootstrap column
+     count. Fixed counts assume a specific number of lines of business —
+     with 7 today, a 6-per-row split leaves the 7th stranded alone on its own
+     row. A grid that wraps by available width balances any count without a
+     magic number tuned to today's data. */
   document.getElementById("lobPicker").innerHTML = lobsWithCob().map(lob => {
     const m = LOB_META[lob] || { icon: "fa-layer-group", color: "var(--cat-8)" };
-    return `<div class="col-6 col-lg-2"><div class="covcard ${lob === currentLob ? "on" : ""}" data-lob="${lob}" style="padding:10px">
-      <i class="fa-solid ${m.icon}" style="color:${m.color};font-size:16px;margin-bottom:4px"></i><b style="font-size:12px">${lob}</b>
-    </div></div>`;
+    const on = lob === currentLob;
+    return `<div class="covcard sm ${on ? "on" : ""}" data-lob="${lob}">
+      ${on ? '<i class="fa-solid fa-circle-check covcard-check"></i>' : ""}
+      <i class="fa-solid ${m.icon}" style="color:${m.color}"></i><b>${lob}</b>
+    </div>`;
   }).join("");
   document.querySelectorAll("[data-lob]").forEach(el => el.onclick = () => selectLob(el.dataset.lob));
+  const nameEl = document.getElementById("lobPickerName");
+  if (nameEl) nameEl.textContent = currentLob;
 }
 function renderCobPicker() {
   const m = LOB_META[currentLob] || { icon: "fa-layer-group", color: "var(--cat-8)" };
   const cobs = cobsForLob(currentLob).map(name => ({
     key: name, label: name, icon: m.icon, color: m.color,
-    desc: (VX.cobParents.find(c => c.name === name && c.lob === currentLob) || {}).sourceRef || "",
+    code: (VX.cobParents.find(c => c.name === name && c.lob === currentLob) || {}).sourceRef || "",
     warn: COB_WARN[name],
   }));
   cobs.push({ key: null, label: "Account-Level (this LOB)", icon: "fa-layer-group", color: "var(--cat-8)",
-    desc: "Not tied to one coverage — applies once across the whole policy for this line of business." });
-  document.getElementById("cobPicker").innerHTML = cobs.map(c => `
-    <div class="col-6 col-lg-3"><div class="covcard ${c.key === currentCob ? "on" : ""}" data-cob="${c.key === null ? "" : c.key}">
-      <i class="fa-solid ${c.icon}" style="color:${c.color}"></i><b>${c.label}</b><span>${c.desc}</span>
-      ${c.key === null ? "" : (ENGINE.runsFormula(currentLob, c.key)
-        ? `<span class="vx-b green" style="margin-top:6px;font-size:8.5px"><i class="fa-solid fa-bolt me-1"></i>engine runs this</span>`
-        : `<span class="vx-b gray" style="margin-top:6px;font-size:8.5px"><i class="fa-solid fa-pause me-1"></i>saved, not executed</span>`)}
-      ${c.warn ? `<span class="covwarn"><i class="fa-solid fa-triangle-exclamation me-1"></i>${c.warn}</span>` : ""}
-    </div></div>`).join("");
+    code: "", desc: "Not tied to one coverage — applies once across the whole policy for this line of business." });
+  document.getElementById("cobPicker").innerHTML = cobs.map(c => { const on = c.key === currentCob; return `
+    <div class="covcard ${on ? "on" : ""}" data-cob="${c.key === null ? "" : c.key}" ${c.desc ? `title="${c.desc}"` : ""}>
+      ${on ? '<i class="fa-solid fa-circle-check covcard-check"></i>' : ""}
+      <i class="fa-solid ${c.icon}" style="color:${c.color}"></i><b>${c.label}</b>
+      ${c.code ? `<code class="covcard-code">${c.code}</code>` : ""}
+      <div class="covcard-status">
+        ${/* The engine running a formula is the common case for a real
+              coverage — a badge affirming the normal case on every card
+              added noise without adding information. Only the EXCEPTION
+              (not yet executed) is worth a permanent visual cost now. */""}
+        ${c.key !== null && !ENGINE.runsFormula(currentLob, c.key)
+          ? `<span class="vx-b gray"><i class="fa-solid fa-pause me-1"></i>saved, not executed</span>` : ""}
+        ${c.warn ? `<i class="fa-solid fa-triangle-exclamation covwarn-i" title="${c.warn}"></i>` : ""}
+      </div>
+    </div>`; }).join("");
   document.querySelectorAll("[data-cob]").forEach(el => el.onclick = () => selectCob(el.dataset.cob || null));
 }
 
