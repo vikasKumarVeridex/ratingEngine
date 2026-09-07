@@ -277,50 +277,90 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
                       : '<span class="vx-b amber">Approximated</span>') },
   ],
   form: [
-    /* Every field carries a hint. Several had none, which on a form where
-       "Code", "Driven by" and "Reference" all take free text meant the only
-       way to learn what belonged in them was to open an existing row and
-       copy its shape. */
+    /* Grouped into named sections rather than one flat wall of fields — the
+       old list read as sixteen equally-weighted boxes with no indication
+       that four of them (Code, Type & Value, Change tracking) each depend
+       on a choice made earlier in the form. Every field still carries its
+       own hint; the section headers add the one level up — what this whole
+       cluster of fields is FOR. */
+    { k: "_secId", l: "Identity", t: "section", first: true,
+      sub: "What this factor is called, and the code it's tracked by." },
     { k: "name", l: "Factor Name",
       hint: "How this factor appears in the rating trace on a quote — write it as an underwriter would say it, e.g. \"Radius of Operation Factor\"." },
-    { k: "code", l: "Factor Code",
-      hint: "Short stable identifier, upper snake case (VEH_RADIUS). Used in exports and the change log, so it should not be renamed after quotes have used it." },
+    /* Generated, not typed. A free-text code produced the same idea spelled
+       several ways (VEH_RADIUS vs VehRadius vs veh-radius) and nothing
+       stopped two factors from colliding on the same one. Derived live from
+       Name + Line of Business, upper-snake-cased and de-duplicated against
+       every code already on file — readonly on Add, since there is nothing
+       to type here that the system doesn't already know how to build.
+       An EXISTING factor keeps its own code editable (grandfathered): `val`
+       only falls back to generating one when the field is genuinely empty,
+       so it never overwrites a real, possibly filed, code on save. */
+    { k: "code", l: "Factor Code", dependsOn: ["name", "lob"], clearOnChange: false,
+      val: r => (r && r.code) || vxGenerateFactorCode(r && r.name, r && r.lob),
+      readonly: (r, isNew) => isNew,
+      hint: (r, isNew) => isNew
+        ? "Generated automatically from the name and line of business — upper snake case, guaranteed unique. This is what exports and the change log key on, so it isn't left to free text."
+        : "Short stable identifier, upper snake case (VEH_RADIUS). Used in exports and the change log, so it should not be renamed after quotes have used it." },
+
+    { k: "_secWhere", l: "Where it applies", t: "section",
+      sub: "The line of business, coverage and scope this factor is assigned to." },
     { k: "lob", l: "Line of Business", t: "select", opts: vxLobNames(),
-      hint: "The line whose engine reads this factor. Changing it reloads the Coverage and Lookup Table lists below." },
+      hint: "The line whose engine reads this factor. Changing it reloads the Coverage and Lookup Table lists below, and regenerates the Factor Code above." },
     /* Re-renders when the LOB changes, so the list always shows that line's
        own coverage tree rather than another line's. */
     { k: "coverage", l: "Coverage (Assigned To)", t: "select", opts: r => coverageOptsFor(r), dependsOn: "lob",
       hint: "Which coverage this factor prices — drives the Factor → Assigned To chain on the detail panel. Pick Account Level for factors that price the whole policy." },
     { k: "scope", l: "Scope", t: "select", opts: ["Account", "Insured", "Risk", "Vehicle", "Coverage", "Policy", "Location", "State", "Class of Business"],
       hint: "What the factor is measured against: one Vehicle, one Driver's Risk, the whole Account, and so on. Scope is what a factor varies BY; Coverage above is what it prices." },
-    /* Computed and Judgment are no longer offered for NEW factors here — this
-       screen has no way to actually wire either kind to a real calculation or
-       an underwriter workflow, so picking one just produced an unwired,
-       silently-inert row. An existing factor already carrying one of those
-       kinds keeps it as an option on its own edit form (grandfathered, not
-       erased) rather than being forced to something it isn't. */
-    { k: "kind", l: "Type", t: "select", opts: r => {
-        const base = ["Lookup", "Constant"];
-        return (r && r.kind && !base.includes(r.kind)) ? [r.kind, ...base] : base;
+
+    { k: "_secType", l: "Type & value", t: "section",
+      sub: "How the factor's value is determined, and what it defaults to." },
+    /* Cards instead of a plain dropdown — "Lookup", "Constant" and
+       "Computed" read as three real, different mechanisms with their own
+       consequences for the fields below, not just three words in a list.
+       Judgment stays available only as a grandfathered option on a factor
+       that already carries it (an existing kind is never taken away), since
+       this screen has no underwriter workflow to actually wire one to. */
+    { k: "kind", l: "Type", t: "tiles", opts: r => {
+        const base = [
+          { value: "Lookup", label: "Lookup", icon: "fa-table-list", desc: "Selected from a rate table by an insured answer." },
+          { value: "Constant", label: "Constant", icon: "fa-lock", desc: "Same value applied on every quote." },
+          { value: "Computed", label: "Computed", icon: "fa-calculator", desc: "Derived at rating time from several answers." },
+        ];
+        return (r && r.kind && !base.some(o => o.value === r.kind))
+          ? [{ value: r.kind, label: r.kind, icon: "fa-user-pen", desc: "Kept as-is — no longer offered for new factors, since this screen has no workflow to wire it to." }, ...base]
+          : base;
       },
-      hint: "Lookup reads a row out of a rate table using the insured's answer. Constant applies the same value on every quote." },
+      hint: "Every factor added here is marked Not wired regardless of Type — the engine does not yet execute configured factors — so pick whichever actually describes how the value would be found once it is." },
     /* Which table a Lookup factor actually reads. Re-renders on LOB change so
        the list leads with that line of business's own tables. */
     { k: "tableId", l: "Lookup Table", t: "select", opts: r => tableOptsFor(r), dependsOn: "lob",
-      hint: "Which rate table this factor reads. Leave as none for Constant factors." },
+      hint: "Which rate table this factor reads. Only meaningful when Type is Lookup — leave as none for Constant or Computed." },
     { k: "driver", l: "Driven by (which insured answer)",
-      hint: "The question on the quote that selects the row — \"Radius of Operation\", \"Vehicle stated value\". Leave blank for a Constant; it is driven by nothing." },
+      hint: "The question on the quote that selects the row, or that feeds a Computed formula — \"Radius of Operation\", \"Vehicle stated value\". Leave blank for a Constant; it is driven by nothing." },
     { k: "defaultValue", l: "Default Value", t: "number", step: "0.001", def: 1,
       hint: "Applied on every quote (Constant), or as a fallback when a Lookup factor's table has no matching row. 1.000 is neutral — it changes no premium." },
+
+    { k: "_secRef", l: "Reference", t: "section",
+      sub: "Where the value came from, for later audit." },
     { k: "sourceSheet", l: "Reference",
       hint: "Where the value came from — a workbook sheet and cell, a filed manual, or the rule that set it. This is what makes a factor auditable later." },
+
+    /* Meaningless on Add — there is no prior value yet for an effective date
+       or a reason to describe a change FROM. Showing them anyway was the
+       clearest case of the old form displaying fields that did not apply to
+       what you were doing; both the section and its two fields now render
+       only when editing an existing factor's value. */
+    { k: "_secChange", l: "Change tracking", t: "section", hideIf: (r, isNew) => isNew,
+      sub: "Only used when changing an existing factor's Default Value — see the audit banner above the fields." },
     /* When a changed value starts applying. A quote whose rate lock predates
        this keeps the previous value — which is the entire point of a rate
        lock, and why the old value is closed rather than overwritten. */
-    { k: "effectiveFrom", l: "New value effective from", t: "date",
+    { k: "effectiveFrom", l: "New value effective from", t: "date", hideIf: (r, isNew) => isNew,
       def: (typeof VX !== "undefined" && VX.referenceDate) || "",
       hint: "Only used when you change the Default Value. The previous value stays in force up to the day before this date, so a quote rate-locked earlier is still priced on it." },
-    { k: "changeReason", l: "Reason for the change",
+    { k: "changeReason", l: "Reason for the change", hideIf: (r, isNew) => isNew,
       hint: "Shown to whoever approves it, and kept on the factor's value history. e.g. \"Filed rate revision 2026-09\" or \"Corrects a transcription error\"." },
   ],
   filters: [
@@ -651,6 +691,48 @@ function tableName(id) {
   return t ? t.name : (id || "\u2014");
 }
 
+/* ---------------------------------------------------------------------------
+   System-generated Factor Code.
+
+   A free-text code field let the same idea get spelled several ways
+   (VEH_RADIUS vs VehRadius vs veh-radius) and never stopped two factors from
+   colliding on the same code. Built instead from Line of Business + Factor
+   Name \u2014 upper snake case, short, and checked against every code already on
+   file so it can never collide silently.
+   --------------------------------------------------------------------------- */
+const VX_LOB_PREFIX = {
+  "Commercial Trucking": "TRK", "Commercial Property": "PR", "General Liability": "GL",
+  "Professional Liability (MPL)": "MPL", "Cyber": "CY", "Workers' Compensation": "WC",
+};
+function vxLobPrefix(lob) {
+  if (VX_LOB_PREFIX[lob]) return VX_LOB_PREFIX[lob];
+  const letters = String(lob || "").replace(/[^A-Za-z]/g, "");
+  return letters.slice(0, 3).toUpperCase() || "GEN";
+}
+/* Drops filler words ("Factor", "the", "of") that add length without adding
+   meaning \u2014 every real factor name ends in one, so keeping it would make
+   "Territory Base Loss Cost Factor" and "Territory Base Loss Cost" collide
+   on nothing useful while wasting most of the code's readable length. */
+const VX_CODE_STOPWORDS = new Set(["factor", "the", "of", "a", "an", "for", "and", "rate", "value"]);
+function slugifyFactorName(name) {
+  const words = String(name || "").toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim().split(/\s+/).filter(Boolean);
+  const kept = words.filter(w => !VX_CODE_STOPWORDS.has(w.toLowerCase()));
+  return (kept.length ? kept : words).slice(0, 3).join("_").slice(0, 24) || "FACTOR";
+}
+function vxGenerateFactorCode(name, lob) {
+  if (!name) return "";
+  const prefix = vxLobPrefix(lob), slug = slugifyFactorName(name);
+  // Skip the prefix rather than double it when the name already starts with
+  // it — "MPL Increased Limits Factor" reads as MPL_INCREASED_LIMITS, not
+  // MPL_MPL_INCREASED_LIMITS.
+  const base = slug.startsWith(prefix + "_") ? slug : `${prefix}_${slug}`;
+  const existing = new Set((VX.ratingFactors || []).map(f => f.code).filter(Boolean));
+  if (!existing.has(base)) return base;
+  let n = 2;
+  while (existing.has(`${base}_${n}`)) n++;
+  return `${base}_${n}`;
+}
+
 /* Coverage ("Assigned To") options for the chosen line of business.
 
    This was a free-text box, which is why the same idea is spelled several
@@ -694,32 +776,59 @@ function coverageOptsFor(rec) {
    grouped into one Range item with two bounds edited together, instead of
    two disconnected rows labeled with raw object keys a reader has to
    recombine themselves. */
+/* Never an editable rate value, whatever table it's on \u2014 the row's own
+   primary key. Left in, "id" showed up as its own row in the Edit values
+   list (Fleet Size Factor's raw rows carry one) with nothing to distinguish
+   it from an actual factor value, and editing it would silently corrupt the
+   table's row order rather than change anything the engine rates on. */
+const LEAF_EXCLUDE_KEYS = new Set(["id"]);
 function colLabelFor(cols, k) {
   const c = cols && cols.find(c => c.k === k);
   return c ? c.l : k;
 }
+/* Every non-numeric column the registry declares, joined \u2014 not just the
+   first match. Fleet Size Factor's rows are only distinguishable by TWO
+   columns together (Vehicle Type and Units); showing just the first left
+   twenty rows for the same vehicle type reading as identical labels. */
 function rowLabel(row, i, cols) {
   if (cols) {
-    const idCol = cols.find(c => row[c.k] != null && typeof row[c.k] !== "number");
-    if (idCol) return String(row[idCol.k]);
+    const parts = cols.filter(c => row[c.k] != null && typeof row[c.k] !== "number").map(c => String(row[c.k]));
+    if (parts.length) return parts.join(" \u00b7 ");
   }
   for (const k of ["name", "state", "code", "label", "type", "class"]) if (row[k] != null) return String(row[k]);
   return "row " + (i + 1);
+}
+/* A raw row can carry a numeric min/max (or from/to) pair the registry never
+   declared as columns at all \u2014 Fleet Size Factor stores its unit band as
+   both a text label ("Units") AND the raw min/max the label was built from.
+   Matched by key name alone so it still collapses into one Range control
+   instead of showing as two loose, unlabeled numbers. */
+function guessRangePartner(k, keys) {
+  const lk = k.toLowerCase();
+  let suffix = null, want = null;
+  if (lk.endsWith("min")) { suffix = "min"; want = "max"; }
+  else if (lk === "from") { suffix = "from"; want = "to"; }
+  else return null;
+  const prefix = lk.slice(0, lk.length - suffix.length);
+  return keys.find(x => x.toLowerCase() === prefix + want) || null;
 }
 function leafItems(node, cols) {
   const rangeIdx = cols ? new Set(detectRangePairs(cols)) : new Set();
   const out = [];
   function fromRow(row, path, ctx) {
-    const numKeys = Object.keys(row).filter(k => typeof row[k] === "number");
+    const numKeys = Object.keys(row).filter(k => typeof row[k] === "number" && !LEAF_EXCLUDE_KEYS.has(k));
     const used = new Set();
     numKeys.forEach(k => {
       if (used.has(k)) return;
       const ci = cols ? cols.findIndex(c => c.k === k) : -1;
-      if (ci >= 0 && rangeIdx.has(ci) && cols[ci + 1] && numKeys.includes(cols[ci + 1].k)) {
-        const k2 = cols[ci + 1].k;
-        used.add(k); used.add(k2);
-        out.push({ kind: "range", label: ctx ? `${ctx} \u00b7 ${rangeColLabel(cols[ci], cols[ci + 1])}` : rangeColLabel(cols[ci], cols[ci + 1]),
-          from: { path: path.concat([k]), value: row[k] }, to: { path: path.concat([k2]), value: row[k2] } });
+      const declared = (ci >= 0 && rangeIdx.has(ci) && cols[ci + 1] && numKeys.includes(cols[ci + 1].k)) ? cols[ci + 1].k : null;
+      const partnerKey = declared || guessRangePartner(k, numKeys);
+      if (partnerKey) {
+        used.add(k); used.add(partnerKey);
+        const c1 = cols && cols.find(c => c.k === k), c2 = cols && cols.find(c => c.k === partnerKey);
+        const label = (c1 && c2) ? rangeColLabel(c1, c2) : "Value Range";
+        out.push({ kind: "range", label: ctx ? `${ctx} \u00b7 ${label}` : label,
+          from: { path: path.concat([k]), value: row[k] }, to: { path: path.concat([partnerKey]), value: row[partnerKey] } });
       } else {
         used.add(k);
         out.push({ kind: "single", label: ctx ? `${ctx} \u00b7 ${colLabelFor(cols, k)}` : colLabelFor(cols, k), path: path.concat([k]), value: row[k] });
@@ -732,7 +841,7 @@ function leafItems(node, cols) {
   }
   (function walk(n, path, depth) {
     if (depth > 4 || !n || typeof n !== "object") return;
-    const numKeys = Object.keys(n).filter(k => typeof n[k] === "number");
+    const numKeys = Object.keys(n).filter(k => typeof n[k] === "number" && !LEAF_EXCLUDE_KEYS.has(k));
     if (numKeys.length) fromRow(n, path, path.join(" \u203a "));
     Object.keys(n).forEach(k => { const v = n[k]; if (v && typeof v === "object" && !Array.isArray(v)) walk(v, path.concat([k]), depth + 1); });
   })(node, [], 0);

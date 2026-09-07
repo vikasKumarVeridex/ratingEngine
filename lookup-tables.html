@@ -51,10 +51,16 @@ const rowCount = r => (r.columns && r.columns.length) ? (r.data ? r.data.length 
 
 const grid = vxAgGrid({ el:"#grid", key:"lookupTables", name:"Lookup Table",
 
+  // Same pattern as products.html/vxProductsState — an admin-defined table
+  // (and the columns on it) is real configuration, not demo data, so it must
+  // survive a refresh instead of resetting to the seed inventory.
+  onAfterSave: () => { try { localStorage.setItem("vxLookupTables", JSON.stringify(VX.lookupTables)); } catch (e) {} },
+  onAfterDelete: () => { try { localStorage.setItem("vxLookupTables", JSON.stringify(VX.lookupTables)); } catch (e) {} },
+
   cols:[{k:"name",l:"Lookup Table"},{k:"lob",l:"LOB"},{k:"keys",l:"Key Columns"},
       {k:"rows",l:"Rows",r:r=>'<b>'+vxNum(rowCount(r))+'</b>'},
       {k:"records",l:"Records",r:r=>(LOOKUP_LIVE[r.name] || (r.data && r.data.length)) ? '<span class="vx-b green">Loaded</span>' : vxWiredChip(false,"Not loaded")}],
-  form:[{k:"name",l:"Table Name"},{k:"lob",l:"LOB",t:"select",opts:vxLobNames()},{k:"keys",l:"Key Columns"},
+  form:[{k:"name",l:"Table Name"},{k:"lob",l:"LOB",t:"select",opts:vxLobNames()},
       {k:"columns",l:"Columns",t:"columns",
         hint:"Define the table's structure — rows are added afterwards from the grid, and the Rows count updates automatically as you add them."}],
   filters:[{k:"lob",l:"LOB",opts:vxLobNames()}],
@@ -98,6 +104,8 @@ function openRowModal(rec) {
   const body = `<div class="row g-3">${rec.columns.map(c => {
     if (c.type === "Boolean") return `<div class="col-md-6"><label class="d-block">${c.name}</label>
       <div class="form-check form-switch"><input class="form-check-input" type="checkbox" data-rf="${c.name}"></div></div>`;
+    if (c.type === "Range") return `<div class="col-md-6"><label>${c.name} <span style="font-weight:400;color:var(--text-mute)">(${c.min ?? "–"}–${c.max ?? "–"})</span></label>
+      <input type="number" class="form-control form-control-sm" data-rf="${c.name}"${c.min !== undefined ? ` min="${c.min}"` : ""}${c.max !== undefined ? ` max="${c.max}"` : ""}></div>`;
     const type = c.type === "Number" ? "number" : c.type === "Date" ? "date" : "text";
     return `<div class="col-md-6"><label>${c.name}</label><input type="${type}" class="form-control form-control-sm" data-rf="${c.name}"></div>`;
   }).join("")}</div>`;
@@ -121,6 +129,7 @@ function saveRow(rec, again) {
   rec.data.push(row);
   rec.rows = rec.data.length;
   API.update("lookupTables", rec.id, { data: rec.data, rows: rec.rows }).then(() => {
+    try { localStorage.setItem("vxLookupTables", JSON.stringify(VX.lookupTables)); } catch (e) {}
     vxToast("Row added", `${rec.name} now has ${rec.data.length} row${rec.data.length === 1 ? "" : "s"}`, "ok");
     vxAutoSave(); grid.reload();
     if (again) setTimeout(() => openRowModal(rec), 260);

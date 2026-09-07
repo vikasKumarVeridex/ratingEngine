@@ -264,7 +264,7 @@ function vxAgGrid(opt) {
     flds.forEach(f => {
       if (r[f.k] !== undefined && r[f.k] !== "") return;
       if (f.def !== undefined) { r[f.k] = f.def; return; }
-      if (f.t === "select") {
+      if (f.t === "select" || f.t === "tiles") {
         const first = resolve(f.opts, r)[0];
         if (first !== undefined) r[f.k] = (first && typeof first === "object") ? first.value : first;
       }
@@ -273,32 +273,86 @@ function vxAgGrid(opt) {
     /* One row of the `columns` field type below — a column name plus its
        data type. Shared between the initial render and the "Add Column"
        handler in wire(), which appends a fresh row with the same markup. */
-    const COLUMN_TYPES = ["Text", "Number", "Date", "Boolean"];
+    const COLUMN_TYPES = ["Text", "Number", "Date", "Boolean", "Range"];
     function colRowHtml(k, c) {
       c = c || { name: "", type: "Text" };
+      const isRange = c.type === "Range";
       return `<div class="d-flex gap-2 align-items-center mb-2" data-colrow="${k}">
         <input type="text" class="form-control form-control-sm" placeholder="Column name" data-colname="${k}" value="${(c.name || "").replace(/"/g, "&quot;")}">
         <select class="form-select form-select-sm" style="max-width:130px" data-colsel="${k}">
           ${COLUMN_TYPES.map(t => `<option ${t === c.type ? "selected" : ""}>${t}</option>`).join("")}
         </select>
+        <input type="number" class="form-control form-control-sm" style="max-width:90px${isRange ? "" : ";display:none"}" placeholder="Min" data-colmin="${k}" value="${c.min ?? ""}">
+        <input type="number" class="form-control form-control-sm" style="max-width:90px${isRange ? "" : ";display:none"}" placeholder="Max" data-colmax="${k}" value="${c.max ?? ""}">
         <button type="button" class="vx-icobtn" data-colrm="${k}" title="Remove column" style="width:30px;height:30px;flex:none"><i class="fa-solid fa-xmark"></i></button>
       </div>`;
     }
+    /* Reads one `columns` field group back into the {name,type[,min,max]}
+       array stored on the record. Shared by submit() and sync() so the two
+       never drift out of step on what a Range column carries. */
+    function readColumnRows(gp) {
+      return [...gp.querySelectorAll("[data-colrow]")].map(row => {
+        const type = row.querySelector("[data-colsel]").value;
+        const col = { name: row.querySelector("[data-colname]").value.trim(), type };
+        if (type === "Range") {
+          const min = row.querySelector("[data-colmin]").value;
+          const max = row.querySelector("[data-colmax]").value;
+          if (min !== "") col.min = +min;
+          if (max !== "") col.max = +max;
+        }
+        return col;
+      }).filter(c => c.name);
+    }
 
     function fieldHtml(f, cur) {
+      /* A field can opt out of rendering entirely for the record being
+         edited — e.g. "New value effective from" only means something once
+         a value already exists to move away from, so it has no business
+         appearing on Add at all. `isNew` closes over formModal's own. */
+      if (f.hideIf && f.hideIf(cur, isNew)) return "";
+      if (f.t === "section") return `<div class="col-12 vx-form-section${f.first ? " first" : ""}">
+        <div class="vx-form-section-hd">${f.l}</div>
+        ${f.sub ? `<div class="vx-form-section-sub">${f.sub}</div>` : ""}
+      </div>`;
       /* `val` lets a field derive its current value instead of reading a
          stored property — needed where the relationship lives on the OTHER
          record (a version's attached formulas are stored on each formula's
          `attachments`, not on the version). */
-      const v = typeof f.val === "function" ? f.val(cur) : (cur[f.k] ?? f.def ?? "");
+      const v = typeof f.val === "function" ? f.val(cur, isNew) : (cur[f.k] ?? f.def ?? "");
       const lk = locked(f.k);
+      /* A field can be system-generated rather than merely locked — the
+         value is real and shown, just not something to hand-type. Distinct
+         from `locked`, which is about an EXISTING record's field being off
+         limits; `readonly` is about the value itself having no manual input
+         to begin with. */
+      const ro = typeof f.readonly === "function" ? f.readonly(cur, isNew) : !!f.readonly;
       const dis = lk ? " disabled" : "";
       /* Every field type renders its hint. Only select/multi/dropdown/tree
          did, so a `hint` written on a text or number field silently never
          appeared — which looked like the hint had been forgotten rather than
-         dropped by the renderer. */
-      const hint = f.hint ? `<div style="font-size:10.8px;color:var(--text-dim);margin-top:3px;line-height:1.45">${f.hint}</div>` : "";
-      const wrap = inner => `<div class="col-md-${f.w || 6}${lk ? " vx-fld-locked" : ""}" data-fw="${f.k}">${inner}${hint}</div>`;
+         dropped by the renderer. A function hint lets the same field explain
+         itself differently on Add vs. Edit. */
+      const hintText = typeof f.hint === "function" ? f.hint(cur, isNew) : f.hint;
+      const hint = hintText ? `<div style="font-size:10.8px;color:var(--text-dim);margin-top:3px;line-height:1.45">${hintText}</div>` : "";
+      const wrap = inner => `<div class="col-md-${f.w || 6}${lk ? " vx-fld-locked" : ""}${ro ? " vx-fld-auto" : ""}" data-fw="${f.k}">${inner}${hint}</div>`;
+      if (f.t === "tiles") {
+        const o = resolve(f.opts, cur);
+        return `<div class="col-md-${f.w || 12}${lk ? " vx-fld-locked" : ""}" data-fw="${f.k}">
+          <label class="d-block">${f.l}</label>
+          <div class="vx-tiles">
+            ${o.map((x, i) => {
+              const val = x && typeof x === "object" ? x.value : x;
+              const lab = x && typeof x === "object" ? x.label : x;
+              const desc = x && typeof x === "object" ? x.desc : "";
+              const icon = x && typeof x === "object" ? x.icon : "";
+              const rid = `${id}tl${f.k}${i}`;
+              return `<label class="vx-tile" for="${rid}">
+                <input type="radio" name="${id}${f.k}" id="${rid}" data-f="${f.k}" value="${val}" ${String(val) === String(v) ? "checked" : ""}${dis}>
+                <div class="vx-tile-hd">${icon ? `<i class="fa-solid ${icon}"></i>` : ""}<span>${lab}</span></div>
+                ${desc ? `<div class="vx-tile-desc">${desc}</div>` : ""}
+              </label>`; }).join("")}
+          </div>${hint}</div>`;
+      }
       if (f.t === "select") {
         const o = resolve(f.opts, cur);
         return wrap(`<label>${f.l}</label>
@@ -428,7 +482,7 @@ function vxAgGrid(opt) {
           ${hint}</div>`;
       }
       return wrap(`<label>${f.l}</label><input type="${f.t || "text"}" ${f.step ? `step="${f.step}"` : ""}
-        class="form-control form-control-sm" data-f="${f.k}" value="${v}"${dis}>`);
+        class="form-control form-control-sm" data-f="${f.k}" value="${v}"${dis}${ro ? " readonly" : ""}>`);
     }
 
     const inputs = flds.map(f => fieldHtml(f, r)).join("");
@@ -457,14 +511,16 @@ function vxAgGrid(opt) {
     async function submit(again) {
         const el = document.getElementById("vxModal");
         el.querySelectorAll("[data-f]").forEach(i => {
+          /* A `tiles` field renders one radio per option, all sharing the same
+             data-f — only the checked one should win, or the last option in
+             DOM order would silently overwrite whatever the user actually
+             picked. */
+          if (i.type === "radio") { if (i.checked) r[i.dataset.f] = i.value; return; }
           r[i.dataset.f] = i.type === "checkbox" ? i.checked : (i.type === "number" ? +i.value : i.value);
         });
         el.querySelectorAll("[data-fg]").forEach(gp => {
           r[gp.dataset.fg] = gp.dataset.fgtype === "columns"
-            ? [...gp.querySelectorAll("[data-colrow]")].map(row => ({
-                name: row.querySelector("[data-colname]").value.trim(),
-                type: row.querySelector("[data-colsel]").value,
-              })).filter(c => c.name)
+            ? readColumnRows(gp)
             : [...gp.querySelectorAll("[data-fm]:checked")].map(c => c.value);
         });
         /* A field marked `fanOut` may hold several values on Add; each one
@@ -505,14 +561,12 @@ function vxAgGrid(opt) {
     // what the user has actually chosen, not the value the form opened with.
     const sync = () => {
       modal.querySelectorAll("[data-f]").forEach(i => {
+        if (i.type === "radio") { if (i.checked) r[i.dataset.f] = i.value; return; }
         r[i.dataset.f] = i.type === "checkbox" ? i.checked : (i.type === "number" ? +i.value : i.value);
       });
       modal.querySelectorAll("[data-fg]").forEach(gp => {
         r[gp.dataset.fg] = gp.dataset.fgtype === "columns"
-          ? [...gp.querySelectorAll("[data-colrow]")].map(row => ({
-              name: row.querySelector("[data-colname]").value.trim(),
-              type: row.querySelector("[data-colsel]").value,
-            })).filter(c => c.name)
+          ? readColumnRows(gp)
           : [...gp.querySelectorAll("[data-fm]:checked")].map(c => c.value);
       });
     };
@@ -590,6 +644,19 @@ function vxAgGrid(opt) {
             sync();
           }
         });
+        // Min/Max only make sense for a Range column — show them only once
+        // that type is picked, so every other column stays a plain two-field row.
+        modal.addEventListener("change", e => {
+          const sel = e.target.closest("[data-colsel]");
+          if (!sel) return;
+          const row = sel.closest("[data-colrow]");
+          const isRange = sel.value === "Range";
+          const min = row.querySelector("[data-colmin]");
+          const max = row.querySelector("[data-colmax]");
+          if (min) min.style.display = isRange ? "" : "none";
+          if (max) max.style.display = isRange ? "" : "none";
+          sync();
+        });
       }
 
       // select all / clear
@@ -653,20 +720,28 @@ function vxAgGrid(opt) {
       modal.querySelectorAll('[data-fg] [data-fm]:not([data-grp])').forEach(cb =>
         cb.onchange = () => { updateCount(cb.dataset.fm); sync(); });
 
-      // re-render fields whose options depend on another field
+      // re-render fields whose options depend on another field — `dependsOn`
+      // may name one key or several (e.g. a system-generated code depends on
+      // both Name and Line of Business), and the source itself may be more
+      // than one element (a `tiles` field is a radio per option, all sharing
+      // one data-f), so every matching element gets its own listener.
       flds.filter(f => f.dependsOn).forEach(f => {
-        const src = modal.querySelector(`[data-f="${f.dependsOn}"]`);
-        if (!src) return;
-        src.addEventListener("change", () => {
+        const deps = Array.isArray(f.dependsOn) ? f.dependsOn : [f.dependsOn];
+        deps.forEach(depKey => {
+          modal.querySelectorAll(`[data-f="${depKey}"]`).forEach(src => src.addEventListener("change", () => {
           sync();
           const holder = modal.querySelector(`[data-fw="${f.k}"]`);
           if (!holder) return;
-          // the dependency changed, so a stale selection no longer applies
-          if (f.clearOnChange !== false) r[f.k] = Array.isArray(r[f.k]) ? [] : "";
+          // the dependency changed, so a stale selection no longer applies —
+          // skipped for a field with its own `val`, which recomputes instead
+          // of reading back a stored property.
+          if (f.clearOnChange !== false && typeof f.val !== "function") r[f.k] = Array.isArray(r[f.k]) ? [] : "";
           const tmp = document.createElement("div");
           tmp.innerHTML = fieldHtml(f, r);
-          holder.replaceWith(tmp.firstElementChild);
+          if (tmp.firstElementChild) holder.replaceWith(tmp.firstElementChild);
+          else holder.remove();
           wire();
+          }));
         });
       });
     }
