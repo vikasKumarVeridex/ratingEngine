@@ -1483,7 +1483,14 @@
     ["BASE_LC","Territory Base Loss Cost","Commercial Trucking","Auto Liability","Lookup","Garaging State","CA_Liab_LC","truckBaseLC",()=>stat(Object.entries(VXBASE.truckBaseLC).filter(([k])=>k!=="DEFAULT").map(([,v])=>({v})),"v"),null,true],
     ["COV_ILF","Increased Limits Factor (ILF)","Commercial Trucking","Auto Liability","Lookup","Liability Limit","IncreasedLimitsFactors","truckILF",()=>stat(Object.values(VXBASE.truckILF).flatMap(t=>Object.values(t).map(v=>({v}))),"v"),1.00,true],
     ["COV_LIABDED","Liability Deductible Factor","Commercial Trucking","Auto Liability","Lookup","Liability Deductible","CA_Liab_Deductible","truckLiabDed",()=>stat(VXBASE.truckLiabDed,"factor"),0,true],
-    ["GLB_LCM","Loss Cost Multiplier (LCM)","Commercial Trucking","Auto Liability","Constant",null,"ProgramDeviations",null,null,null,true],
+    /* Default was null — this factor showed "none" in the registry even
+       though the real value has been on file since D.programParams was
+       built (ProgramDeviations!B2, cross-checked 2026-08-18 against
+       ams-service's udf_iso_new_rater_liab_calculations_0564.sql, which
+       hardcodes the same 1.67). Read from that one source rather than
+       retyped, so the two can't drift apart. */
+    ["GLB_LCM","Loss Cost Multiplier (LCM)","Commercial Trucking","Auto Liability","Constant",null,"ProgramDeviations",null,null,
+      D.programParams.find(p => p.param === "Liability LCM").value,true],
     ["VEH_PRIMARY","Primary Class Factor","Commercial Trucking","Auto Liability","Lookup","Vehicle Class","CA_PrimaryFactors","truckPrimary",()=>stat(VXBASE.truckPrimary,"liability"),null,true],
     ["VEH_SECONDARY","Secondary Class Factor","Commercial Trucking","Auto Liability","Lookup","Secondary Class (per unit)","CA_SecondaryFactors",null,null,null,true],
     ["VEH_FLEET","Fleet Size Factor","Commercial Trucking","Auto Liability","Lookup","Rated power units","CA_Fleet_TTT","truckFleetSize",()=>stat(VXBASE.truckFleetSize,"factor"),1.00,true],
@@ -2142,6 +2149,52 @@
     }).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   })();
   D.factorChangeLog = loadPersisted("vxFactorChangeLog", D.factorChangeLog);
+
+  /* ---------------- Factor change requests (approval + effective dating) ---
+     A rating factor is not a setting: changing one changes what an insured
+     is charged. Two rules follow, and neither was modelled.
+
+     1. APPROVAL. A change is REQUESTED, then approved or rejected by someone
+        else. Until it is approved it does not take effect, so the registry
+        always shows what is actually in force rather than the last thing
+        anyone typed.
+     2. EFFECTIVE DATING. An approved change takes effect FROM A DATE. A
+        quote whose rate lock predates that date must still be priced on the
+        old value — that is the whole point of a rate lock. So a change adds
+        a new value with its own effective window and closes the previous
+        one, instead of overwriting it. `valueHistory` below is that record.
+
+     HONEST SCOPE: engine.js rates off its own filed tables, not off this
+     registry (see the "Not wired" disclosure on the Rating Factors screen).
+     So an approved change here governs the registry, the audit trail and
+     what this platform reports was in force on a date — it does not by
+     itself move a premium. Said plainly rather than implied otherwise. */
+  D.factorChangeRequests = loadPersisted("vxFactorChangeRequests", []);
+
+  /* Seed each factor with the value it currently carries as the first entry
+     in its history, so "what was in force on <date>" is answerable from day
+     one rather than only after the first edit. */
+  D.ratingFactors.forEach(f => {
+    if (!f.valueHistory) {
+      f.valueHistory = f.defaultValue != null
+        ? [{ value: f.defaultValue, effectiveStart: f.effectiveDate || "2026-03-01", effectiveEnd: "",
+             approvedBy: null, note: "Initial value on file" }]
+        : [];
+    }
+  });
+
+  /* The value in force on a date — the same shape as D.tableAsOf, so a rate
+     lock resolves a factor the same way it resolves a rate table. Returns
+     null when the factor had no value yet on that date, rather than
+     falling back to today's and pretending it applied. */
+  D.factorValueAsOf = (factor, asOf) => {
+    const h = (factor && factor.valueHistory) || [];
+    if (!h.length) return null;
+    if (!asOf) return factor.defaultValue;
+    const row = h.find(v => (!v.effectiveStart || v.effectiveStart <= asOf)
+                         && (!v.effectiveEnd || v.effectiveEnd >= asOf));
+    return row ? row.value : null;
+  };
 
   /* ---------------- System settings ---------------- */
   D.settings = [

@@ -51,9 +51,12 @@ const NAV = [
     { h: "territories.html", i: "fa-map-location-dot", l: "Territories" },
     { h: "zipcodes.html", i: "fa-location-dot", l: "ZIP Codes" },
   ]},
+  /* Tenants and Tenant Setup are no longer in the sidebar. Switching tenant
+     is a top-bar action (the tenant picker), and its "Manage tenants" item
+     still reaches tenants.html — so the flow stays available without two
+     nav rows for something an admin touches rarely. The unconfigured-tenant
+     banner also still links to tenant-setup.html. */
   { g: "Administration", items: [
-    { h: "tenants.html", i: "fa-building", l: "Tenants" },
-    { h: "tenant-setup.html", i: "fa-list-check", l: "Tenant Setup" },
     { h: "users.html", i: "fa-users", l: "Users" },
     { h: "roles.html", i: "fa-user-shield", l: "Roles" },
     { h: "audit.html", i: "fa-clock-rotate-left", l: "Audit History" },
@@ -838,6 +841,110 @@ function vxLogFactorChange(before, after, reason) {
             : (changed ? `${name} (${after.code}): ${from ?? "none"} → ${to ?? "none"}`
                        : `${name} (${after.code}) edited — no change to its value`),
     { version: (after && after.attachments && after.attachments[0] && after.attachments[0].ratingVersion) || "—" });
+}
+
+/* ---------- Factor change approval ----------
+   A factor change is requested, then approved by someone else, and takes
+   effect from a date rather than the instant it is saved. See the block on
+   D.factorChangeRequests in data.js for why, and for the honest note on what
+   an approved change does and does not move. */
+function vxSaveFactorRequests() {
+  try { localStorage.setItem("vxFactorChangeRequests", JSON.stringify(VX.factorChangeRequests)); } catch (e) {}
+}
+function vxPendingFactorRequest(code) {
+  return (VX.factorChangeRequests || []).find(r => r.factorCode === code && r.status === "Pending") || null;
+}
+/* Raise a change for approval. Returns the request; does NOT apply it. */
+function vxRequestFactorChange(factor, newValue, effectiveFrom, reason) {
+  VX.factorChangeRequests = VX.factorChangeRequests || [];
+  const rec = {
+    id: Math.max(0, ...VX.factorChangeRequests.map(r => +r.id || 0)) + 1,
+    factorCode: factor.code, factorName: factor.name, lob: factor.lob,
+    from: factor.defaultValue == null ? null : +factor.defaultValue,
+    to: +newValue,
+    effectiveFrom: effectiveFrom || (VX.referenceDate || new Date().toISOString().slice(0, 10)),
+    reason: reason || "",
+    requestedBy: vxCurrentUser(), requestedOn: vxNowStamp(),
+    status: "Pending", decidedBy: null, decidedOn: null,
+  };
+  VX.factorChangeRequests.unshift(rec);
+  vxSaveFactorRequests();
+  vxAudit("Rating Factors", "Change requested",
+    `${factor.name} (${factor.code}): ${rec.from ?? "none"} → ${rec.to}, effective ${rec.effectiveFrom} — awaiting approval`);
+  return rec;
+}
+/* The effective date a REQUEST proposes is picked at request time, defaulting
+   to that day. A request can sit pending for a while, so by the time someone
+   actually approves it that date may already be in the past — approving it
+   unchanged would open a value window that starts before it was ever signed
+   off. The approver is the one who knows when it is really going live, so
+   this hands them a sensible default instead of the stale one: whichever is
+   LATER, the date originally requested or today. A genuine future filing
+   (requested date still ahead of today) is left alone. */
+function vxSuggestedApprovalDate(req) {
+  const today = VX.referenceDate || new Date().toISOString().slice(0, 10);
+  return req.effectiveFrom > today ? req.effectiveFrom : today;
+}
+
+/* Approve: close the value in force and open the new one from its effective
+   date. The old value is kept, never overwritten, so a quote rate-locked
+   before the change can still be shown the value it was priced on.
+   `effectiveFrom`, if given, overrides the date the request proposed — see
+   vxSuggestedApprovalDate above for why the approver gets the final say. */
+function vxApproveFactorChange(reqId, note, effectiveFrom) {
+  const req = (VX.factorChangeRequests || []).find(r => r.id === reqId);
+  if (!req || req.status !== "Pending") return null;
+  const f = (VX.ratingFactors || []).find(x => x.code === req.factorCode);
+  if (!f) return null;
+
+  /* Self-approval is the one thing an approval step exists to prevent. */
+  if (req.requestedBy === vxCurrentUser()) {
+    vxToast("Can't approve your own change", "A second person has to sign this off — that is what the step is for.", "err");
+    return null;
+  }
+
+  /* Pure calendar arithmetic — no Date object. Date("YYYY-MM-DD") parses as
+     UTC midnight, but setDate()/toISOString() round-trip through the LOCAL
+     timezone, so west of UTC this silently landed a day early (closed the
+     prior value on the 30th for a change effective the 1st). A rate-lock
+     boundary is exactly where an off-by-one is expensive, so it's computed
+     in local calendar terms instead of through a timezone conversion. */
+  const dayBefore = d => {
+    const [y, m, day] = d.split("-").map(Number);
+    const dim = [31, (y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0)) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let yy = y, mm = m, dd = day - 1;
+    if (dd < 1) { mm -= 1; if (mm < 1) { mm = 12; yy -= 1; } dd = dim[mm - 1]; }
+    return `${yy}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
+  };
+  const goLive = effectiveFrom || req.effectiveFrom;
+  f.valueHistory = f.valueHistory || [];
+  f.valueHistory.filter(v => !v.effectiveEnd).forEach(v => { v.effectiveEnd = dayBefore(goLive); });
+  f.valueHistory.push({ value: req.to, effectiveStart: goLive, effectiveEnd: "",
+    approvedBy: vxCurrentUser(), requestedBy: req.requestedBy, note: req.reason || "" });
+  f.defaultValue = req.to;
+  f.updatedBy = req.requestedBy;
+  f.updatedOn = req.requestedOn;
+
+  req.status = "Approved"; req.decidedBy = vxCurrentUser(); req.decidedOn = vxNowStamp(); req.decisionNote = note || "";
+  req.effectiveFromRequested = req.effectiveFrom;   // what was asked for, kept for the record
+  req.effectiveFrom = goLive;                        // what actually went live
+  vxSaveFactorRequests();
+  try { localStorage.setItem("vxCustomFactors", JSON.stringify(VX.customFactors || [])); } catch (e) {}
+  vxAudit("Rating Factors", "Change approved",
+    `${req.factorName} (${req.factorCode}): ${req.from ?? "none"} → ${req.to}, in force from ${goLive}`
+    + (goLive !== req.effectiveFromRequested ? ` (requested ${req.effectiveFromRequested})` : "")
+    + ` — requested by ${req.requestedBy}`);
+  vxLogFactorChange({ ...f, defaultValue: req.from }, f, req.reason || "Approved change request");
+  return req;
+}
+function vxRejectFactorChange(reqId, note) {
+  const req = (VX.factorChangeRequests || []).find(r => r.id === reqId);
+  if (!req || req.status !== "Pending") return null;
+  req.status = "Rejected"; req.decidedBy = vxCurrentUser(); req.decidedOn = vxNowStamp(); req.decisionNote = note || "";
+  vxSaveFactorRequests();
+  vxAudit("Rating Factors", "Change rejected",
+    `${req.factorName} (${req.factorCode}): proposed ${req.from ?? "none"} → ${req.to} was rejected${note ? " — " + note : ""}`);
+  return req;
 }
 
 function vxAutoSave() {

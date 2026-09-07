@@ -263,7 +263,12 @@ function vxAgGrid(opt) {
       const v = typeof f.val === "function" ? f.val(cur) : (cur[f.k] ?? f.def ?? "");
       const lk = locked(f.k);
       const dis = lk ? " disabled" : "";
-      const wrap = inner => `<div class="col-md-${f.w || 6}${lk ? " vx-fld-locked" : ""}" data-fw="${f.k}">${inner}</div>`;
+      /* Every field type renders its hint. Only select/multi/dropdown/tree
+         did, so a `hint` written on a text or number field silently never
+         appeared — which looked like the hint had been forgotten rather than
+         dropped by the renderer. */
+      const hint = f.hint ? `<div style="font-size:10.8px;color:var(--text-dim);margin-top:3px;line-height:1.45">${f.hint}</div>` : "";
+      const wrap = inner => `<div class="col-md-${f.w || 6}${lk ? " vx-fld-locked" : ""}" data-fw="${f.k}">${inner}${hint}</div>`;
       if (f.t === "select") {
         const o = resolve(f.opts, cur);
         return wrap(`<label>${f.l}</label>
@@ -271,7 +276,7 @@ function vxAgGrid(opt) {
             ${o.map(x => { const val = x && typeof x === "object" ? x.value : x;
                            const lab = x && typeof x === "object" ? x.label : x;
                            return `<option value="${val}" ${val == v ? "selected" : ""}>${lab}</option>`; }).join("")}
-          </select>${f.hint ? `<div style="font-size:10.8px;color:var(--text-dim);margin-top:3px">${f.hint}</div>` : ""}`);
+          </select>`);
       }
       if (f.t === "check") return wrap(`<label class="d-block">${f.l}</label>
         <div class="form-check form-switch"><input class="form-check-input" type="checkbox" data-f="${f.k}" ${v ? "checked" : ""}${dis}></div>`);
@@ -377,19 +382,35 @@ function vxAgGrid(opt) {
           </div>${f.hint ? `<div style="font-size:10.8px;color:var(--text-dim);margin-top:3px">${f.hint}</div>` : ""}</div>`;
       }
       if (f.t === "textarea") return `<div class="col-md-12${lk ? " vx-fld-locked" : ""}" data-fw="${f.k}"><label>${f.l}</label>
-        <textarea class="form-control form-control-sm" rows="2" data-f="${f.k}">${v}</textarea></div>`;
+        <textarea class="form-control form-control-sm" rows="2" data-f="${f.k}">${v}</textarea>${hint}</div>`;
       return wrap(`<label>${f.l}</label><input type="${f.t || "text"}" ${f.step ? `step="${f.step}"` : ""}
         class="form-control form-control-sm" data-f="${f.k}" value="${v}"${dis}>`);
     }
 
     const inputs = flds.map(f => fieldHtml(f, r)).join("");
 
-    vxModal(`${isNew ? "Add" : "Edit"} ${name}`,
-      `<div class="row g-3">${inputs}</div>
+    /* A caller can name the dialog after the RECORD and put a header block
+       above the fields. The generic "Edit Rating Factor" title told you which
+       screen you were on but not which of 50-odd rows you had opened, which
+       matters most on the one action that changes what gets charged. */
+    const titleText = opt.formTitle ? opt.formTitle(rec, isNew) : `${isNew ? "Add" : "Edit"} ${name}`;
+    const headerHtml = opt.formHeader ? (opt.formHeader(rec, isNew) || "") : "";
+
+    vxModal(titleText,
+      `${headerHtml}<div class="row g-3">${inputs}</div>
        <div class="vx-ai mt-3"><span class="tag"><i class="fa-solid fa-wand-magic-sparkles"></i>AI Validation</span>
        No conflicting effective-date ranges detected. Factor values fall within the expected statistical range for this ${name.toLowerCase()} type.
        ${isNew ? "This will be created in the current draft version." : "Changes create a new revision; the prior value stays queryable for in-force policies."}</div>`,
-      [{ t: "Cancel", c: "secondary" }, { t: `Save ${name}`, c: "primary", fn: async () => {
+      /* `Save & Add Another` keeps the dialog open and reopens it empty, so
+         entering a run of records is one continuous action instead of
+         re-clicking Add between each. Offered on Add only — there is no
+         "another" when editing one specific row — and only where the caller
+         asks for it, since it makes no sense for one-off records. */
+      [{ t: "Cancel", c: "secondary" },
+       ...(isNew && opt.addAnother ? [{ t: "Save & Add Another", c: "secondary", fn: () => submit(true) }] : []),
+       { t: isNew ? `Save ${name}` : `Save ${name}`, c: "primary", fn: () => submit(false) }]);
+
+    async function submit(again) {
         const el = document.getElementById("vxModal");
         el.querySelectorAll("[data-f]").forEach(i => {
           r[i.dataset.f] = i.type === "checkbox" ? i.checked : (i.type === "number" ? +i.value : i.value);
@@ -409,6 +430,7 @@ function vxAgGrid(opt) {
           if (opt.onAfterSave) await opt.onAfterSave(last && last.data, true);
           vxToast(`${values.length} ${name.toLowerCase()}s created`, `One per ${fan.l.toLowerCase()}: ${values.join(", ")}`, "ok");
           vxAutoSave(); reload();
+          if (again) setTimeout(() => formModal(null), 260);
           return;
         }
         const fanSingle = (opt.form || []).find(x => x.fanOut && Array.isArray(r[x.k]));
@@ -421,7 +443,10 @@ function vxAgGrid(opt) {
         if (opt.onAfterSave) await opt.onAfterSave(res.data || r, isNew);
         vxToast(`${name} ${isNew ? "created" : "updated"}`, r.name || r.code || "Configuration saved", "ok");
         vxAutoSave(); reload();
-      }}]);
+        /* Reopen a blank form for the next one. Deferred so this dialog has
+           finished closing before the next opens. */
+        if (again) setTimeout(() => formModal(null), 260);
+    }
 
     /* ---- form interactivity ---- */
     const modal = document.getElementById("vxModal");
@@ -689,5 +714,9 @@ function vxAgGrid(opt) {
   if (st.q) gridApi.setGridOption("quickFilterText", st.q);
 
   reload();
-  return { reload, state: st };
+  /* formModal exposed so a caller can open the Add/Edit form from outside
+     the grid's own row actions — e.g. an "Edit" button on a detail panel
+     opened via a custom rowAction, which otherwise has no way back into the
+     grid's real edit form. */
+  return { reload, state: st, formModal, edit: rec => formModal(rec) };
 }

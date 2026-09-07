@@ -273,6 +273,30 @@ const ENGINE = (() => {
     // the rated unit count is the sum of quantities, not the row count.
     const units = vehicles.reduce((s, v) => s + Math.max(1, +v.units || 1), 0);
 
+    /* POWER units are a different count from rated units, and two factors
+       need the power-unit count specifically:
+
+         - the driver chain assigns one driver per unit and rates any unit
+           with no driver on file at the "unassigned" factor (1.85). A
+           trailer does not need a driver, so counting trailers here invented
+           a driver shortage: scheduling one trailer alongside one tractor
+           pushed the whole fleet's Driver Class Factor from 0.85 to 1.35 and
+           raised the TRACTOR's own liability premium by ~60%.
+         - the fleet size band is a count of rated power units. Trailers have
+           their own classes and their own fleet curve, so including them
+           moved every power unit into a larger band.
+
+       A row is a trailer when its class is one (category "Trailer" in the
+       primary-class table) or when it is being resolved as one. Guarded to
+       at least 1 so a trailer-only schedule cannot divide by zero. */
+    const isTrailerRow = v => {
+      if (v.sizeClass === "Trailer") return true;
+      const p = v.primaryClass ? VX.truckPrimary.find(x => x.code === v.primaryClass) : null;
+      return !!p && p.category === "Trailer";
+    };
+    const trailerUnits = vehicles.reduce((s, v) => s + (isTrailerRow(v) ? Math.max(1, +v.units || 1) : 0), 0);
+    const powerUnits = Math.max(1, units - trailerUnits);
+
     // Radius values mirror the real ams-ui radiusOfOperationsFormGroup options
     // (local_intermediate / 48_states / 12_western) mapped to rate-table bands.
     /* All five filed radius rows are now selectable. Two of them — Local-200
@@ -350,11 +374,11 @@ const ENGINE = (() => {
       return { ...d, points: pts, classFactor: real ?? c.factor, factorSource: real != null ? "DriverClassFctr" : "class band",
         qualified: +d.cdlYears >= 3 ? 1 : 0 };
     }).sort((a, b) => a.classFactor - b.classFactor); // best (lowest factor) first, mirrors AK9 rank
-    const topN = rated.slice(0, units);
-    const unassignedSlots = Math.max(0, units - rated.length);
+    const topN = rated.slice(0, powerUnits);
+    const unassignedSlots = Math.max(0, powerUnits - rated.length);
     const UNASSIGNED_DRIVER_FACTOR = 1.85; // no on-file driver for that unit — rate as the worst class, same intent as real "UnassignedDrvr"
     const driverClassFctr = topN.length
-      ? +(((topN.reduce((s, d) => s + d.classFactor, 0) + unassignedSlots * UNASSIGNED_DRIVER_FACTOR) / units).toFixed(3))
+      ? +(((topN.reduce((s, d) => s + d.classFactor, 0) + unassignedSlots * UNASSIGNED_DRIVER_FACTOR) / powerUnits).toFixed(3))
       : UNASSIGNED_DRIVER_FACTOR;
     const cdlQualifiedFrac = topN.length ? topN.filter(d => d.qualified).length / topN.length : 0;
     const CDL_MAX_POL_DISC = 0.10; // named range CDL_MaxPolDisc
@@ -612,7 +636,7 @@ const ENGINE = (() => {
         : null;
       const fleetRow = fleetPPTRow
         ? { factor: fleetPPTRow[1], label: fleetPPTRow[0], vehicleType: "Private Passenger Types" }
-        : find(fleetTable, f => f.vehicleType === prim.fleetType && units >= f.min && units <= f.max, { factor: 1 });
+        : find(fleetTable, f => f.vehicleType === prim.fleetType && powerUnits >= f.min && powerUnits <= f.max, { factor: 1 });
       /* OCN bands on the AUTO LIABILITY value, which is not the same figure as
          the stated value used for physical damage. A production payload carried
          stated_value 500,000 and al_value 106,586: banding on the stated value
@@ -674,9 +698,17 @@ const ENGINE = (() => {
         CDLExpDiscFactor: cdlExpDiscFctr, DriverClassFactor: driverClassFctr, AccountFactor: pdAcct,
       }, fullChainDefault, v.desc || ("Unit " + v.n));
       const floorRate = minRate * vApdDed.factor * apdStateFactor;
-      const a = vCovApd ? Math.round((+v.value || 0) * Math.max(apdR.value, floorRate)) * qty : 0;
+      /* Rate the attached trailer's value too. It was already counted in
+         TIV — so the policy covered it — but the premium was computed on the
+         power unit's value alone, while TrailerPhysDamFactor (0.90 for a dry
+         van) DISCOUNTED that premium. Attaching a $35,000 trailer therefore
+         made physical damage cheaper: $10,348 -> $9,730 on the sample quote,
+         with the trailer insured for nothing. The basis now matches what is
+         actually covered, which is the same figure TIV reports. */
+      const apdBasis = (+v.value || 0) + (trl.type.startsWith("None") ? 0 : (+v.trailerValue || 0));
+      const a = vCovApd ? Math.round(apdBasis * Math.max(apdR.value, floorRate)) * qty : 0;
 
-      const tiv = ((+v.value || 0) + (trl.type.startsWith("None") ? 0 : (+v.trailerValue || 0))) * qty;
+      const tiv = apdBasis * qty;
       return { ...v, vAge, qty, primDesc: prim.desc, primFactor: prim.liability,
         /* The RESOLVED class, not whatever the row arrived with — otherwise a
            unit rated by resolution reports a blank class in the trace. */
@@ -851,9 +883,10 @@ const ENGINE = (() => {
             driver: "Loss history (3yr claims & incurred)", input: `${priorClaims} claim${priorClaims === 1 ? "" : "s"} > $500, $${priorIncurred.toLocaleString("en-US")} incurred`,
             table: "Computed — ExperienceRatingMod_ALT1!W7", matched: `credibility-weighted, ${units} units × ${expMonths} mo`,
             base: 1.00, note: "Applied to the summed coverage premium, not per vehicle. Credit capped at 10%; a bad history can debit without limit." }),
-          trace({ label: "Rated Power Units", value: units, kind: "num",
-            driver: "Vehicle Schedule", input: `${units} unit${units === 1 ? "" : "s"}`, matched: "count of vehicles on the schedule",
-            note: "Each unit is rated separately and then summed — this is the multiplier on the whole chain above." }),
+          trace({ label: "Rated Power Units", value: powerUnits, kind: "num",
+            driver: "Vehicle Schedule", input: `${units} rated unit${units === 1 ? "" : "s"}${trailerUnits ? `, ${trailerUnits} of them trailer${trailerUnits === 1 ? "" : "s"}` : ""}`,
+            matched: `${powerUnits} power unit${powerUnits === 1 ? "" : "s"}`,
+            note: "This label means power units specifically: it is what the fleet-size band and the one-driver-per-unit assignment count. Trailers are rated units but need no driver, so they are excluded here." }),
         ]});
     }
     if (cob.includes("Physical Damage")) {

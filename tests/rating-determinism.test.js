@@ -286,8 +286,66 @@ console.log("\n7b. Trucking: only the real filed formula remains");
   check("every factor group on the result belongs to the filed formula",
     (base.groups || []).every(g => !/^Model [AB]/.test(g.name)),
     (base.groups || []).map(g => g.name).join(", "));
-  check("the real formula still rates unchanged",
-    base.finalPremium === 9347, `got ${base.finalPremium}`);
+  /* Was 9,347 until the trailer/power-unit corrections: the sample fleet
+     carries a $35,000 trailer that TIV counted as covered but the premium
+     never rated, while TrailerPhysDamFactor discounted the power unit for
+     having it. Rating what is actually covered raised this deliberately. */
+  check("the real formula rates to its baseline",
+    base.finalPremium === 10717, `got ${base.finalPremium}`);
+}
+
+/* 7ba. A trailer is a rated unit but not a POWER unit, and an attached
+   trailer's value is covered so it has to be rated. Both were wrong: a
+   trailer created a phantom "unassigned driver" slot at 1.85x that inflated
+   every vehicle's premium, and an attached trailer made physical damage
+   CHEAPER than no trailer at all. */
+console.log("\n7ba. Trailers: rated, but not counted as power units");
+{
+  const rate = veh => {
+    sb.__trInput = Object.assign({}, CASES.TRUCK, { cob: ["Auto Liability", "Physical Damage"], vehicles: veh });
+    return vm.runInContext(`ENGINE.rate("TRUCK", __trInput)`, sb);
+  };
+  const tractor = withTrailer => ({ n: 1, desc: "Tractor", primaryClass: "321", year: 2022, value: 145000, miles: 65000,
+    trailer: withTrailer ? "Dry Van / Box — Single" : "None — Power Unit Only", trailerValue: withTrailer ? 35000 : 0 });
+  const trailerRow = { n: 2, desc: "Trailer", primaryClass: "672", year: 2021, value: 35000, miles: 65000,
+    trailer: "None — Power Unit Only", trailerValue: 0 };
+  const powerUnitsOf = r => r.groups[0].factors.find(f => f.label === "Rated Power Units").value;
+
+  const alone = rate([tractor(false)]);
+  const attached = rate([tractor(true)]);
+  const ownRow = rate([tractor(false), trailerRow]);
+
+  check("attaching a trailer no longer makes the policy cheaper",
+    attached.coveragePremium > alone.coveragePremium,
+    `${alone.coveragePremium} -> ${attached.coveragePremium}`);
+  check("an attached trailer's value is rated, not just insured",
+    attached.perVehicle[0].tiv === 180000 && attached.perVehicle[0].apd > alone.perVehicle[0].apd,
+    `tiv=${attached.perVehicle[0].tiv} apd ${alone.perVehicle[0].apd} -> ${attached.perVehicle[0].apd}`);
+
+  check("a trailer scheduled as its own row is a rated unit",
+    ownRow.units === 2, `units=${ownRow.units}`);
+  check("but it is NOT counted as a power unit",
+    powerUnitsOf(ownRow) === 1, `power units=${powerUnitsOf(ownRow)}`);
+  check("so it creates no phantom unassigned-driver slot",
+    ownRow.driverClassFctr === alone.driverClassFctr,
+    `${alone.driverClassFctr} -> ${ownRow.driverClassFctr}`);
+  check("and it does not move the tractor's own liability premium",
+    ownRow.perVehicle[0].liab === alone.perVehicle[0].liab,
+    `${alone.perVehicle[0].liab} -> ${ownRow.perVehicle[0].liab}`);
+  check("and it does not push the tractor into a bigger fleet-size band",
+    ownRow.perVehicle[0].fleetFactor === alone.perVehicle[0].fleetFactor,
+    `${alone.perVehicle[0].fleetFactor} -> ${ownRow.perVehicle[0].fleetFactor}`);
+  check("the trailer itself still earns its own premium",
+    ownRow.perVehicle[1].liab > 0 && ownRow.perVehicle[1].apd > 0,
+    `liab=${ownRow.perVehicle[1].liab} apd=${ownRow.perVehicle[1].apd}`);
+
+  /* Two power units DO legitimately create a driver shortage with one driver. */
+  const twoTractors = rate([tractor(false), { ...tractor(false), n: 2, desc: "Tractor 2" }]);
+  check("two POWER units with one driver still raise the driver factor, as they should",
+    twoTractors.driverClassFctr > alone.driverClassFctr,
+    `${alone.driverClassFctr} -> ${twoTractors.driverClassFctr}`);
+  check("a trailer-only schedule cannot divide by zero power units",
+    rate([trailerRow]).finalPremium > 0);
 }
 
 /* 7bb. Every formula application is recorded, so "what calculation was

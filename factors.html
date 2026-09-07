@@ -61,6 +61,7 @@ document.getElementById("vxBody").innerHTML = `
   </div>
 
   <div id="ctxBar"></div>
+  <div id="approvals"></div>
   <div class="vx-card vx-anim"><div id="grid"></div></div>`;
 
 function fmtRange(r) {
@@ -87,10 +88,146 @@ function valuesLabel(r) {
   return '<span style="color:var(--text-mute)">—</span>';
 }
 
+/* ---------- Pending factor changes ----------
+   A requested change sits here until someone else approves it. Rendered
+   above the grid because it is a queue, not a report: it exists to be
+   cleared, and burying it would let a change wait unnoticed while the
+   registry quietly still showed the old value. */
+function renderApprovals() {
+  const host = document.getElementById("approvals");
+  if (!host) return;
+  const pending = (VX.factorChangeRequests || []).filter(r => r.status === "Pending");
+  const recent = (VX.factorChangeRequests || []).filter(r => r.status !== "Pending").slice(0, 3);
+  if (!pending.length && !recent.length) { host.innerHTML = ""; return; }
+
+  const me = vxCurrentUser();
+  const row = r => {
+    const mine = r.requestedBy === me;
+    return `<tr>
+      <td><b>${r.factorName}</b> <code style="font-size:10.5px">${r.factorCode}</code>
+        <div style="font-size:10.6px;color:var(--text-mute)">${r.lob}</div></td>
+      <td style="font-variant-numeric:tabular-nums">${r.from ?? "none"} → <b>${r.to}</b></td>
+      <td>${r.effectiveFrom}</td>
+      <td style="font-size:11.4px">${r.requestedBy.split("@")[0]}
+        <div style="color:var(--text-mute);font-size:10.5px">${r.requestedOn}</div></td>
+      <td style="font-size:11.4px;color:var(--text-dim)">${r.reason || "—"}</td>
+      <td style="text-align:right;white-space:nowrap">
+        ${mine
+          ? `<span class="vx-b gray hintdot" title="You raised this change. Approval is a second pair of eyes, so it has to be someone else — that is the only thing this step guarantees.">awaiting someone else</span>`
+          : `<button class="btn btn-outline-secondary btn-sm" data-rej="${r.id}">Reject</button>
+             <button class="btn btn-primary btn-sm ms-1" data-app="${r.id}">Approve</button>`}
+      </td></tr>`;
+  };
+
+  host.innerHTML = `
+    ${pending.length ? `<div class="vx-card vx-anim" style="margin-bottom:14px;border-left:3px solid var(--warn)">
+      <div class="vx-card-head">
+        <div><h2>Changes awaiting approval <span class="vx-b amber">${pending.length}</span></h2>
+          <div class="sub">A factor value change does not take effect until someone else approves it, and then only from its effective date.</div></div>
+      </div>
+      <div class="vx-tw"><table class="vx-t" style="font-size:12.2px">
+        <thead><tr><th>Factor</th><th>Change</th><th>Effective from</th><th>Requested by</th><th>Reason</th><th></th></tr></thead>
+        <tbody>${pending.map(row).join("")}</tbody></table></div>
+      <div style="font-size:11px;color:var(--text-mute);margin-top:8px">
+        The registry keeps showing the value currently in force while a change waits here — so what you see is what applies.
+      </div>
+    </div>` : ""}
+    ${recent.length ? `<div style="font-size:11.4px;color:var(--text-mute);margin-bottom:14px">
+      Recently decided: ${recent.map(r => `<b>${r.factorName}</b> ${r.status.toLowerCase()} by ${String(r.decidedBy || "").split("@")[0] || "—"}`).join(" · ")}
+    </div>` : ""}`;
+
+  host.querySelectorAll("[data-app]").forEach(b => b.onclick = () => {
+    const r = VX.factorChangeRequests.find(x => x.id === +b.dataset.app);
+    /* The date requested can go stale while this sat pending — see
+       vxSuggestedApprovalDate. So the approver gets an editable field, not
+       just a readout of whatever was typed when the request was raised. */
+    const suggested = vxSuggestedApprovalDate(r);
+    const stale = suggested !== r.effectiveFrom;
+    vxModal("Approve this change?", `
+      <div style="font-size:13px;line-height:1.6">
+        <b>${r.factorName}</b> moves from <b>${r.from ?? "none"}</b> to <b>${r.to}</b>.
+        <div style="margin-top:8px">The current value stays on file, closed the day before — a quote rate-locked earlier is still priced on it.</div>
+      </div>
+      <div class="row g-3 mt-2">
+        <div class="col-md-7">
+          <label>In force from</label>
+          <input type="date" class="form-control form-control-sm" id="apEffDate" value="${suggested}">
+          ${stale ? `<div style="font-size:11px;color:var(--warn);margin-top:4px">
+              <i class="fa-solid fa-triangle-exclamation me-1"></i>${r.effectiveFrom} was requested, but that date has already passed while this sat pending — defaulted to today instead.</div>`
+            : `<div style="font-size:11px;color:var(--text-mute);margin-top:4px">As requested.</div>`}
+        </div>
+      </div>
+      <div class="mt-3" style="color:var(--text-dim);font-size:12.3px">
+        This platform's engine rates off its own filed tables, so approving updates the registry and the audit trail rather than moving a premium by itself.
+      </div>`,
+      [{ t: "Cancel", c: "secondary" }, { t: "Approve", c: "primary", fn: () => {
+        const eff = document.getElementById("apEffDate").value || suggested;
+        if (vxApproveFactorChange(r.id, "", eff)) {
+          vxToast("Approved", `${r.factorName} in force from ${eff}`, "ok");
+          renderApprovals(); grid.reload();
+        }
+      } }], "modal-md");
+  });
+  host.querySelectorAll("[data-rej]").forEach(b => b.onclick = () => {
+    const r = VX.factorChangeRequests.find(x => x.id === +b.dataset.rej);
+    vxConfirm("Reject this change?",
+      `<b>${r.factorName}</b> keeps its current value of <b>${r.from ?? "none"}</b>. The request stays in the audit trail with your name on it.`,
+      () => { vxRejectFactorChange(r.id, ""); vxToast("Rejected", r.factorName + " unchanged", "err"); renderApprovals(); grid.reload(); }, true);
+  });
+}
+
 /* Holds the pre-edit copy of the row between onBeforeSave and onAfterSave so
    the audit entry can report a real before → after. */
 let beforeSnapshot = null;
 const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor", size: 15,
+  /* Factors are entered in runs — a filed table rarely arrives one row at a
+     time — so Add keeps going rather than closing after each. */
+  addAnother: true,
+  /* Name the dialog after the record. "Edit Rating Factor" told you which
+     screen you were on but not which of 50-odd rows you had opened — on the
+     one action that changes what gets charged, that is the thing you most
+     need to be sure of before typing. */
+  formTitle: (rec, isNew) => isNew ? "Add Rating Factor" : `Edit — ${rec.name}`,
+  formHeader: (rec, isNew) => {
+    if (isNew) {
+      return `<div class="vx-ai mb-3" style="padding:10px 14px;font-size:12.3px;line-height:1.6">
+        <i class="fa-solid fa-circle-info me-1"></i>
+        Registers a new rating factor against a line of business.
+        <span class="hintdot" title="The engine executes its own built-in factor chain. A factor added here is recorded, reportable and exportable, but it is not read while rating until that loop is closed — which is why it lands marked Not wired.">It will be marked <b>Not wired</b></span>
+        until the configure-to-rate loop is closed.
+      </div>`;
+    }
+    const s = sourceLabel(rec);
+    const k = KIND[rec.kind] || KIND.Constant;
+    const wired = rec.custom || rec.verified === undefined;
+    return `<div class="mb-3" style="border:1px solid var(--border);border-left:3px solid var(--primary);
+        border-radius:0 10px 10px 0;background:var(--surface-2);padding:11px 14px">
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <b style="font-size:14px">${rec.name}</b>
+        <code style="font-size:11px">${rec.code}</code>
+        <span class="vx-b ${k.c}" title="${k.d}"><i class="fa-solid ${k.i} me-1"></i>${rec.kind}</span>
+        <span class="vx-b ${s.cls}" title="${s.detail}">${s.label}</span>
+        ${wired
+          ? `<span class="vx-b amber" title="Added through this screen. The engine does not execute configured factors yet, so this factor is recorded but not read while rating.">Not wired</span>`
+          : (rec.verified
+              ? `<span class="vx-b green" title="Matched line-by-line to a filed workbook or rating manual.">Verified</span>`
+              : `<span class="vx-b amber" title="A working value that has not been checked against a filed source.">Approximated</span>`)}
+      </div>
+      <div style="font-size:11.6px;color:var(--text-dim);margin-top:5px;line-height:1.6">
+        ${rec.lob} · ${rec.coverage || "unassigned"} ·
+        <span class="hintdot" title="What the factor is measured against. Scope is what a factor varies BY; the coverage above is what it prices.">${rec.scope || "no scope"} scope</span>
+        ${rec.rowCount
+          ? ` · <span class="hintdot" title="This factor reads a row out of a rate table, so editing the Default Value below only changes the fallback used when no row matches — not what most quotes are charged.">${vxNum(rec.rowCount)} table values</span>`
+          : ` · <span class="hintdot" title="No lookup table: the Default Value below is applied on every quote, so changing it changes every quote on this line.">fixed value</span>`}
+        ${rec.updatedBy ? ` · last edited by <b>${rec.updatedBy.split("@")[0]}</b>${rec.updatedOn ? " on " + rec.updatedOn : ""}` : ""}
+      </div>
+      <div style="font-size:11.4px;color:var(--text-dim);margin-top:7px;padding-top:7px;border-top:1px solid var(--border)">
+        <i class="fa-solid fa-clock-rotate-left me-1" style="color:var(--text-mute)"></i>
+        Saving records the before and after in the
+        <a href="audit.html">audit trail</a>${rec.rowCount ? " — to change the values themselves, use Edit values on the factor's detail panel" : ""}.
+      </div>
+    </div>`;
+  },
   cols: [
     { k: "name", l: "Rating Factor" },
     { k: "lob", l: "Line of Business" },
@@ -114,6 +251,18 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
       r: r => r.tableId ? `<a href="#" onclick="editFactorValues(vxFactorById(${r.id}));return false" title="Edit this table's values">${tableName(r.tableId)}</a>`
                         : '<span style="color:var(--text-mute)">\u2014</span>' },
     { k: "code", l: "Code", r: r => `<code style="font-size:11px">${r.code}</code>` },
+    { k: "_pending", l: "Approval", sort: false, r: r => {
+        const p = vxPendingFactorRequest(r.code);
+        return p
+          ? `<span class="vx-b amber" title="Requested by ${p.requestedBy} on ${p.requestedOn}: ${p.from ?? "none"} → ${p.to}, effective ${p.effectiveFrom}. The value shown is still the one in force.">pending ${p.from ?? "none"} → ${p.to}</span>`
+          : '<span style="color:var(--text-mute)">—</span>';
+      } },
+    { k: "updatedBy", l: "Last edited by", sort: false, r: r => {
+        const who = r.updatedBy || r.createdBy;
+        if (!who) return '<span style="color:var(--text-mute)" title="Seeded with the platform — never edited here">seed data</span>';
+        return `<span title="${r.createdBy ? "Added by " + r.createdBy + " on " + (r.createdOn || "—") + ". " : ""}Last edited ${r.updatedOn || "—"}">${who.split("@")[0]}
+          <div style="font-size:10.3px;color:var(--text-mute)">${r.updatedOn || r.createdOn || ""}</div></span>`;
+      } },
     /* A factor added through this screen has no `verified` flag at all —
        that absence is what identifies it, rather than intercepting the
        grid's save. Anything user-added is Not wired, because the engine
@@ -124,13 +273,22 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
                       : '<span class="vx-b amber">Approximated</span>') },
   ],
   form: [
-    { k: "name", l: "Factor Name" }, { k: "code", l: "Factor Code" },
-    { k: "lob", l: "Line of Business", t: "select", opts: vxLobNames() },
+    /* Every field carries a hint. Several had none, which on a form where
+       "Code", "Driven by" and "Reference" all take free text meant the only
+       way to learn what belonged in them was to open an existing row and
+       copy its shape. */
+    { k: "name", l: "Factor Name",
+      hint: "How this factor appears in the rating trace on a quote — write it as an underwriter would say it, e.g. \"Radius of Operation Factor\"." },
+    { k: "code", l: "Factor Code",
+      hint: "Short stable identifier, upper snake case (VEH_RADIUS). Used in exports and the change log, so it should not be renamed after quotes have used it." },
+    { k: "lob", l: "Line of Business", t: "select", opts: vxLobNames(),
+      hint: "The line whose engine reads this factor. Changing it reloads the Coverage and Lookup Table lists below." },
     /* Re-renders when the LOB changes, so the list always shows that line's
        own coverage tree rather than another line's. */
     { k: "coverage", l: "Coverage (Assigned To)", t: "select", opts: r => coverageOptsFor(r), dependsOn: "lob",
-      hint: "Which coverage this factor prices — drives the Factor → Assigned To chain on the detail panel." },
-    { k: "scope", l: "Scope", t: "select", opts: ["Account", "Insured", "Risk", "Vehicle", "Coverage", "Policy", "Location", "State", "Class of Business"] },
+      hint: "Which coverage this factor prices — drives the Factor → Assigned To chain on the detail panel. Pick Account Level for factors that price the whole policy." },
+    { k: "scope", l: "Scope", t: "select", opts: ["Account", "Insured", "Risk", "Vehicle", "Coverage", "Policy", "Location", "State", "Class of Business"],
+      hint: "What the factor is measured against: one Vehicle, one Driver's Risk, the whole Account, and so on. Scope is what a factor varies BY; Coverage above is what it prices." },
     /* Computed and Judgment are no longer offered for NEW factors here — this
        screen has no way to actually wire either kind to a real calculation or
        an underwriter workflow, so picking one just produced an unwired,
@@ -140,15 +298,26 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
     { k: "kind", l: "Type", t: "select", opts: r => {
         const base = ["Lookup", "Constant"];
         return (r && r.kind && !base.includes(r.kind)) ? [r.kind, ...base] : base;
-      } },
+      },
+      hint: "Lookup reads a row out of a rate table using the insured's answer. Constant applies the same value on every quote." },
     /* Which table a Lookup factor actually reads. Re-renders on LOB change so
        the list leads with that line of business's own tables. */
     { k: "tableId", l: "Lookup Table", t: "select", opts: r => tableOptsFor(r), dependsOn: "lob",
       hint: "Which rate table this factor reads. Leave as none for Constant factors." },
-    { k: "driver", l: "Driven by (which insured answer)" },
+    { k: "driver", l: "Driven by (which insured answer)",
+      hint: "The question on the quote that selects the row — \"Radius of Operation\", \"Vehicle stated value\". Leave blank for a Constant; it is driven by nothing." },
     { k: "defaultValue", l: "Default Value", t: "number", step: "0.001", def: 1,
-      hint: "Applied on every quote (Constant), or as a fallback when a Lookup factor's table has no matching row." },
-    { k: "sourceSheet", l: "Reference" },
+      hint: "Applied on every quote (Constant), or as a fallback when a Lookup factor's table has no matching row. 1.000 is neutral — it changes no premium." },
+    { k: "sourceSheet", l: "Reference",
+      hint: "Where the value came from — a workbook sheet and cell, a filed manual, or the rule that set it. This is what makes a factor auditable later." },
+    /* When a changed value starts applying. A quote whose rate lock predates
+       this keeps the previous value — which is the entire point of a rate
+       lock, and why the old value is closed rather than overwritten. */
+    { k: "effectiveFrom", l: "New value effective from", t: "date",
+      def: (typeof VX !== "undefined" && VX.referenceDate) || "",
+      hint: "Only used when you change the Default Value. The previous value stays in force up to the day before this date, so a quote rate-locked earlier is still priced on it." },
+    { k: "changeReason", l: "Reason for the change",
+      hint: "Shown to whoever approves it, and kept on the factor's value history. e.g. \"Filed rate revision 2026-09\" or \"Corrects a transcription error\"." },
   ],
   filters: [
     { k: "lob", l: "LOB", opts: [...new Set(VX.ratingFactors.map(f => f.lob))] },
@@ -165,7 +334,46 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
      time onAfterSave runs, VX.ratingFactors already holds the new values and
      the old ones are gone — logging "from" without it would be guesswork. */
   onBeforeSave: rec => { beforeSnapshot = rec ? { ...rec } : null; },
-  onAfterSave: rec => { if (rec) vxLogFactorChange(beforeSnapshot, rec); beforeSnapshot = null; },
+  /* Who touched this factor, and when. The change log records that a value
+     moved, but the factor row itself carried no authorship at all — so
+     "who added this?" could only be answered by scrolling an audit list,
+     and not at all once it aged out. Stamped here, shown in the grid and on
+     the detail panel. */
+  onAfterSave: (rec, isNew) => {
+    if (rec) {
+      const who = vxCurrentUser();
+      const when = vxNowStamp();
+      if (isNew && !rec.createdBy) { rec.createdBy = who; rec.createdOn = when; }
+
+      /* A VALUE change does not take effect on save — it is raised for
+         approval and applied from its effective date once someone else signs
+         it off. Everything else on the form (name, reference, driver) is
+         descriptive and saves immediately; only the number that decides what
+         is charged goes through the gate. */
+      const before = beforeSnapshot;
+      const valueChanged = !isNew && before
+        && String(before.defaultValue ?? "") !== String(rec.defaultValue ?? "");
+
+      if (valueChanged) {
+        const proposed = rec.defaultValue;
+        rec.defaultValue = before.defaultValue;          // stays in force until approved
+        const req = vxRequestFactorChange(rec, proposed, rec.effectiveFrom, rec.changeReason);
+        vxToast("Sent for approval",
+          `${rec.name}: ${req.from ?? "none"} → ${req.to} from ${req.effectiveFrom}. The current value stays in force until someone else approves it.`, "info");
+      } else {
+        rec.updatedBy = who;
+        rec.updatedOn = when;
+        vxLogFactorChange(before, rec);
+      }
+      delete rec.effectiveFrom; delete rec.changeReason;  // form-only fields
+      renderApprovals();
+      /* persistCustom() below already owns writing user-added factors to
+         localStorage — going around it with a second key would give the
+         same row two homes that could disagree. */
+      persistCustom();
+    }
+    beforeSnapshot = null;
+  },
   onAfterDelete: rec => { if (rec) vxAudit("Rating Factors", "Deleted record",
     `${rec.name} (${rec.code}) deleted — was ${rec.defaultValue ?? "no default"}`); },
 });
@@ -203,6 +411,17 @@ function factorValueRows(rec) {
   return out.length ? out : null;
 }
 
+/* Bridges the read-only detail panel's Edit button into the grid's real
+   edit form (vxAgGrid's own formModal, exposed on the returned `grid`
+   object). Closes the offcanvas first — Bootstrap does not stack a modal
+   cleanly on top of an open offcanvas — then reopens with the current row,
+   not the copy the panel was drawn from, in case it changed underneath. */
+function closeFactorPanelThenEdit(id) {
+  const el = document.getElementById("vxFactorPanel");
+  const inst = el && bootstrap.Offcanvas.getInstance(el);
+  if (inst) inst.hide();
+  setTimeout(() => grid.formModal(vxFactorById(id)), 260);
+}
 function openFactorPanel(rec) {
   const s = sourceLabel(rec);
   const rows = factorValueRows(rec);
@@ -217,14 +436,38 @@ function openFactorPanel(rec) {
     el.style.width = "min(560px, 94vw)";
     document.body.appendChild(el);
   }
+  /* Same header standard as the Edit popup: name, code, and a full row of
+     status badges with tooltips, not a plain text line. This panel is what
+     the "Open factor detail" pencil actually opens — it sits ahead of the
+     grid's own Edit action in the row, so most people land here first, and
+     it read as if it had no header worth the name next to that one. */
+  const k = KIND[rec.kind] || KIND.Constant;
+  const wired = rec.custom || rec.verified === undefined;
+  const pending = vxPendingFactorRequest(rec.code);
   el.innerHTML = `
-    <div class="offcanvas-header" style="border-bottom:1px solid var(--border)">
-      <div>
+    <div class="offcanvas-header" style="border-bottom:1px solid var(--border);align-items:flex-start">
+      <div style="flex:1">
         <h5 class="offcanvas-title" style="font-size:16px;margin:0">${rec.name}</h5>
         <div style="font-size:11.5px;color:var(--text-mute);margin-top:2px">
-          <code>${rec.code}</code> · ${rec.lob} · ${rec.coverage}</div>
+          <code>${rec.code}</code> · ${rec.lob} · ${rec.coverage || "unassigned"}</div>
+        <div class="d-flex align-items-center gap-2 flex-wrap" style="margin-top:8px">
+          <span class="vx-b ${k.c}" title="${k.d}"><i class="fa-solid ${k.i} me-1"></i>${rec.kind}</span>
+          <span class="vx-b ${s.cls}" title="${s.detail}">${s.label}</span>
+          ${wired
+            ? `<span class="vx-b amber" title="Added through this screen. The engine does not execute configured factors yet, so this factor is recorded but not read while rating.">Not wired</span>`
+            : (rec.verified
+                ? `<span class="vx-b green" title="Matched line-by-line to a filed workbook or rating manual.">Verified</span>`
+                : `<span class="vx-b amber" title="A working value that has not been checked against a filed source.">Approximated</span>`)}
+          <span class="hintdot vx-b gray" style="border:none" title="What the factor is measured against. Scope is what a factor varies BY; the coverage above is what it prices.">${rec.scope || "no scope"} scope</span>
+          ${pending ? `<span class="vx-b amber" title="Requested by ${pending.requestedBy} on ${pending.requestedOn}: ${pending.from ?? "none"} → ${pending.to}, effective ${pending.effectiveFrom}. The value shown below is still the one in force.">pending ${pending.from ?? "none"} → ${pending.to}</span>` : ""}
+        </div>
       </div>
-      <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+      <div class="d-flex align-items-start gap-2">
+        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="closeFactorPanelThenEdit(${rec.id})"
+          title="Edit this factor — name, coverage, scope, type and default value">
+          <i class="fa-solid fa-pen me-1"></i>Edit</button>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+      </div>
     </div>
     <div class="offcanvas-body">
       <div class="vx-card" style="margin-bottom:14px">
@@ -254,6 +497,38 @@ function openFactorPanel(rec) {
         <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:12.3px">
           <b>Source:</b> <span class="vx-b ${s.cls}">${s.label}</span>
           <div style="color:var(--text-dim);margin-top:4px">${s.detail}</div>
+        </div>
+        ${/* What this factor was worth, and when. An approved change closes the
+             previous value rather than overwriting it, so a quote rate-locked
+             before the change can still be shown the value it was priced on. */""}
+        ${(rec.valueHistory || []).length > 1 || vxPendingFactorRequest(rec.code) ? `
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:12.3px">
+          <b>Value history</b>
+          ${vxPendingFactorRequest(rec.code) ? (() => { const p = vxPendingFactorRequest(rec.code);
+            return `<div style="margin-top:5px;border-left:3px solid var(--warn);padding-left:9px;font-size:11.8px">
+              <b style="color:var(--warn)">Pending approval</b> — ${p.from ?? "none"} → ${p.to} from ${p.effectiveFrom},
+              requested by ${p.requestedBy.split("@")[0]}. Not in force yet.</div>`; })() : ""}
+          <div class="vx-tw" style="margin-top:6px"><table class="vx-t" style="font-size:11.6px">
+            <thead><tr><th>Value</th><th>In force</th><th>Approved by</th></tr></thead>
+            <tbody>${(rec.valueHistory || []).slice().reverse().map(v => `<tr>
+              <td style="font-variant-numeric:tabular-nums"><b>${v.value}</b></td>
+              <td>${v.effectiveStart || "—"} ${v.effectiveEnd ? "to " + v.effectiveEnd : "onward"}</td>
+              <td style="font-size:11px;color:var(--text-dim)">${v.approvedBy ? v.approvedBy.split("@")[0] : "—"}
+                ${v.note ? `<div style="color:var(--text-mute);font-size:10.4px">${v.note}</div>` : ""}</td>
+            </tr>`).join("")}</tbody></table></div>
+        </div>` : ""}
+        ${/* Authorship, so "who put this here and when" is answerable from the
+             factor itself rather than only from an audit list that ages out. */""}
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:12.3px">
+          <b>Record history</b>
+          <div style="color:var(--text-dim);margin-top:4px;line-height:1.6">
+            ${rec.createdBy
+              ? `Added by <b>${rec.createdBy.split("@")[0]}</b>${rec.createdOn ? ` on ${rec.createdOn}` : ""}.`
+              : "Seeded with the platform — not added through this screen."}
+            ${rec.updatedBy
+              ? `<br>Last edited by <b>${rec.updatedBy.split("@")[0]}</b>${rec.updatedOn ? ` on ${rec.updatedOn}` : ""}.`
+              : (rec.createdBy ? "" : "<br>Never edited here.")}
+          </div>
         </div>
       </div>
 
@@ -395,13 +670,37 @@ function editFactorValues(rec) {
     return;
   }
   const shown = leaves.slice(0, 250);
+  const s = sourceLabel(rec);
+  /* Named after the FACTOR, but never said which real file or table the
+     numbers actually come from \u2014 "Territory Base Loss Cost" told you what
+     you were editing, not where it was sourced from or what its 12 rows are
+     keyed by. Same badge-header standard as the other two factor popups. */
   vxModal(`Edit values \u2014 ${rec.name}`, `
-    <div class="vx-exp2 mb-2" id="expFv">
-      <div class="hd"><i class="fa-solid fa-pen" style="color:var(--primary);font-size:11.5px"></i>
-        <b>${tableName(rec.tableId)}</b>
-        <span>${vxNum(leaves.length)} value${leaves.length === 1 ? "" : "s"}${leaves.length > shown.length ? `, first ${shown.length} shown` : ""}.</span>
-        <button type="button" class="tog" onclick="vxExpToggle('expFv')">Why?</button></div>
-      <div class="bd"><p>These are the live numbers <code>engine.js</code> reads while rating. Saving changes what the next quote is charged \u2014 there is no separate draft copy, exactly as on <a href="rate-tables.html?table=${encodeURIComponent(rec.tableId)}">Rate Tables</a>.</p></div>
+    <div class="mb-3" style="border:1px solid var(--border);border-left:3px solid var(--primary);
+        border-radius:0 10px 10px 0;background:var(--surface-2);padding:11px 14px">
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <b style="font-size:14px">${rec.name}</b>
+        <code style="font-size:11px">${rec.code}</code>
+        <span class="vx-b ${s.cls}" title="${s.detail}">${s.label}</span>
+        ${rec.custom || rec.verified === undefined
+          ? `<span class="vx-b amber" title="Added through the Rating Factors screen. The engine does not execute configured factors yet, so this table is recorded but not read while rating.">Not wired</span>`
+          : (rec.verified
+              ? `<span class="vx-b green" title="Matched line-by-line to a filed workbook or rating manual.">Verified</span>`
+              : `<span class="vx-b amber" title="Working values that have not been checked against a filed source.">Approximated</span>`)}
+      </div>
+      <div style="font-size:11.6px;color:var(--text-dim);margin-top:6px;line-height:1.6">
+        ${rec.lob} \u00b7 ${rec.coverage || "unassigned"} \u00b7
+        <span class="hintdot" title="The real workbook sheet (or filed manual) these ${vxNum(leaves.length)} rows were extracted from \u2014 the actual file behind this table, not just this factor's display name.">
+          source: <b>${rec.sourceSheet || "\u2014"}</b></span>
+        \u00b7
+        <span class="hintdot" title="The internal table this factor reads at rating time (VX.${rec.tableId}). Same table shown on the Rate Tables screen \u2014 open it there for the full row set and history.">
+          table key: <code>${rec.tableId}</code></span>
+      </div>
+      <div style="font-size:11.4px;color:var(--text-dim);margin-top:7px;padding-top:7px;border-top:1px solid var(--border)">
+        <i class="fa-solid fa-triangle-exclamation me-1" style="color:var(--warn)"></i>
+        These are the live numbers <code>engine.js</code> reads while rating \u2014 saving changes what the <b>next quote is charged</b>, with no separate draft copy.
+        ${leaves.length > shown.length ? `Showing the first ${vxNum(shown.length)} of ${vxNum(leaves.length)} rows \u2014 ` : ""}<a href="rate-tables.html?table=${encodeURIComponent(rec.tableId)}">open the full table on Rate Tables \u2192</a>
+      </div>
     </div>
     <input class="form-control form-control-sm mb-2" id="fvq" placeholder="Filter rows\u2026"
       oninput="fvFilter(this.value)">
@@ -476,6 +775,8 @@ function viewRows(rec) {
   }
   location.href = "rate-tables.html?table=" + encodeURIComponent(rec.tableId);
 }
+
+renderApprovals();
 
 /* Persist anything added through this screen so it survives a reload.
    Runs off the grid's own state rather than intercepting its save button —
