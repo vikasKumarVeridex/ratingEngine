@@ -886,62 +886,6 @@ function renderCanvasContext() {
     </div>`;
 }
 const cv = () => document.getElementById("canvas");
-/* A flat strip cannot show precedence: "A × B + C × D" and "A × (B + C) × D"
-   differ by two chips of no visual weight and are different rates. B tints the
-   parenthesised run so grouping is legible without counting brackets. */
-function drawTokensB() {
-  let depth = 0;
-  return TOK.map((t, i) => {
-    const chip = `<span class="vx-tok ${t.t}" data-i="${i}" draggable="true" title="Drag to reorder">${
-      t.t === "var" ? varLabel(t.v) : t.v}<button class="tokx" data-del="${i}" title="Remove this term" aria-label="Remove term">&#10005;</button></span>`;
-    if (t.v === "(") { depth++; return `<span class="tokgrp d${Math.min(depth, 3)}">` + chip; }
-    if (t.v === ")") { depth = Math.max(0, depth - 1); return chip + `</span>`; }
-    return chip;
-  }).join("") + "</span>".repeat(depth);   // tolerate an unbalanced draft
-}
-
-/* Validity is checked on every mutation — a linear scan of an array that is
-   never more than a few dozen items. Three states, because "incomplete" is the
-   normal condition mid-compose and flagging it red teaches people to ignore
-   the indicator. */
-function formulaStatus() {
-  if (!TOK.length) return { s: "empty", m: "Nothing on the canvas yet" };
-  let depth = 0, prev = null;
-  for (let i = 0; i < TOK.length; i++) {
-    const t = TOK[i], v = t.v;
-    if (v === "(") depth++;
-    else if (v === ")") { depth--; if (depth < 0) return { s: "invalid", m: "Closing bracket with nothing open", i }; }
-    const isOp = t.t === "op" && !["(", ")"].includes(v);
-    const prevIsOp = prev && prev.t === "op" && !["(", ")"].includes(prev.v);
-    if (isOp && prevIsOp) return { s: "invalid", m: `Two operators in a row (${prev.v} ${v})`, i };
-    if (isOp && prev === null) return { s: "invalid", m: `Formula starts with an operator (${v})`, i };
-    prev = t;
-  }
-  if (depth > 0) return { s: "incomplete", m: `${depth} bracket${depth === 1 ? "" : "s"} still open` };
-  if (prev && prev.t === "op" && ![")"].includes(prev.v))
-    return { s: "incomplete", m: `Ends on an operator (${prev.v}) — add a term` };
-  return { s: "valid", m: `${TOK.filter(t => t.t === "var").length} variables, brackets balanced` };
-}
-
-function renderStatusB() {
-  const el = document.getElementById("fbStatus");
-  if (!el) return;
-  if (!isB()) { el.innerHTML = ""; return; }
-  const st = formulaStatus();
-  const M = {
-    empty:      ["gray",  "fa-circle",        "Empty"],
-    incomplete: ["amber", "fa-circle-half-stroke", "Incomplete"],
-    invalid:    ["red",   "fa-circle-xmark",  "Invalid"],
-    valid:      ["green", "fa-circle-check",  "Valid"],
-  }[st.s];
-  el.innerHTML = `<span class="vx-b ${M[0]}"><i class="fa-solid ${M[1]} me-1"></i>${M[2]}</span>
-    <span style="font-size:11.5px;color:var(--text-dim);margin-left:7px">${st.m}</span>`;
-  cv().querySelectorAll(".vx-tok").forEach(t => t.classList.remove("bad"));
-  if (st.i != null) {
-    const bad = cv().querySelector(`[data-i="${st.i}"]`);
-    if (bad) bad.classList.add("bad");
-  }
-}
 
 /* Shown in the empty canvas when a reference chain exists for the current
    coverage — an explicit, labelled offer rather than the canvas pre-filling
@@ -960,11 +904,6 @@ function emptyCanvasHtml(hint) {
   </div>`;
 }
 function draw() {
-  if (isB()) {
-    cv().innerHTML = TOK.length ? drawTokensB() : emptyCanvasHtml("Drag a variable here, or click one in the palette…");
-    drawTail();
-    return;
-  }
   cv().innerHTML = TOK.length
     ? TOK.map((t, i) => `<span class="vx-tok ${t.t}" data-i="${i}" draggable="true" title="Drag to reorder">
         ${t.t === "var" ? varLabel(t.v) : t.v}<button class="tokx" data-del="${i}" title="Remove this term" aria-label="Remove term">&#10005;</button></span>`).join("")
