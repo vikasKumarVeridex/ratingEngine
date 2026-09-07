@@ -24,6 +24,18 @@
    ========================================================================== */
 const kv = (obj, kl, vl) => Object.entries(obj).map(([k, v]) => ({ [kl]: k, [vl]: v }));
 
+/* Formats a raw cell value using its column's `cols` metadata (money/pct/f).
+   Shared so Rate Tables and Rating Factors' Open Factor Details / Edit
+   values render the exact same number the exact same way instead of two
+   independent formatters drifting apart. */
+function vxFmtCell(v, c) {
+  if (v == null || v === "") return '<span style="color:var(--text-mute)">—</span>';
+  if (c.money) return typeof v === "number" ? "$" + v.toLocaleString("en-US") : v;
+  if (c.pct) return (v > 0 ? "+" : "") + (v * 100).toFixed(1) + "%";
+  if (c.f) return typeof v === "number" ? v.toFixed(3).replace(/0+$/, "").replace(/\.$/, "") + "×" : v;
+  return typeof v === "number" ? v.toLocaleString("en-US") : v;
+}
+
 /* Tables extracted in full from the workbook and loaded via rate-data-full.js.
    Guarded so the page still works if that file is absent. */
 const FULL = (typeof VXFULL !== "undefined") ? VXFULL : null;

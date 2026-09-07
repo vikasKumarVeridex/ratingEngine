@@ -853,9 +853,11 @@ function showChanges(id, pickedOlderId) {
      { t: "Export Change Log", c: "primary", fn: () => {
         vxCSV(`${v.product.replace(/\s+/g,"-")}-${v.version}-changes`,
           [{k:"type",l:"Type"},{k:"factor",l:"Factor"},{k:"category",l:"Category"},{k:"from",l:"From"},{k:"to",l:"To"},{k:"detail",l:"Reason"}],
-          v.changes);
-     }}], "modal-xl");
+v.changes);
+      }}], "modal-xl");
 }
 </script>
+<script src="assets/js/tooltip-dictionary.js"></script>
+<script src="assets/js/column-tooltips.js"></script>
 </body>
 </html>

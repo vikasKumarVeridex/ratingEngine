@@ -192,13 +192,10 @@ function renderCoverage(q) {
     </tr>`).join("") : `<tr><td colspan="4" style="text-align:center;color:var(--text-mute);padding:20px">No tables match "${q}".</td></tr>`;
 }
 
-function fmtCell(v, c) {
-  if (v == null || v === "") return '<span style="color:var(--text-mute)">—</span>';
-  if (c.money) return typeof v === "number" ? "$" + v.toLocaleString("en-US") : v;
-  if (c.pct) return (v > 0 ? "+" : "") + (v * 100).toFixed(1) + "%";
-  if (c.f) return typeof v === "number" ? v.toFixed(3).replace(/0+$/, "").replace(/\.$/, "") + "×" : v;
-  return typeof v === "number" ? v.toLocaleString("en-US") : v;
-}
+/* Cell formatting (money/pct/f) now lives in assets/js/rate-tables-registry.js
+   as vxFmtCell, shared with Rating Factors' Open Factor Details and Edit
+   values — one formatter for every screen that reads a `cols` entry. */
+const fmtCell = vxFmtCell;
 
 function renderList(filter) {
   const q = (filter || "").toLowerCase().trim();
@@ -359,5 +356,7 @@ if (deepLinked) {
   vxToast("Table selected", currentTable.name + " — opened from the factor you clicked", "ok");
 }
 </script>
+<script src="assets/js/tooltip-dictionary.js"></script>
+<script src="assets/js/column-tooltips.js"></script>
 </body>
 </html>
