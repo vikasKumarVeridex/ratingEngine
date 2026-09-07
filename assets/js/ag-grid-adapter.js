@@ -273,16 +273,35 @@ function vxAgGrid(opt) {
     /* One row of the `columns` field type below — a column name plus its
        data type. Shared between the initial render and the "Add Column"
        handler in wire(), which appends a fresh row with the same markup. */
-    const COLUMN_TYPES = ["Text", "Number", "Date", "Boolean"];
+    const COLUMN_TYPES = ["Text", "Number", "Date", "Boolean", "Range"];
     function colRowHtml(k, c) {
       c = c || { name: "", type: "Text" };
+      const isRange = c.type === "Range";
       return `<div class="d-flex gap-2 align-items-center mb-2" data-colrow="${k}">
         <input type="text" class="form-control form-control-sm" placeholder="Column name" data-colname="${k}" value="${(c.name || "").replace(/"/g, "&quot;")}">
         <select class="form-select form-select-sm" style="max-width:130px" data-colsel="${k}">
           ${COLUMN_TYPES.map(t => `<option ${t === c.type ? "selected" : ""}>${t}</option>`).join("")}
         </select>
+        <input type="number" class="form-control form-control-sm" style="max-width:90px${isRange ? "" : ";display:none"}" placeholder="Min" data-colmin="${k}" value="${c.min ?? ""}">
+        <input type="number" class="form-control form-control-sm" style="max-width:90px${isRange ? "" : ";display:none"}" placeholder="Max" data-colmax="${k}" value="${c.max ?? ""}">
         <button type="button" class="vx-icobtn" data-colrm="${k}" title="Remove column" style="width:30px;height:30px;flex:none"><i class="fa-solid fa-xmark"></i></button>
       </div>`;
+    }
+    /* Reads one `columns` field group back into the {name,type[,min,max]}
+       array stored on the record. Shared by submit() and sync() so the two
+       never drift out of step on what a Range column carries. */
+    function readColumnRows(gp) {
+      return [...gp.querySelectorAll("[data-colrow]")].map(row => {
+        const type = row.querySelector("[data-colsel]").value;
+        const col = { name: row.querySelector("[data-colname]").value.trim(), type };
+        if (type === "Range") {
+          const min = row.querySelector("[data-colmin]").value;
+          const max = row.querySelector("[data-colmax]").value;
+          if (min !== "") col.min = +min;
+          if (max !== "") col.max = +max;
+        }
+        return col;
+      }).filter(c => c.name);
     }
 
     function fieldHtml(f, cur) {
@@ -461,10 +480,7 @@ function vxAgGrid(opt) {
         });
         el.querySelectorAll("[data-fg]").forEach(gp => {
           r[gp.dataset.fg] = gp.dataset.fgtype === "columns"
-            ? [...gp.querySelectorAll("[data-colrow]")].map(row => ({
-                name: row.querySelector("[data-colname]").value.trim(),
-                type: row.querySelector("[data-colsel]").value,
-              })).filter(c => c.name)
+            ? readColumnRows(gp)
             : [...gp.querySelectorAll("[data-fm]:checked")].map(c => c.value);
         });
         /* A field marked `fanOut` may hold several values on Add; each one
@@ -509,10 +525,7 @@ function vxAgGrid(opt) {
       });
       modal.querySelectorAll("[data-fg]").forEach(gp => {
         r[gp.dataset.fg] = gp.dataset.fgtype === "columns"
-          ? [...gp.querySelectorAll("[data-colrow]")].map(row => ({
-              name: row.querySelector("[data-colname]").value.trim(),
-              type: row.querySelector("[data-colsel]").value,
-            })).filter(c => c.name)
+          ? readColumnRows(gp)
           : [...gp.querySelectorAll("[data-fm]:checked")].map(c => c.value);
       });
     };
@@ -589,6 +602,19 @@ function vxAgGrid(opt) {
             if (empty && gp && !gp.querySelector("[data-colrow]")) empty.style.display = "";
             sync();
           }
+        });
+        // Min/Max only make sense for a Range column — show them only once
+        // that type is picked, so every other column stays a plain two-field row.
+        modal.addEventListener("change", e => {
+          const sel = e.target.closest("[data-colsel]");
+          if (!sel) return;
+          const row = sel.closest("[data-colrow]");
+          const isRange = sel.value === "Range";
+          const min = row.querySelector("[data-colmin]");
+          const max = row.querySelector("[data-colmax]");
+          if (min) min.style.display = isRange ? "" : "none";
+          if (max) max.style.display = isRange ? "" : "none";
+          sync();
         });
       }
 

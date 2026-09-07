@@ -1286,6 +1286,11 @@
     { id: 22, name: "MPL Incurred Loss Bands", lob: "Professional Liability (MPL)", keys: "Incurred Loss", rows: 155, source: "IncLoss" },
     { id: 23, name: "Cyber Helper Tables", lob: "Cyber", keys: "Multiple", rows: 184, source: "HelperTables" },
   ].map(r => ({ ...r, active: true, columns: [], data: [] }));
+  // Admin-defined tables (new rows, new columns, whole new tables added via
+  // the Lookup Tables screen) are real configuration, not demo data — restore
+  // them the same way vxCustomFactors etc. survive a refresh (see API.create/
+  // update's persistIfTracked in grid.js, which is what keeps this in sync).
+  D.lookupTables = loadPersisted("vxLookupTables", D.lookupTables);
 
   /* ---------------- Pricing rules ---------------- */
   /* Which LOB a credit/debit belongs to is derived from what it IS, not drawn
