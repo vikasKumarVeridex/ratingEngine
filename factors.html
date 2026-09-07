@@ -383,32 +383,80 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
    what this factor defaults to, where that default comes from, and the
    actual values it can take. Uses Bootstrap's Offcanvas (already loaded
    platform-wide) rather than a new hand-rolled component. */
-/* The ~40 rate tables come in three real shapes: arrays of arrays, arrays
-   of objects, and keyed objects (some nested one level, e.g. truckILF is
-   state → limit → factor). Flatten all three generically rather than
-   special-casing each table. */
+/* Two adjacent registry columns are a From/To or Min/Max band when the first
+   column's key or label ends in "min"/"from" and the next one's ends in
+   "max"/"to" — the same pairing a reader has to do by eye today (e.g.
+   "Points From" / "Points To"). Detecting it once here lets both the
+   read-only Factor Values table below and the Edit values modal collapse
+   the pair into a single Range column/field instead of two numbers a
+   reader must recombine themselves. */
+function detectRangePairs(cols) {
+  const idx = [];
+  for (let i = 0; i < cols.length - 1; i++) {
+    const a = cols[i], b = cols[i + 1];
+    const aFrom = /(min|from)$/i.test(a.k) || /\b(from|min)\b/i.test(a.l);
+    const bTo = /(max|to)$/i.test(b.k) || /\b(to|max)\b/i.test(b.l);
+    if (aFrom && bTo) idx.push(i);
+  }
+  return idx;
+}
+function rangeColLabel(a, b) {
+  const strip = s => s.replace(/\b(from|to|min|max)\b/ig, "").replace(/\s+/g, " ").trim();
+  const base = strip(a.l) || strip(b.l);
+  return (base && base !== "%" ? base : "Rate") + " Range";
+}
+
+/* Real column names and formatted values for a factor's lookup table,
+   sourced from the same registry Rate Tables itself renders from
+   (rate-tables-registry.js) — so a header here always matches the header a
+   click-through to Rate Tables shows, instead of the generic "Key" /
+   "Sub-key" / "Value" placeholders that named the SHAPE of the data rather
+   than what it actually was. Falls back to that generic walk only for the
+   rare VX table with no registry entry. */
 function factorValueRows(rec) {
   if (!rec.tableId) return null;
-  const t = VX[rec.tableId];
-  if (!t) return null;
-  if (Array.isArray(t)) {
-    if (!t.length) return null;
-    return t.slice(0, 40).map(row => Array.isArray(row) ? row : Object.values(row));
-  }
-  if (typeof t !== "object") return null;
-  const out = [];
-  for (const [k, v] of Object.entries(t)) {
-    if (v && typeof v === "object" && !Array.isArray(v)) {
-      for (const [k2, v2] of Object.entries(v)) {
-        out.push([k, k2, v2]);
-        if (out.length >= 40) return out;
-      }
-    } else {
-      out.push([k, Array.isArray(v) ? v.join(" · ") : v]);
-      if (out.length >= 40) return out;
+  const t = allRateTables().find(x => x.id === rec.tableId);
+  if (t) {
+    let raw = []; try { raw = t.rows() || []; } catch (e) { raw = []; }
+    if (!raw.length) return null;
+    const mergeAt = new Set(detectRangePairs(t.cols));
+    const cols = [];
+    for (let i = 0; i < t.cols.length; i++) {
+      if (mergeAt.has(i)) { cols.push({ l: rangeColLabel(t.cols[i], t.cols[i + 1]), range: [t.cols[i], t.cols[i + 1]] }); i++; }
+      else cols.push(t.cols[i]);
     }
+    const rows = raw.slice(0, 40).map(r => cols.map(c => c.range
+      ? `${vxFmtCell(r[c.range[0].k], c.range[0])} – ${vxFmtCell(r[c.range[1].k], c.range[1])}`
+      : vxFmtCell(r[c.k], c)));
+    return { cols: cols.map(c => c.l), rows };
   }
-  return out.length ? out : null;
+  /* No registry entry (a handful of nested VX tables) — the ~40 rate tables
+     come in three real shapes: arrays of arrays, arrays of objects, and
+     keyed objects (some nested one level, e.g. truckILF is state → limit →
+     factor). Flatten generically rather than special-casing each. */
+  const raw = VX[rec.tableId];
+  if (!raw) return null;
+  let rows = [];
+  if (Array.isArray(raw)) {
+    if (!raw.length) return null;
+    rows = raw.slice(0, 40).map(row => Array.isArray(row) ? row : Object.values(row));
+  } else if (typeof raw === "object") {
+    outer: for (const [k, v] of Object.entries(raw)) {
+      if (v && typeof v === "object" && !Array.isArray(v)) {
+        for (const [k2, v2] of Object.entries(v)) {
+          rows.push([k, k2, v2]);
+          if (rows.length >= 40) break outer;
+        }
+      } else {
+        rows.push([k, Array.isArray(v) ? v.join(" · ") : v]);
+        if (rows.length >= 40) break outer;
+      }
+    }
+  } else return null;
+  if (!rows.length) return null;
+  const width = rows[0].length;
+  const cols = width <= 1 ? ["Value"] : width === 2 ? ["Key", "Value"] : ["Key", "Sub-key", "Value"];
+  return { cols, rows };
 }
 
 /* Bridges the read-only detail panel's Edit button into the grid's real
@@ -424,7 +472,7 @@ function closeFactorPanelThenEdit(id) {
 }
 function openFactorPanel(rec) {
   const s = sourceLabel(rec);
-  const rows = factorValueRows(rec);
+  const valueTable = factorValueRows(rec);
   const rangeTxt = rec.rowCount ? fmtRange(rec) : null;
 
   let el = document.getElementById("vxFactorPanel");
@@ -543,11 +591,19 @@ function openFactorPanel(rec) {
             ? `${vxNum(rec.rowCount)} value${rec.rowCount === 1 ? "" : "s"} on file${rangeTxt ? `, ranging ${rangeTxt}` : ""} — selected by <b>${rec.driver === "—" ? "no input" : rec.driver}</b>.`
             : "This factor has no value table — see the default above."}
         </div>
-        ${rows
-          ? `<div class="vx-tw" style="max-height:340px;overflow:auto"><table class="vx-t">
-              <tbody>${rows.map(r => `<tr>${r.map(c => `<td style="font-size:11.8px">${c === null || c === undefined ? "—" : c}</td>`).join("")}</tr>`).join("")}</tbody>
-             </table></div>
-             ${rec.rowCount > rows.length ? `<div style="font-size:11.3px;color:var(--text-mute);margin-top:7px">Showing first ${rows.length} of ${vxNum(rec.rowCount)} — <a href="rate-tables.html?table=${encodeURIComponent(rec.tableId)}">open the full table →</a></div>` : ""}`
+        ${valueTable
+          ? (() => {
+              const { cols: labels, rows } = valueTable;
+              /* The Range/Value column — the last one, whatever it's actually
+                 called — carries the computed min–max hint from the grid, so
+                 hovering it tells you the full spread even though only the
+                 first 40 rows are listed below. */
+              const rangeAttr = rangeTxt ? ` data-vx-range="${rangeTxt.replace(/"/g, "&quot;")}"` : "";
+              const thead = `<thead><tr>${labels.map((l, i) => `<th${i === labels.length - 1 ? rangeAttr : ""}>${l}</th>`).join("")}</tr></thead>`;
+              const body = `<tbody>${rows.map(r => `<tr>${r.map(c => `<td style="font-size:11.8px">${c === null || c === undefined || c === "" ? "—" : c}</td>`).join("")}</tr>`).join("")}</tbody>`;
+              return `<div class="vx-tw" style="max-height:340px;overflow:auto"><table class="vx-t">${thead}${body}</table></div>`
+                   + (rec.rowCount > rows.length ? `<div style="font-size:11.3px;color:var(--text-mute);margin-top:7px">Showing first ${rows.length} of ${vxNum(rec.rowCount)} — <a href="rate-tables.html?table=${encodeURIComponent(rec.tableId)}">open the full table →</a></div>` : "");
+            })()
           : (rec.rowCount
               ? `<div style="font-size:12.3px"><a href="rate-tables.html?table=${encodeURIComponent(rec.tableId || "")}">Browse this factor's rows in Rate Tables →</a></div>`
               : "")}
@@ -622,32 +678,57 @@ function coverageOptsFor(rec) {
    {key: {key2: value}} map, and an array of row objects. Rather than
    special-casing each, walk to the numeric leaves and address every one by a
    path. One editor then works for all three, and writes back into the very
-   object engine.js dereferences while rating. */
-function leafPaths(node, path, out, depth) {
-  out = out || []; path = path || []; depth = depth || 0;
-  if (depth > 4) return out;
-  if (Array.isArray(node)) {
-    node.forEach((row, i) => {
-      if (row && typeof row === "object") {
-        Object.keys(row).forEach(k => {
-          if (typeof row[k] === "number") out.push({ path: path.concat([i, k]), label: rowLabel(row, i) + " \u00b7 " + k, value: row[k] });
-        });
-      }
-    });
-    return out;
-  }
-  if (node && typeof node === "object") {
-    Object.keys(node).forEach(k => {
-      const v = node[k];
-      if (typeof v === "number") out.push({ path: path.concat([k]), label: path.concat([k]).join(" \u203a "), value: v });
-      else if (v && typeof v === "object") leafPaths(v, path.concat([k]), out, depth + 1);
-    });
-  }
-  return out;
+   object engine.js dereferences while rating.
+
+   Where the table's registry entry (rate-tables-registry.js) declares a
+   From/To or Min/Max column pair \u2014 the same pairing factorValueRows() above
+   uses to build a Range column \u2014 two adjacent leaves in the same row are
+   grouped into one Range item with two bounds edited together, instead of
+   two disconnected rows labeled with raw object keys a reader has to
+   recombine themselves. */
+function colLabelFor(cols, k) {
+  const c = cols && cols.find(c => c.k === k);
+  return c ? c.l : k;
 }
-function rowLabel(row, i) {
+function rowLabel(row, i, cols) {
+  if (cols) {
+    const idCol = cols.find(c => row[c.k] != null && typeof row[c.k] !== "number");
+    if (idCol) return String(row[idCol.k]);
+  }
   for (const k of ["name", "state", "code", "label", "type", "class"]) if (row[k] != null) return String(row[k]);
   return "row " + (i + 1);
+}
+function leafItems(node, cols) {
+  const rangeIdx = cols ? new Set(detectRangePairs(cols)) : new Set();
+  const out = [];
+  function fromRow(row, path, ctx) {
+    const numKeys = Object.keys(row).filter(k => typeof row[k] === "number");
+    const used = new Set();
+    numKeys.forEach(k => {
+      if (used.has(k)) return;
+      const ci = cols ? cols.findIndex(c => c.k === k) : -1;
+      if (ci >= 0 && rangeIdx.has(ci) && cols[ci + 1] && numKeys.includes(cols[ci + 1].k)) {
+        const k2 = cols[ci + 1].k;
+        used.add(k); used.add(k2);
+        out.push({ kind: "range", label: ctx ? `${ctx} \u00b7 ${rangeColLabel(cols[ci], cols[ci + 1])}` : rangeColLabel(cols[ci], cols[ci + 1]),
+          from: { path: path.concat([k]), value: row[k] }, to: { path: path.concat([k2]), value: row[k2] } });
+      } else {
+        used.add(k);
+        out.push({ kind: "single", label: ctx ? `${ctx} \u00b7 ${colLabelFor(cols, k)}` : colLabelFor(cols, k), path: path.concat([k]), value: row[k] });
+      }
+    });
+  }
+  if (Array.isArray(node)) {
+    node.forEach((row, i) => { if (row && typeof row === "object") fromRow(row, [i], rowLabel(row, i, cols)); });
+    return out;
+  }
+  (function walk(n, path, depth) {
+    if (depth > 4 || !n || typeof n !== "object") return;
+    const numKeys = Object.keys(n).filter(k => typeof n[k] === "number");
+    if (numKeys.length) fromRow(n, path, path.join(" \u203a "));
+    Object.keys(n).forEach(k => { const v = n[k]; if (v && typeof v === "object" && !Array.isArray(v)) walk(v, path.concat([k]), depth + 1); });
+  })(node, [], 0);
+  return out;
 }
 function setPath(root, path, value) {
   let n = root;
@@ -663,13 +744,15 @@ function editFactorValues(rec) {
       [{ t: "Close", c: "secondary" }]);
     return;
   }
-  const leaves = leafPaths(VX[rec.tableId]);
-  if (!leaves.length) {
+  const regTable = allRateTables().find(x => x.id === rec.tableId);
+  const cols = regTable ? regTable.cols : null;
+  const items = leafItems(VX[rec.tableId], cols);
+  if (!items.length) {
     vxModal(`${rec.name} \u2014 values`, `<div class="sub">No editable numeric values found in this table.</div>`,
       [{ t: "Close", c: "secondary" }]);
     return;
   }
-  const shown = leaves.slice(0, 250);
+  const shown = items.slice(0, 250);
   const s = sourceLabel(rec);
   /* Named after the FACTOR, but never said which real file or table the
      numbers actually come from \u2014 "Territory Base Loss Cost" told you what
@@ -690,7 +773,7 @@ function editFactorValues(rec) {
       </div>
       <div style="font-size:11.6px;color:var(--text-dim);margin-top:6px;line-height:1.6">
         ${rec.lob} \u00b7 ${rec.coverage || "unassigned"} \u00b7
-        <span class="hintdot" title="The real workbook sheet (or filed manual) these ${vxNum(leaves.length)} rows were extracted from \u2014 the actual file behind this table, not just this factor's display name.">
+        <span class="hintdot" title="The real workbook sheet (or filed manual) these ${vxNum(items.length)} rows were extracted from \u2014 the actual file behind this table, not just this factor's display name.">
           source: <b>${rec.sourceSheet || "\u2014"}</b></span>
         \u00b7
         <span class="hintdot" title="The internal table this factor reads at rating time (VX.${rec.tableId}). Same table shown on the Rate Tables screen \u2014 open it there for the full row set and history.">
@@ -699,28 +782,40 @@ function editFactorValues(rec) {
       <div style="font-size:11.4px;color:var(--text-dim);margin-top:7px;padding-top:7px;border-top:1px solid var(--border)">
         <i class="fa-solid fa-triangle-exclamation me-1" style="color:var(--warn)"></i>
         These are the live numbers <code>engine.js</code> reads while rating \u2014 saving changes what the <b>next quote is charged</b>, with no separate draft copy.
-        ${leaves.length > shown.length ? `Showing the first ${vxNum(shown.length)} of ${vxNum(leaves.length)} rows \u2014 ` : ""}<a href="rate-tables.html?table=${encodeURIComponent(rec.tableId)}">open the full table on Rate Tables \u2192</a>
+        ${items.length > shown.length ? `Showing the first ${vxNum(shown.length)} of ${vxNum(items.length)} rows \u2014 ` : ""}<a href="rate-tables.html?table=${encodeURIComponent(rec.tableId)}">open the full table on Rate Tables \u2192</a>
       </div>
     </div>
     <input class="form-control form-control-sm mb-2" id="fvq" placeholder="Filter rows\u2026"
       oninput="fvFilter(this.value)">
     <div class="vx-tw" style="max-height:400px;overflow:auto"><table class="vx-t">
-      <thead><tr><th>Row</th><th style="width:140px;text-align:right">Value</th></tr></thead>
-      <tbody id="fvBody">${shown.map((lf, i) => `<tr data-fvrow="${i}">
-        <td style="font-size:11.8px">${lf.label}</td>
+      <thead><tr><th>Row</th><th style="width:190px;text-align:right">Value / Range</th></tr></thead>
+      <tbody id="fvBody">${shown.map((it, i) => it.kind === "range" ? `<tr data-fvrow="${i}">
+        <td style="font-size:11.8px">${it.label}</td>
+        <td style="text-align:right;white-space:nowrap">
+          <input type="number" step="0.0001" class="form-control form-control-sm fv d-inline-block" style="width:82px;text-align:right"
+            data-i="${i}" data-part="from" value="${it.from.value}" title="Range start">
+          <span style="color:var(--text-mute);padding:0 2px">\u2013</span>
+          <input type="number" step="0.0001" class="form-control form-control-sm fv d-inline-block" style="width:82px;text-align:right"
+            data-i="${i}" data-part="to" value="${it.to.value}" title="Range end"></td></tr>`
+        : `<tr data-fvrow="${i}">
+        <td style="font-size:11.8px">${it.label}</td>
         <td style="text-align:right"><input type="number" step="0.0001" class="form-control form-control-sm fv"
-          data-i="${i}" value="${lf.value}" style="text-align:right"></td></tr>`).join("")}</tbody>
+          data-i="${i}" value="${it.value}" style="text-align:right"></td></tr>`).join("")}</tbody>
     </table></div>`,
     [{ t: "Cancel", c: "secondary" },
      { t: "Save values", c: "primary", fn: () => {
         let n = 0;
         const edits = [];
+        // A Range item edits its From and To bounds through two inputs sharing
+        // one data-i \u2014 data-part says which bound each one is.
         document.querySelectorAll(".fv").forEach(inp => {
-          const lf = shown[+inp.dataset.i];
+          const it = shown[+inp.dataset.i];
+          const part = inp.dataset.part;
+          const bound = part ? it[part] : it;
           const v = parseFloat(inp.value);
-          if (!isNaN(v) && v !== lf.value) {
-            edits.push(`${lf.label}: ${lf.value} → ${v}`);
-            setPath(VX[rec.tableId], lf.path, v); n++;
+          if (!isNaN(v) && v !== bound.value) {
+            edits.push(`${it.label}${part ? ` (${part})` : ""}: ${bound.value} → ${v}`);
+            setPath(VX[rec.tableId], bound.path, v); n++;
           }
         });
         /* Editing a factor's rows changes what gets charged just as surely as
@@ -801,5 +896,7 @@ vxContextBar("#ctxBar", {
   },
 });
 </script>
+<script src="assets/js/tooltip-dictionary.js"></script>
+<script src="assets/js/column-tooltips.js"></script>
 </body>
 </html>

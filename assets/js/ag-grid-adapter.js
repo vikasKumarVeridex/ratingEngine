@@ -15,6 +15,20 @@
    default over the classic ag-theme-* CSS classes used here.
    ========================================================================== */
 let _agid = 0;
+
+/* Header-tooltip helper for AG Grid. Mirrors the dictionary used by
+   column-tooltips.js so <table.vx-t> HTML grids and AG Grid grids get
+   consistent definitions. Returns undefined when no entry exists, which
+   suppresses the native title attribute (no empty tooltip bubble). */
+function vxColHeaderTooltip(label) {
+  const D = (window.VX_TIPS) || {};
+  const k = String(label || "").replace(/\s+/g, " ").trim();
+  const entry = D[k];
+  if (!entry) return undefined;
+  const e = typeof entry === "string" ? { d: entry } : entry;
+  return e.d + (e.w ? " — " + e.w : "");
+}
+
 function vxAgGrid(opt) {
   const id = "ag" + (++_agid);
   const key = opt.key;
@@ -92,6 +106,7 @@ function vxAgGrid(opt) {
     const def = {
       field: c.k, headerName: c.l, sortable: c.sort !== false, resizable: true, filter: false,
       hide: st.hidden.includes(c.k),
+      headerTooltip: vxColHeaderTooltip(c.l),
       cellRenderer: c.r ? (p => c.r(p.data) ?? '<span style="color:var(--text-mute)">—</span>') : (p => p.value ?? '<span style="color:var(--text-mute)">—</span>'),
     };
     if (c.editable && !opt.readOnly && f) {
