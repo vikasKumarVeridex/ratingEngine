@@ -119,6 +119,7 @@
     "Rate":           { d: "Base premium contribution returned when this row is matched.", w: "Multiplied by the relevant exposure basis to produce the base premium." },
     "Parent":         { d: "The version this one was branched from.", w: "Used for diffs, rollback and ancestry reporting." },
     "Author":         { d: "Tenant user who published this version.", w: "Required for audit attribution." },
+    "Saved by":       { d: "Tenant user who saved this revision of the formula.", w: "Pairs with In force to answer who changed a calculation and when." },
     "Published":      { d: "Timestamp the version transitioned to Published.", w: "Immutable after publish; rollback creates a new version instead." },
     "Rollback":       { d: "Action that retires a published version and re-rates in-flight quotes on the prior version.", w: "Audit-logged; only available to Rating Manager." },
     "Bound Premium":  { d: "Final premium written to the policy at bind time.", w: "Source of truth for downstream financial systems." },

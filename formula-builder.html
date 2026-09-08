@@ -983,10 +983,25 @@ function emptyCanvasHtml(hint) {
     </div>` : ""}
   </div>`;
 }
+/* The operators someone reaches for while actually building a chain —
+   multiply/divide for factors, add/subtract for the additive account-level
+   pattern, parens to group. Comparisons, IF/MIN/MAX and the rest stay on the
+   full strip above; this is deliberately the short list, not a second copy
+   of it. */
+const QUICK_OPS = [
+  { v: "×", t: "Multiply" }, { v: "÷", t: "Divide" },
+  { v: "+", t: "Add" }, { v: "−", t: "Subtract" },
+  { v: "(", t: "Open group" }, { v: ")", t: "Close group" },
+];
+function quickOpsHtml() {
+  return `<div class="vx-fb-quickops" role="group" aria-label="Insert operator">
+    ${QUICK_OPS.map(o => `<button type="button" class="vx-fb-qop" data-qop="${o.v}" title="${o.t}" aria-label="${o.t}">${o.v}</button>`).join("")}
+  </div>`;
+}
 function draw() {
   cv().innerHTML = TOK.length
     ? TOK.map((t, i) => `<span class="vx-tok ${t.t}" data-i="${i}" draggable="true" title="Drag to reorder">
-        ${t.t === "var" ? varLabel(t.v) : t.v}<button class="tokx" data-del="${i}" title="Remove this term" aria-label="Remove term">&#10005;</button></span>`).join("")
+        ${t.t === "var" ? varLabel(t.v) : t.v}<button class="tokx" data-del="${i}" title="Remove this term" aria-label="Remove term">&#10005;</button></span>`).join("") + quickOpsHtml()
     : emptyCanvasHtml("Click or drag variables and operators here to build your formula…");
 
   /* Remove is an explicit ×, not a click anywhere on the token — the whole
@@ -1001,6 +1016,10 @@ function drawTail() {
   cv().querySelectorAll("[data-del]").forEach(b => b.onclick = e => {
     e.stopPropagation(); removeToken(+b.dataset.del);
   });
+  // Quick-insert operators sit right after the last token, always appending
+  // to the end — the same action as clicking the strip above, just without
+  // the trip up to it.
+  cv().querySelectorAll("[data-qop]").forEach(b => b.onclick = () => addToken({ t: "op", v: b.dataset.qop }));
   // reorder within the canvas
   cv().querySelectorAll("[data-i]").forEach(el => {
     el.ondragstart = e => {

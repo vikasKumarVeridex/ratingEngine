@@ -671,6 +671,19 @@ label{font-size:11.5px;font-weight:600;color:var(--text-dim);margin-bottom:3px}
 .vartile-i{border:none;background:transparent;color:var(--text-mute);font-size:11px;padding:0 2px;cursor:pointer;border-radius:4px}
 .vartile-i:hover{color:var(--primary);background:var(--primary-soft)}
 .vx-fb-canvas .vx-tok:hover::after{content:"\f00d";font-family:"Font Awesome 6 Free";font-weight:900;margin-inline-start:7px;opacity:.6}
+/* Quick-insert operators, rendered inline right after the last canvas
+   token — so the next operator is one click away from wherever the formula
+   currently ends, instead of a trip back up to the operator strip above the
+   canvas (a trip that only gets longer as the canvas grows). Deliberately a
+   flat row of buttons, not a hover-reveal popover: a control you have to
+   discover by hovering is no faster to reach the first time than the strip
+   it replaces. */
+.vx-fb-quickops{display:flex;align-items:center;gap:2px;align-self:center;
+  padding:2px;border:1px dashed var(--border);border-radius:8px;background:var(--surface)}
+.vx-fb-qop{border:none;background:transparent;color:var(--warn);font-size:13px;font-weight:700;
+  width:24px;height:24px;border-radius:6px;cursor:pointer;transition:.12s;line-height:1;padding:0}
+.vx-fb-qop:hover{background:rgba(241,180,76,.22)}
+.vx-fb-qop:focus-visible{outline:2px solid var(--primary);outline-offset:1px}
 
 /* ---------- Form builder ---------- */
 .vx-fld{border:1px solid var(--border);border-radius:9px;padding:10px 12px;background:var(--surface-2);margin-bottom:7px;

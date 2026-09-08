@@ -86,7 +86,23 @@ const grid = vxAgGrid({ el:"#grid", key:"lookupTables", name:"Lookup Table",
   // Same pattern as products.html/vxProductsState — an admin-defined table
   // (and the columns on it) is real configuration, not demo data, so it must
   // survive a refresh instead of resetting to the seed inventory.
-  onAfterSave: rec => { refreshSampleCsv(rec); persistLookupTables(); },
+  onAfterSave: (rec, isNew) => {
+    refreshSampleCsv(rec); persistLookupTables();
+    /* Defining columns and entering the first row used to be two separate
+       trips — Save the table, then go find "Add row" on the grid. Offered
+       here instead, right when the structure is fresh in mind, but never
+       forced: "Later" leaves the table exactly as saved, and Add row keeps
+       working from the grid whenever it's wanted. */
+    if (isNew && (rec.columns || []).length && !LOOKUP_LIVE[rec.name]) {
+      setTimeout(() => vxModal(`${rec.name} — add your first row now?`,
+        `<div style="font-size:13px;line-height:1.6">
+          The table's structure is saved. You can start entering rows now, one at a time,
+          or come back to <b>Add row</b> on this table whenever you're ready — nothing here is required.
+        </div>`,
+        [{ t: "Later", c: "secondary" }, { t: "Add first row", c: "primary", fn: () => { setTimeout(() => openRowModal(rec), 260); } }],
+        "modal-md"), 300);
+    }
+  },
   onAfterDelete: () => persistLookupTables(),
 
   cols:[{k:"name",l:"Lookup Table"},{k:"lob",l:"LOB"},{k:"keys",l:"Key Columns"},
@@ -98,7 +114,7 @@ const grid = vxAgGrid({ el:"#grid", key:"lookupTables", name:"Lookup Table",
         : vxWiredChip(false, "Not loaded")}],
   form:[{k:"name",l:"Table Name"},{k:"lob",l:"LOB",t:"select",opts:vxLobNames()},
       {k:"columns",l:"Columns",t:"columns",
-        hint:"Define the table's structure — rows are added afterwards from the grid, and the Rows count updates automatically as you add them."}],
+        hint:"Define the table's structure. You'll be offered the choice to add your first row right after saving, or you can always add rows later from the grid."}],
   filters:[{k:"lob",l:"LOB",opts:vxLobNames()}],
   rowActions:[{i:"fa-table-cells",t:"View records",fn:viewRecords},{i:"fa-plus",t:"Add row",fn:addRow},
     {i:"fa-file-csv",t:"Download sample CSV",fn:downloadSampleCsv},{i:"fa-upload",t:"Upload CSV",fn:uploadCsv}] });
@@ -307,7 +323,8 @@ function openRowModal(rec, rowId) {
     if (c.type === "Boolean") return `<div class="col-md-6"><label class="d-block">${c.name}</label>
       <div class="form-check form-switch"><input class="form-check-input" type="checkbox" data-rf="${c.name}"${val ? " checked" : ""}></div></div>`;
     if (c.type === "Range") return `<div class="col-md-6"><label>${c.name} <span style="font-weight:400;color:var(--text-mute)">(${c.min ?? "–"}–${c.max ?? "–"})</span></label>
-      <input type="number" class="form-control form-control-sm" data-rf="${c.name}" value="${val ?? ""}"${c.min !== undefined ? ` min="${c.min}"` : ""}${c.max !== undefined ? ` max="${c.max}"` : ""}></div>`;
+      <input type="number" class="form-control form-control-sm" data-rf="${c.name}" data-rfrange="${c.name}" value="${val ?? ""}"${c.min !== undefined ? ` min="${c.min}"` : ""}${c.max !== undefined ? ` max="${c.max}"` : ""}>
+      <div style="font-size:10.8px;color:var(--bad);margin-top:3px;display:none" data-rfrangeerr="${c.name}"></div></div>`;
     const type = c.type === "Number" ? "number" : c.type === "Date" ? "date" : "text";
     return `<div class="col-md-6"><label>${c.name}</label><input type="${type}" class="form-control form-control-sm" data-rf="${c.name}" value="${val ?? ""}"></div>`;
   }).join("")}</div>`;
@@ -326,6 +343,30 @@ function openRowModal(rec, rowId) {
       : [{ t:"Cancel", c:"secondary" },
          { t:"Save & Add Another", c:"secondary", fn:() => saveRow(rec, true) },
          { t:"Save Row", c:"primary", fn:() => saveRow(rec, false) }]);
+  // Live feedback as you type — the number input's min/max attributes are
+  // only a browser hint (spinner behaviour), not something that stops an
+  // out-of-range value from being typed or saved, so the check is repeated
+  // here and enforced for real in saveRow() below.
+  document.getElementById("vxModal").querySelectorAll("[data-rfrange]").forEach(inp => {
+    inp.oninput = () => rangeFieldError(inp, rec);
+  });
+}
+/* Reads one Range field's current value against its column's min/max and
+   shows/clears its inline error. Returns the offending column (so saveRow
+   can build one summary message) or null when the value is fine. */
+function rangeFieldError(inp, rec) {
+  const name = inp.dataset.rfrange;
+  const col = (rec.columns || []).find(c => c.name === name);
+  const errEl = document.querySelector(`[data-rfrangeerr="${name}"]`);
+  if (!col || inp.value === "") { if (errEl) errEl.style.display = "none"; inp.style.borderColor = ""; return null; }
+  const v = +inp.value;
+  const min = col.min !== undefined && col.min !== "" ? +col.min : null;
+  const max = col.max !== undefined && col.max !== "" ? +col.max : null;
+  const bad = (min !== null && v < min) || (max !== null && v > max);
+  if (errEl) errEl.style.display = bad ? "" : "none";
+  if (errEl && bad) errEl.textContent = `Must be between ${col.min ?? "–"} and ${col.max ?? "–"} — this table won't save ${v}.`;
+  inp.style.borderColor = bad ? "var(--bad)" : "";
+  return bad ? col : null;
 }
 
 function saveRow(rec, again, rowId, beforeRow) {
@@ -336,6 +377,14 @@ function saveRow(rec, again, rowId, beforeRow) {
   });
   if (!Object.values(row).some(v => v !== "" && v !== false)) {
     vxToast("Nothing to save", "Fill in at least one field.", "warn");
+    return false;
+  }
+  // A Range column declares a band for a reason — block the save rather
+  // than silently accept a value outside it, the way min/max attributes
+  // alone never did.
+  const badCol = [...el.querySelectorAll("[data-rfrange]")].map(inp => rangeFieldError(inp, rec)).find(Boolean);
+  if (badCol) {
+    vxToast("Value out of range", `${badCol.name} must be between ${badCol.min ?? "–"} and ${badCol.max ?? "–"} — got ${row[badCol.name]}.`, "err");
     return false;
   }
   rec.data = rec.data || [];
