@@ -26,7 +26,6 @@ const NAV = [
     { h: "factors.html", i: "fa-sliders", l: "Rating Factors" },
     { h: "formula-builder.html", i: "fa-square-root-variable", l: "Rating Formulas" },
     { h: "rate-tables.html", i: "fa-database", l: "Rate Tables (live)" },
-    { h: "industry-classes.html", i: "fa-industry", l: "Industry Classes" },
     { h: "lookup-tables.html", i: "fa-table-list", l: "Lookup Tables" },
     { h: "glossary.html", i: "fa-book", l: "Glossary" },
   ]},
