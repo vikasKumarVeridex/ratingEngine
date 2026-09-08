@@ -13,6 +13,8 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/dist/ag-grid-community.min.js"></script>
 <script src="assets/js/data.js"></script>
+<script src="assets/js/rate-data-full.js"></script>
+<script src="assets/js/rate-tables-registry.js"></script>
 <script src="assets/js/cosmos-model.js"></script>
 <script src="assets/js/tenant-setup.js"></script>
 <script src="assets/js/core.js"></script>
@@ -22,11 +24,9 @@
 <script>
 vxShell("Lookup Tables", "Inventory of the large reference tables behind the engine. || What exists, and how big it is.", [{l:"Rating Data"},{l:"Lookup Tables"}]);
 
-/* Which of these 23 inventoried tables actually have rows loaded, and where
-   to browse them. Only the 5 Commercial Trucking entries below have real
-   extracted data behind them (see rate-tables.html); the other 18 — General
-   Liability, Property, MPL and Cyber lookups — are inventory-only. Rather
-   than fabricate rows for those, the action is disabled and says so. */
+/* Which of these inventoried tables actually have rows loaded, and where to
+   browse them. 5 of the original 23 hand-curated rows map to real, filed
+   data this way already (see rate-tables.html). */
 const LOOKUP_LIVE = {
   "ZIP → Territory (Trucking)": "fullZip",
   "Increased Limits Factors": "fullIlf",
@@ -34,14 +34,41 @@ const LOOKUP_LIVE = {
   "Garagekeepers Rates": "fullGkl",
   "PhysDam Rates by TIV": "truckPhysDamRate",
 };
+/* RATE_TABLES (rate-tables-registry.js) is the real, engine-wired registry —
+   39 tables engine.js actually reads while rating, none of them fabricated.
+   Only 5 of those ever had a row here: every OTHER rating factor whose
+   Lookup Table points at a real RATE_TABLES entry (Fleet Size Factors,
+   Primary Class Factors, Driver Class Factors, and so on) was invisible on
+   this screen — the factor said "reads a real table," but Lookup Tables had
+   nowhere to show it. Every RATE_TABLES entry not already one of the 5
+   above becomes its own inventory row here too: real, "Loaded", click-
+   through to Rate Tables — not persisted, since it is fully derived from
+   RATE_TABLES and regenerating it here every load is what keeps it from
+   ever going stale relative to the registry it mirrors. */
+if (typeof RATE_TABLES !== "undefined") {
+  const claimedTableIds = new Set(Object.values(LOOKUP_LIVE));
+  const existingNames = new Set(VX.lookupTables.map(t => t.name));
+  let nextInvId = Math.max(0, ...VX.lookupTables.map(t => +t.id || 0)) + 1;
+  RATE_TABLES.forEach(t => {
+    if (claimedTableIds.has(t.id)) return;               // already one of the 5 above
+    if (LOOKUP_LIVE[t.name] === undefined) LOOKUP_LIVE[t.name] = t.id;
+    if (existingNames.has(t.name)) return;                // row already exists this session
+    let n = 0; try { n = (t.rows() || []).length; } catch (e) {}
+    VX.lookupTables.push({ id: nextInvId++, name: t.name, lob: t.lob, keys: t.cov || "—",
+      rows: n, source: t.id, active: true, columns: [], data: [], sample: false });
+    existingNames.add(t.name);
+  });
+}
 
 document.getElementById("vxBody").innerHTML = `
   <div class="mb-3 vx-anim" style="border:1px solid var(--border);border-left:3px solid var(--accent);background:var(--primary-soft);border-radius:0 10px 10px 0;padding:11px 15px;font-size:12.3px;line-height:1.6">
     <i class="fa-solid fa-circle-info me-1" style="color:var(--accent)"></i>
-    <b>This is an inventory, not the data itself.</b> It records each table's size at production scale — most rows
-    are not loaded here. <b>${Object.keys(LOOKUP_LIVE).length} of ${VX.lookupTables.length}</b> tables (all Commercial
-    Trucking) have real rows extracted and browsable — click <i class="fa-solid fa-table-cells"></i> on those rows.
-    The rest are sized but not yet loaded.</div>
+    <b>This is an inventory, not the data itself.</b> It records each table's size at production scale, not the filed
+    numbers. <b>${Object.keys(LOOKUP_LIVE).length} of ${VX.lookupTables.length}</b> tables — every line of business
+    the engine rates, not just Trucking — have real rows extracted and browsable — click <i class="fa-solid fa-table-cells"></i> on those rows.
+    <b>${VX.lookupTables.filter(t => t.sample).length}</b> more have a small <span class="vx-b amber">Sample</span> dataset —
+    a few placeholder rows shaped like the real key columns, generated here rather than filed, so the table isn't empty
+    while you wait on the real extract. Upload a real CSV (or edit rows directly) to replace them.</div>
   <div id="lookupApprovals"></div>
   <div class="vx-card vx-anim"><div id="grid"></div></div>`;
 /* Rows is never typed in — it always reflects reality. A table whose
@@ -64,7 +91,11 @@ const grid = vxAgGrid({ el:"#grid", key:"lookupTables", name:"Lookup Table",
 
   cols:[{k:"name",l:"Lookup Table"},{k:"lob",l:"LOB"},{k:"keys",l:"Key Columns"},
       {k:"rows",l:"Rows",r:r=>'<b>'+vxNum(rowCount(r))+'</b>'},
-      {k:"records",l:"Records",r:r=>(LOOKUP_LIVE[r.name] || rowCount(r)) ? '<span class="vx-b green">Loaded</span>' : vxWiredChip(false,"Not loaded")}],
+      {k:"records",l:"Records",r:r=>
+        LOOKUP_LIVE[r.name] ? '<span class="vx-b green">Loaded</span>'
+        : r.sample ? '<span class="vx-b amber hintdot" title="Placeholder rows shaped like the real key columns — not filed data. Upload a real CSV to replace them.">Sample</span>'
+        : rowCount(r) ? '<span class="vx-b green">Loaded</span>'
+        : vxWiredChip(false, "Not loaded")}],
   form:[{k:"name",l:"Table Name"},{k:"lob",l:"LOB",t:"select",opts:vxLobNames()},
       {k:"columns",l:"Columns",t:"columns",
         hint:"Define the table's structure — rows are added afterwards from the grid, and the Rows count updates automatically as you add them."}],
@@ -73,6 +104,7 @@ const grid = vxAgGrid({ el:"#grid", key:"lookupTables", name:"Lookup Table",
     {i:"fa-file-csv",t:"Download sample CSV",fn:downloadSampleCsv},{i:"fa-upload",t:"Upload CSV",fn:uploadCsv}] });
 renderLookupApprovals();
 
+function vxLookupTableById(id) { return (VX.lookupTables || []).find(t => t.id === id); }
 function persistLookupTables() {
   try { localStorage.setItem("vxLookupTables", JSON.stringify(VX.lookupTables)); } catch (e) {}
 }
@@ -155,14 +187,17 @@ function importCsv(rec) {
       ...Object.fromEntries(rec.columns.map(c => [c.name, typedCsvValue(values[headers.indexOf(c.name)] ?? "", c)])),
       __rowId: i + 1, effectiveStart: "", effectiveEnd: "",
     }));
-    rec.data = rows; rec.rows = rows.length; refreshSampleCsv(rec);
+    rec.data = rows; rec.rows = rows.length; rec.sample = false; refreshSampleCsv(rec);
+    // A real upload replaces the auto-generated placeholder rows (if any)
+    // with real ones — the Records column should say "Loaded" from here on,
+    // not "Sample".
     // A full CSV upload replaces every row's identity, so any change request
     // still pending against this table is now pointing at a __rowId that no
     // longer exists — reject it rather than leave it dangling on the
     // approvals panel with nothing left for an approver to apply it to.
     (VX.lookupChangeRequests || []).filter(r => r.tableId === rec.id && r.status === "Pending")
       .forEach(r => vxRejectLookupRowChange(r.id, "Table replaced by a CSV upload before this could be approved"));
-    API.update("lookupTables", rec.id, { data: rows, rows: rec.rows, sampleCsv: rec.sampleCsv }).then(() => {
+    API.update("lookupTables", rec.id, { data: rows, rows: rec.rows, sample: false, sampleCsv: rec.sampleCsv }).then(() => {
       persistLookupTables(); vxAutoSave(); grid.reload(); renderLookupApprovals();
       vxToast("CSV uploaded", `${rec.name} now has ${rows.length} row${rows.length === 1 ? "" : "s"}`, "ok");
     });
@@ -188,8 +223,13 @@ function viewLocalData(rec) {
   const cols = rec.columns || [];
   const editable = !LOOKUP_LIVE[rec.name];
   const rows = VX.lookupRowsAsOf(rec).slice().sort((a, b) => a.__rowId - b.__rowId);
+  const sampleNote = rec.sample ? `<div class="vx-ai mb-3" style="padding:10px 14px;font-size:12.3px">
+      <i class="fa-solid fa-circle-info me-1"></i>
+      <b>Sample data</b> — placeholder rows shaped like this table's real key columns, generated here rather than filed.
+      <a href="#" onclick="event.preventDefault();setTimeout(()=>uploadCsv(vxLookupTableById(${rec.id})),300)">Upload a real CSV</a> or edit rows below to replace them.
+    </div>` : "";
   vxModal(`${rec.name} — ${rows.length} row${rows.length === 1 ? "" : "s"}`,
-    `<div class="vx-tw"><table class="vx-t"><thead><tr>${cols.map(c => `<th>${c.name}</th>`).join("")}${editable ? "<th></th>" : ""}</tr></thead>
+    `${sampleNote}<div class="vx-tw"><table class="vx-t"><thead><tr>${cols.map(c => `<th>${c.name}</th>`).join("")}${editable ? "<th></th>" : ""}</tr></thead>
       <tbody>${rows.map(row => {
         const pending = editable && vxPendingLookupRequest(rec.id, row.__rowId);
         return `<tr>${cols.map(c => `<td>${row[c.name] ?? '<span style="color:var(--text-mute)">—</span>'}</td>`).join("")}

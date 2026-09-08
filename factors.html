@@ -86,6 +86,17 @@ function valuesLabel(r) {
   return '<span style="color:var(--text-mute)">—</span>';
 }
 
+/* One pending-change queue covers two request shapes — a Default Value
+   change ({from,to}, vxRequestFactorChange) and a table-value change
+   ({edits[]} or {newRow}, vxRequestFactorTableChange) — so every place that
+   shows what a pending request proposes needs to read whichever shape it
+   actually has. */
+function factorChangeSummary(r) {
+  return r.kind === "tableValues"
+    ? (r.newRow ? `add a value to ${r.tableId}` : `${(r.edits || []).length} value${(r.edits || []).length === 1 ? "" : "s"} in ${r.tableId}`)
+    : `${r.from ?? "none"} → ${r.to}`;
+}
+
 /* ---------- Pending factor changes ----------
    A requested change sits here until someone else approves it. Rendered
    above the grid because it is a queue, not a report: it exists to be
@@ -104,7 +115,7 @@ function renderApprovals() {
     return `<tr>
       <td><b>${r.factorName}</b> <code style="font-size:10.5px">${r.factorCode}</code>
         <div style="font-size:10.6px;color:var(--text-mute)">${r.lob}</div></td>
-      <td style="font-variant-numeric:tabular-nums">${r.from ?? "none"} → <b>${r.to}</b></td>
+      <td style="font-variant-numeric:tabular-nums">${factorChangeSummary(r)}</td>
       <td>${r.effectiveFrom}</td>
       <td style="font-size:11.4px">${r.requestedBy.split("@")[0]}
         <div style="color:var(--text-mute);font-size:10.5px">${r.requestedOn}</div></td>
@@ -141,10 +152,13 @@ function renderApprovals() {
        just a readout of whatever was typed when the request was raised. */
     const suggested = vxSuggestedApprovalDate(r);
     const stale = suggested !== r.effectiveFrom;
+    const isTable = r.kind === "tableValues";
     vxModal("Approve this change?", `
       <div style="font-size:13px;line-height:1.6">
-        <b>${r.factorName}</b> moves from <b>${r.from ?? "none"}</b> to <b>${r.to}</b>.
-        <div style="margin-top:8px">The current value stays on file, closed the day before — a quote rate-locked earlier is still priced on it.</div>
+        <b>${r.factorName}</b> ${isTable ? factorChangeSummary(r) : `moves from <b>${r.from ?? "none"}</b> to <b>${r.to}</b>`}.
+        <div style="margin-top:8px">${isTable
+          ? `Approving writes this straight into <code>${r.tableId}</code> — the exact table the engine reads.`
+          : `The current value stays on file, closed the day before — a quote rate-locked earlier is still priced on it.`}</div>
       </div>
       <div class="row g-3 mt-2">
         <div class="col-md-7">
@@ -156,11 +170,14 @@ function renderApprovals() {
         </div>
       </div>
       <div class="mt-3" style="color:var(--text-dim);font-size:12.3px">
-        This platform's engine rates off its own filed tables, so approving updates the registry and the audit trail rather than moving a premium by itself.
+        ${isTable
+          ? `This writes immediately once approved — nothing here resolves a value "as of" a date, so the field above is record-keeping, same as it is for Default Value changes.`
+          : `This platform's engine rates off its own filed tables, so approving updates the registry and the audit trail rather than moving a premium by itself.`}
       </div>`,
       [{ t: "Cancel", c: "secondary" }, { t: "Approve", c: "primary", fn: () => {
         const eff = document.getElementById("apEffDate").value || suggested;
-        if (vxApproveFactorChange(r.id, "", eff)) {
+        const ok = isTable ? vxApproveFactorTableChange(r.id, "", eff) : vxApproveFactorChange(r.id, "", eff);
+        if (ok) {
           vxToast("Approved", `${r.factorName} in force from ${eff}`, "ok");
           renderApprovals(); grid.reload();
         }
@@ -168,9 +185,14 @@ function renderApprovals() {
   });
   host.querySelectorAll("[data-rej]").forEach(b => b.onclick = () => {
     const r = VX.factorChangeRequests.find(x => x.id === +b.dataset.rej);
+    const isTable = r.kind === "tableValues";
     vxConfirm("Reject this change?",
-      `<b>${r.factorName}</b> keeps its current value of <b>${r.from ?? "none"}</b>. The request stays in the audit trail with your name on it.`,
-      () => { vxRejectFactorChange(r.id, ""); vxToast("Rejected", r.factorName + " unchanged", "err"); renderApprovals(); grid.reload(); }, true);
+      isTable ? `<b>${r.factorName}</b> keeps its current values in <code>${r.tableId}</code>, unchanged. The request stays in the audit trail with your name on it.`
+              : `<b>${r.factorName}</b> keeps its current value of <b>${r.from ?? "none"}</b>. The request stays in the audit trail with your name on it.`,
+      () => {
+        if (isTable) vxRejectFactorTableChange(r.id, ""); else vxRejectFactorChange(r.id, "");
+        vxToast("Rejected", r.factorName + " unchanged", "err"); renderApprovals(); grid.reload();
+      }, true);
   });
 }
 
@@ -256,7 +278,7 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
     { k: "_pending", l: "Approval", sort: false, r: r => {
         const p = vxPendingFactorRequest(r.code);
         return p
-          ? `<span class="vx-b amber" title="Requested by ${p.requestedBy} on ${p.requestedOn}: ${p.from ?? "none"} → ${p.to}, effective ${p.effectiveFrom}. The value shown is still the one in force.">pending ${p.from ?? "none"} → ${p.to}</span>`
+          ? `<span class="vx-b amber" title="Requested by ${p.requestedBy} on ${p.requestedOn}: ${factorChangeSummary(p)}, effective ${p.effectiveFrom}. The value shown is still the one in force.">pending ${factorChangeSummary(p)}</span>`
           : '<span style="color:var(--text-mute)">—</span>';
       } },
     { k: "updatedBy", l: "Last edited by", sort: false, r: r => {
@@ -585,7 +607,7 @@ function openFactorPanel(rec) {
                 ? `<span class="vx-b green" title="Matched line-by-line to a filed workbook or rating manual.">Verified</span>`
                 : `<span class="vx-b amber" title="A working value that has not been checked against a filed source.">Approximated</span>`)}
           <span class="hintdot vx-b gray" style="border:none" title="What the factor is measured against. Scope is what a factor varies BY; the coverage above is what it prices.">${rec.scope || "no scope"} scope</span>
-          ${pending ? `<span class="vx-b amber" title="Requested by ${pending.requestedBy} on ${pending.requestedOn}: ${pending.from ?? "none"} → ${pending.to}, effective ${pending.effectiveFrom}. The value shown below is still the one in force.">pending ${pending.from ?? "none"} → ${pending.to}</span>` : ""}
+          ${pending ? `<span class="vx-b amber" title="Requested by ${pending.requestedBy} on ${pending.requestedOn}: ${factorChangeSummary(pending)}, effective ${pending.effectiveFrom}. The value shown below is still the one in force.">pending ${factorChangeSummary(pending)}</span>` : ""}
         </div>
       </div>
       <div class="d-flex align-items-start gap-2">
@@ -640,13 +662,14 @@ function openFactorPanel(rec) {
         ${/* What this factor was worth, and when. An approved change closes the
              previous value rather than overwriting it, so a quote rate-locked
              before the change can still be shown the value it was priced on. */""}
-        ${(rec.valueHistory || []).length > 1 || vxPendingFactorRequest(rec.code) ? `
+        ${(() => { const p = vxPendingFactorRequest(rec.code);
+          return (p && p.kind !== "tableValues") || (rec.valueHistory || []).length > 1; })() ? `
         <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:12.3px">
           <b>Value history</b>
-          ${vxPendingFactorRequest(rec.code) ? (() => { const p = vxPendingFactorRequest(rec.code);
+          ${(() => { const p = vxPendingFactorRequest(rec.code); if (!p || p.kind === "tableValues") return "";
             return `<div style="margin-top:5px;border-left:3px solid var(--warn);padding-left:9px;font-size:11.8px">
               <b style="color:var(--warn)">Pending approval</b> — ${p.from ?? "none"} → ${p.to} from ${p.effectiveFrom},
-              requested by ${p.requestedBy.split("@")[0]}. Not in force yet.</div>`; })() : ""}
+              requested by ${p.requestedBy.split("@")[0]}. Not in force yet.</div>`; })()}
           <div class="vx-tw" style="margin-top:6px"><table class="vx-t" style="font-size:11.6px">
             <thead><tr><th>Value</th><th>In force</th><th>Approved by</th></tr></thead>
             <tbody>${(rec.valueHistory || []).slice().reverse().map(v => `<tr>
@@ -938,12 +961,6 @@ function leafItems(node, cols) {
   })(node, [], 0);
   return out;
 }
-function setPath(root, path, value) {
-  let n = root;
-  for (let i = 0; i < path.length - 1; i++) n = n[path[i]];
-  n[path[path.length - 1]] = value;
-}
-
 /* Add a row from the factor panel instead of making an analyst leave the
    current record. Flat key-to-number tables cover the lookup shape shown in
    the panel (for example State -> Base Loss Cost); array tables use their
@@ -978,12 +995,13 @@ function addFactorValue(rec) {
     : cols.map(c => ({ k: c.k, l: c.l, numeric: !!(c.money || c.f) || typeof (root[0] || {})[c.k] === "number" }));
   const effectiveDate = rec.valueEffectiveDate || VX.referenceDate || new Date().toISOString().slice(0, 10);
   vxModal(`Add value — ${rec.name}`, `
-    <div class="sub mb-3">Add a new row to <b>${table.name}</b>.</div>
+    <div class="sub mb-3">Add a new row to <b>${table.name}</b>. Sent for someone else's approval — this table keeps its current rows, unchanged, until then.</div>
     <div class="row g-3">${fields.map(f => `<div class="col-md-6"><label>${f.l}</label>
       <input id="fav-${f.k}" class="form-control" type="${f.numeric ? "number" : "text"}" ${f.numeric ? 'step="any"' : ""}></div>`).join("")}
-      <div class="col-md-6"><label>Effective date</label><input id="fav-effective-date" class="form-control" type="date" value="${effectiveDate}"></div>
+      <div class="col-md-6"><label>In force from</label><input id="fav-effective-date" class="form-control" type="date" value="${effectiveDate}"></div>
+      <div class="col-md-6"><label>Reason</label><input id="fav-reason" class="form-control" placeholder="Optional"></div>
     </div>`,
-    [{ t: "Cancel", c: "secondary" }, { t: "Add value", c: "primary", fn: () => {
+    [{ t: "Cancel", c: "secondary" }, { t: "Send for approval", c: "primary", fn: () => {
       const row = {};
       for (const f of fields) {
         const input = document.getElementById(`fav-${f.k}`);
@@ -995,16 +1013,16 @@ function addFactorValue(rec) {
       }
       const effectiveDate = document.getElementById("fav-effective-date").value;
       if (!effectiveDate) { vxToast("Value not added", "Effective date is required", "err"); return false; }
+      const reason = document.getElementById("fav-reason").value;
       if (isFlatMap) {
         if (Object.prototype.hasOwnProperty.call(root, row.key)) { vxToast("Value not added", `${row.key} already exists`, "err"); return false; }
-        root[row.key] = row.value;
-      } else root.push(row);
-      rec.rowCount = (rec.rowCount || 0) + 1;
-      rec.valueEffectiveDate = effectiveDate;
-      vxAudit("Rating Factors", "Added factor value", `${rec.name} (${rec.code}) — added ${fields.map(f => `${f.l}: ${row[f.k]}`).join(", ")}, effective ${effectiveDate}`,
-        { effectiveDate });
-      vxAutoSave();
-      vxToast("Value added", `Added to ${table.name}`, "ok");
+        const req = vxRequestFactorTableChange(rec, null, { value: row.value }, row.key, effectiveDate, reason);
+        vxToast("Sent for approval", `${rec.name}: add ${row.key} = ${row.value}, effective ${req.effectiveFrom}.`, "info");
+      } else {
+        const req = vxRequestFactorTableChange(rec, null, row, null, effectiveDate, reason);
+        vxToast("Sent for approval", `${rec.name}: add a row to ${table.name}, effective ${req.effectiveFrom}.`, "info");
+      }
+      renderApprovals();
       grid.reload();
       /* Repaint the still-open factor panel only after Bootstrap has closed
          this modal; otherwise its focus trap and the offcanvas compete. */
@@ -1067,14 +1085,16 @@ function editFactorValues(rec) {
       </div>
       <div style="font-size:11.4px;color:var(--text-dim);margin-top:7px;padding-top:7px;border-top:1px solid var(--border)">
         <i class="fa-solid fa-triangle-exclamation me-1" style="color:var(--warn)"></i>
-        These are the live numbers <code>engine.js</code> reads while rating \u2014 saving changes what the <b>next quote is charged</b>, with no separate draft copy.
+        These are the live numbers <code>engine.js</code> reads while rating. Sending this for approval does <b>not</b> change what the next quote is charged \u2014
+        the table keeps its current values until someone else approves it, then from its effective date.
         ${items.length > shown.length ? `Showing the first ${vxNum(shown.length)} of ${vxNum(items.length)} rows \u2014 ` : ""}<a href="rate-tables.html?table=${encodeURIComponent(rec.tableId)}">open the full table on Rate Tables \u2192</a>
       </div>
     </div>
     <div class="row g-2 align-items-end mb-2">
-      <div class="col-sm-5"><label class="mb-1">Effective date</label>
+      <div class="col-sm-5"><label class="mb-1">In force from</label>
         <input id="fv-effective-date" class="form-control form-control-sm" type="date" value="${effectiveDate}"></div>
-      <div class="col-sm-7" style="font-size:11.4px;color:var(--text-dim)">Recorded with this change and shown in the audit trail.</div>
+      <div class="col-sm-7"><label class="mb-1">Reason</label>
+        <input id="fv-reason" class="form-control form-control-sm" placeholder="Optional"></div>
     </div>
     <input class="form-control form-control-sm mb-2" id="fvq" placeholder="Filter rows\u2026"
       oninput="fvFilter(this.value)">
@@ -1094,36 +1114,28 @@ function editFactorValues(rec) {
           data-i="${i}" value="${it.value}" style="text-align:right"></td></tr>`).join("")}</tbody>
     </table></div>`,
     [{ t: "Cancel", c: "secondary" },
-     { t: "Save values", c: "primary", fn: () => {
-        let n = 0;
+     { t: "Send for approval", c: "primary", fn: () => {
         const edits = [];
         const effectiveDate = document.getElementById("fv-effective-date").value;
-        if (!effectiveDate) { vxToast("Values not saved", "Effective date is required", "err"); return false; }
+        if (!effectiveDate) { vxToast("Not sent", "Effective date is required", "err"); return false; }
+        const reason = document.getElementById("fv-reason").value;
         // A Range item edits its From and To bounds through two inputs sharing
-        // one data-i \u2014 data-part says which bound each one is.
+        // one data-i — data-part says which bound each one is.
         document.querySelectorAll(".fv").forEach(inp => {
           const it = shown[+inp.dataset.i];
           const part = inp.dataset.part;
           const bound = part ? it[part] : it;
           const v = parseFloat(inp.value);
           if (!isNaN(v) && v !== bound.value) {
-            edits.push(`${it.label}${part ? ` (${part})` : ""}: ${bound.value} → ${v}`);
-            setPath(VX[rec.tableId], bound.path, v); n++;
+            edits.push({ path: bound.path, label: `${it.label}${part ? ` (${part})` : ""}`, from: bound.value, to: v });
           }
         });
-        /* Editing a factor's rows changes what gets charged just as surely as
-           editing its default does, so it lands in the audit trail too —
-           naming the rows that moved, not just the count. */
-        if (n) rec.valueEffectiveDate = effectiveDate;
-        if (n) vxAudit("Rating Factors", "Updated factor value",
-          `${rec.name} (${rec.code}) — ${n} row${n === 1 ? "" : "s"} in ${tableName(rec.tableId)}: `
-            + edits.slice(0, 4).join("; ") + (edits.length > 4 ? `; +${edits.length - 4} more` : "") + `; effective ${effectiveDate}`,
-          { version: (rec.attachments && rec.attachments[0] && rec.attachments[0].ratingVersion) || "—" });
-        vxAutoSave();
-        vxToast(n ? "Values updated" : "No changes",
-                n ? `${n} value${n === 1 ? "" : "s"} written to ${tableName(rec.tableId)} \u2014 live for the next quote`
-                  : "Nothing was different", n ? "ok" : "info");
-        if (n) grid.reload();
+        if (!edits.length) { vxToast("No changes", "Nothing was different", "info"); return; }
+        const req = vxRequestFactorTableChange(rec, edits, null, null, effectiveDate, reason);
+        vxToast("Sent for approval",
+          `${rec.name}: ${edits.length} value${edits.length === 1 ? "" : "s"} in ${tableName(rec.tableId)}, effective ${req.effectiveFrom}. The current values stay in force until someone else approves it.`, "info");
+        renderApprovals();
+        grid.reload();
      } }], "modal-lg");
 }
 function fvFilter(q) {

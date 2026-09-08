@@ -254,7 +254,15 @@ function vxShell(title, subtitle, crumbs) {
   const navCollapsed = (() => { try { return JSON.parse(localStorage.getItem("vxNavCollapsed")) || {}; } catch (e) { return {}; } })();
   const nav = NAV.map((g, gi) => {
     const isCurGroup = g.items.some(it => it.h === cur);
-    const collapsed = !isCurGroup && !!navCollapsed[g.g];
+    /* A fresh browser has no stored preference for any group — before this,
+       that meant every group rendered expanded, so a first-time visit to
+       the Dashboard was seven groups deep in nav before you'd even opened a
+       quote. Now the untouched default is collapsed, except Rating (the
+       group this platform is actually about) and whichever group holds the
+       page you're on — a stored preference from an earlier visit still
+       wins over both defaults once it exists. */
+    const explicit = navCollapsed[g.g];
+    const collapsed = !isCurGroup && (explicit !== undefined ? !!explicit : g.g !== "Rating");
     return `<button type="button" class="vx-nav-grp" id="vxNavG${gi}" data-navgrp="${g.g}" aria-expanded="${!collapsed}" aria-controls="vxNavL${gi}">` +
       `<span>${g.g}</span><i class="fa-solid fa-chevron-down chev" aria-hidden="true"></i></button>` +
       `<ul class="vx-nav-list" id="vxNavL${gi}" aria-labelledby="vxNavG${gi}"${collapsed ? " hidden" : ""}>` +
@@ -1043,6 +1051,98 @@ function vxRejectLookupRowChange(reqId, note) {
   vxSaveLookupRequests();
   vxAudit("Lookup Tables", "Row change rejected",
     `${req.tableName}: proposed ${req.action} was rejected${note ? " — " + note : ""}`);
+  return req;
+}
+
+/* Writes one value into a nested table by path — shared by factors.html
+   (building the request) and vxApproveFactorTableChange below (applying an
+   approved one), so the two can never read the shape of a path differently. */
+function vxSetPath(root, path, value) {
+  let n = root;
+  for (let i = 0; i < path.length - 1; i++) n = n[path[i]];
+  n[path[path.length - 1]] = value;
+}
+
+/* ---------- Rating factor TABLE-VALUE approval ----------
+   A Lookup factor's Default Value going through vxRequestFactorChange above
+   was never the whole story: the actual numbers engine.js reads at rating
+   time live in VX[tableId] (VX.truckFleetSize and so on), edited from
+   factors.html's "Edit values" / "Add value" popups — and until now those
+   wrote straight into that table, live, with no approval step at all, even
+   though this is the ONE place on this screen that is unambiguously wired
+   (Default Value and a Lookup Table's rows are not). Same governance shape
+   as the other two: raised, approved by someone else, applied — reusing
+   D.factorChangeRequests (a `kind` field tells the two apart) so factors.html
+   has one approvals queue, not three. Approving still writes immediately
+   (nothing in engine.js resolves a table value "as of" a date, exactly like
+   Default Value above — effectiveFrom here is record-keeping, the same
+   honest limit already disclosed on the Default Value flow), which is what
+   keeps this safe: VX[tableId]'s shape is never touched, only reached
+   through vxSetPath at the moment someone approves. */
+function vxRequestFactorTableChange(factor, edits, newRow, newRowFlatKey, effectiveFrom, reason) {
+  VX.factorChangeRequests = VX.factorChangeRequests || [];
+  const rec = {
+    id: Math.max(0, ...VX.factorChangeRequests.map(r => +r.id || 0)) + 1,
+    kind: "tableValues",
+    factorCode: factor.code, factorName: factor.name, lob: factor.lob, tableId: factor.tableId,
+    // `newRowFlatKey` set means the table is a flat {key: number} map and
+    // this is the key to add — distinct from an ordinary row object that
+    // could legitimately have its own field literally called "key".
+    edits: edits || null, newRow: newRow || null, newRowFlatKey: newRowFlatKey || null,
+    effectiveFrom: effectiveFrom || (VX.referenceDate || new Date().toISOString().slice(0, 10)),
+    reason: reason || "",
+    requestedBy: vxCurrentUser(), requestedOn: vxNowStamp(),
+    status: "Pending", decidedBy: null, decidedOn: null,
+  };
+  VX.factorChangeRequests.unshift(rec);
+  vxSaveFactorRequests();
+  const summary = newRow ? "add a value" : `${(edits || []).length} value${(edits || []).length === 1 ? "" : "s"} changed`;
+  vxAudit("Rating Factors", "Table value change requested",
+    `${factor.name} (${factor.code}): ${summary} in ${factor.tableId}, effective ${rec.effectiveFrom} — awaiting approval`);
+  return rec;
+}
+function vxApproveFactorTableChange(reqId, note, effectiveFrom) {
+  const req = (VX.factorChangeRequests || []).find(r => r.id === reqId && r.kind === "tableValues");
+  if (!req || req.status !== "Pending") return null;
+  const f = (VX.ratingFactors || []).find(x => x.code === req.factorCode);
+  const table = req.tableId && VX[req.tableId];
+  if (!f || !table) return null;
+
+  if (req.requestedBy === vxCurrentUser()) {
+    vxToast("Can't approve your own change", "A second person has to sign this off — that is what the step is for.", "err");
+    return null;
+  }
+
+  const goLive = effectiveFrom || req.effectiveFrom;
+  let n = 0;
+  if (req.newRow) {
+    if (req.newRowFlatKey != null) table[req.newRowFlatKey] = req.newRow.value;
+    else if (Array.isArray(table)) table.push(req.newRow);
+    f.rowCount = (f.rowCount || 0) + 1;
+    n = 1;
+  } else if (req.edits) {
+    req.edits.forEach(e => { vxSetPath(table, e.path, e.to); });
+    n = req.edits.length;
+  }
+  f.valueEffectiveDate = goLive;
+
+  req.status = "Approved"; req.decidedBy = vxCurrentUser(); req.decidedOn = vxNowStamp(); req.decisionNote = note || "";
+  req.effectiveFromRequested = req.effectiveFrom;
+  req.effectiveFrom = goLive;
+  vxSaveFactorRequests();
+  vxAudit("Rating Factors", "Table value change approved",
+    `${req.factorName} (${req.factorCode}): ${n} value${n === 1 ? "" : "s"} written to ${req.tableId}, effective ${goLive}`
+    + (goLive !== req.effectiveFromRequested ? ` (requested ${req.effectiveFromRequested})` : "")
+    + ` — requested by ${req.requestedBy}`);
+  return req;
+}
+function vxRejectFactorTableChange(reqId, note) {
+  const req = (VX.factorChangeRequests || []).find(r => r.id === reqId && r.kind === "tableValues");
+  if (!req || req.status !== "Pending") return null;
+  req.status = "Rejected"; req.decidedBy = vxCurrentUser(); req.decidedOn = vxNowStamp(); req.decisionNote = note || "";
+  vxSaveFactorRequests();
+  vxAudit("Rating Factors", "Table value change rejected",
+    `${req.factorName} (${req.factorCode}): proposed table value change was rejected${note ? " — " + note : ""}`);
   return req;
 }
 

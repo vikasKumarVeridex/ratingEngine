@@ -60,7 +60,7 @@
                          && (!r.effectiveEnd || r.effectiveEnd >= asOf));
   };
 
-  const VX_DATA_VERSION = "2026-09-07-lookup-table-picker";
+  const VX_DATA_VERSION = "2026-09-08-lookup-table-samples";
   try {
     if (localStorage.getItem("vxDataVersion") !== VX_DATA_VERSION) {
       localStorage.clear();
@@ -1261,6 +1261,45 @@
       baseRate: rf(180, 5800, 2), unit: pick(["Per Unit","Per $100 TIV","Per $1,000 Revenue","Per Employee"]),
       filingId: `CA-2024-BRLA${ri(1,9)}`, effectiveDate: "2026-03-01", version: "v2026.03", active: true };
   });
+  /* Lookup Tables' own inventory rows carry a `keys` string ("State + Class +
+     Coverage") describing the real key columns a filed table like this would
+     have — that much is known even without the filed workbook. What is NOT
+     known is the actual factor values, so every table below that can derive
+     columns from its keys gets a small, clearly-flagged SAMPLE dataset (a
+     "reference sheet" shape, not filed numbers) rather than sitting empty
+     until someone manually defines columns from scratch. `sample:true` is
+     what lookup-tables.html reads to keep this honestly labeled — "Sample
+     data", never "Loaded" — until a real CSV upload replaces it.
+     The 5 LOOKUP_LIVE tables (ids 1-5 — see lookup-tables.html) are excluded:
+     their real rows already live in RATE_TABLES and are browsable on Rate
+     Tables, so seeding a second, fake dataset here would just be confusing,
+     not helpful. "Multiple" (Cyber Helper Tables) isn't a real key list, so
+     it is left alone too — there is nothing honest to derive from it. */
+  const LOOKUP_SAMPLE_EXCLUDE = new Set([
+    "ZIP → Territory (Trucking)", "Increased Limits Factors", "Liability Loss Costs",
+    "Garagekeepers Rates", "PhysDam Rates by TIV",
+  ]);
+  const seedLookupSampleValue = (col, i) => {
+    const key = (col.name || "").toLowerCase();
+    if (/state/.test(key)) return ["CA", "TX", "NY"][i] || "CA";
+    if (/zip|postal/.test(key)) return ["90001", "10001", "77001"][i] || "00000";
+    if (/terr/.test(key)) return String(i + 1).padStart(3, "0");
+    if (/naics/.test(key)) return ["541511", "236220", "722511"][i] || "000000";
+    if (col.type === "Number") {
+      if (/(factor|ilf|mod)/.test(key)) return [0.85, 1.00, 1.15][i] ?? 1;
+      if (/limit/.test(key)) return [100000, 500000, 1000000][i] ?? 100000;
+      if (/ded(uctible)?/.test(key)) return [500, 1000, 2500][i] ?? 500;
+      if (/ppc/.test(key)) return i + 1;
+      return 100 * (i + 1);
+    }
+    if (/class/.test(key)) return `CL${String(i + 1).padStart(3, "0")}`;
+    return `Sample ${col.name} ${i + 1}`;
+  };
+  const seedLookupSampleRows = (columns, n) => Array.from({ length: n }, (_, i) => {
+    const row = {};
+    columns.forEach(c => { row[c.name] = seedLookupSampleValue(c, i); });
+    return { ...row, __rowId: i + 1, effectiveStart: "", effectiveEnd: "" };
+  });
   D.lookupTables = [
     { id: 1, name: "ZIP → Territory (Trucking)", lob: "Commercial Trucking", keys: "ZIP", rows: 57086, source: "ZIPCodes" },
     { id: 2, name: "Increased Limits Factors", lob: "Commercial Trucking", keys: "State + Table + Limit", rows: 5217, source: "IncreasedLimitsFactors" },
@@ -1285,7 +1324,15 @@
     { id: 21, name: "MPL ZIP Code", lob: "Professional Liability (MPL)", keys: "ZIP", rows: 57774, source: "ZipCode" },
     { id: 22, name: "MPL Incurred Loss Bands", lob: "Professional Liability (MPL)", keys: "Incurred Loss", rows: 155, source: "IncLoss" },
     { id: 23, name: "Cyber Helper Tables", lob: "Cyber", keys: "Multiple", rows: 184, source: "HelperTables" },
-  ].map(r => ({ ...r, active: true, columns: [], data: [] }));
+  ].map(r => {
+    const keyCols = (!LOOKUP_SAMPLE_EXCLUDE.has(r.name) && r.keys && r.keys !== "Multiple")
+      ? r.keys.split("+").map(s => s.trim()).filter(Boolean) : [];
+    // Every key column plus one generic "Factor" — the real value column's
+    // actual name isn't known without the filed workbook, so it is named for
+    // what it IS (a factor) rather than guessed at.
+    const columns = keyCols.length ? [...keyCols.map(name => ({ name, type: "Text" })), { name: "Factor", type: "Number" }] : [];
+    return { ...r, active: true, columns, data: columns.length ? seedLookupSampleRows(columns, 3) : [], sample: columns.length > 0 };
+  });
   // Admin-defined tables (new rows, new columns, whole new tables added via
   // the Lookup Tables screen) are real configuration, not demo data — restore
   // them the same way vxCustomFactors etc. survive a refresh (see API.create/
