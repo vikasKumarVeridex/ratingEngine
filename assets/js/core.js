@@ -23,13 +23,11 @@ const NAV = [
   { g: "Rating", items: [
     /* Lines of Business moved up to Configuration — an LOB is something you
        define before rating it, not a rating artefact. */
-    { h: "engine-flow.html", i: "fa-sitemap", l: "Engine Flow" },
     { h: "factors.html", i: "fa-sliders", l: "Rating Factors" },
     { h: "formula-builder.html", i: "fa-square-root-variable", l: "Rating Formulas" },
     { h: "rate-tables.html", i: "fa-database", l: "Rate Tables (live)" },
     { h: "industry-classes.html", i: "fa-industry", l: "Industry Classes" },
     { h: "lookup-tables.html", i: "fa-table-list", l: "Lookup Tables" },
-    { h: "ai-assistant.html", i: "fa-wand-magic-sparkles", l: "AI Assistant" },
     { h: "glossary.html", i: "fa-book", l: "Glossary" },
   ]},
   { g: "Pricing", items: [
@@ -940,6 +938,111 @@ function vxRejectFactorChange(reqId, note) {
   vxSaveFactorRequests();
   vxAudit("Rating Factors", "Change rejected",
     `${req.factorName} (${req.factorCode}): proposed ${req.from ?? "none"} → ${req.to} was rejected${note ? " — " + note : ""}`);
+  return req;
+}
+
+/* Pure calendar arithmetic — no Date object. Shared by the factor and
+   lookup-table approval flows so a rate-lock boundary is computed the same
+   way everywhere: Date("YYYY-MM-DD") parses as UTC midnight, but
+   setDate()/toISOString() round-trip through the LOCAL timezone, which west
+   of UTC silently lands a day early. */
+function vxDayBefore(d) {
+  const [y, m, day] = d.split("-").map(Number);
+  const dim = [31, (y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0)) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  let yy = y, mm = m, dd = day - 1;
+  if (dd < 1) { mm -= 1; if (mm < 1) { mm = 12; yy -= 1; } dd = dim[mm - 1]; }
+  return `${yy}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
+}
+
+/* ---------- Lookup table row-change approval ----------
+   Same governance shape as the factor-change block above, applied to a
+   single row on an admin-defined Lookup Table instead of a factor's Default
+   Value: a row edit or delete is requested, then approved by someone else,
+   and only then takes effect from an effective date. Adding a brand-new row
+   stays immediate — nothing was relying on a row that did not exist yet —
+   the same distinction Rating Factors draws between creating a factor
+   (immediate) and changing an existing one's value (gated). Approving does
+   not overwrite the row in place; it closes the current revision and opens
+   a new one (see VX.lookupRowsAsOf in data.js), so a table keeps every
+   revision of a row rather than losing the one a quote might have been
+   priced on. */
+function vxSaveLookupRequests() {
+  try { localStorage.setItem("vxLookupChangeRequests", JSON.stringify(VX.lookupChangeRequests)); } catch (e) {}
+}
+function vxPendingLookupRequest(tableId, rowId) {
+  return (VX.lookupChangeRequests || []).find(r => r.tableId === tableId && r.rowId === rowId && r.status === "Pending") || null;
+}
+/* `after` null means this is a delete request. Returns the request; does
+   NOT apply it — the row keeps showing `before` until someone else approves. */
+function vxRequestLookupRowChange(table, rowId, before, after, effectiveFrom, reason) {
+  VX.lookupChangeRequests = VX.lookupChangeRequests || [];
+  const rec = {
+    id: Math.max(0, ...VX.lookupChangeRequests.map(r => +r.id || 0)) + 1,
+    tableId: table.id, tableName: table.name, rowId,
+    action: after ? "edit" : "delete",
+    before: before ? { ...before } : null,
+    after: after ? { ...after } : null,
+    effectiveFrom: effectiveFrom || (VX.referenceDate || new Date().toISOString().slice(0, 10)),
+    reason: reason || "",
+    requestedBy: vxCurrentUser(), requestedOn: vxNowStamp(),
+    status: "Pending", decidedBy: null, decidedOn: null,
+  };
+  VX.lookupChangeRequests.unshift(rec);
+  vxSaveLookupRequests();
+  vxAudit("Lookup Tables", "Row change requested",
+    `${table.name}: ${rec.action === "delete" ? "delete row" : "edit row"}, effective ${rec.effectiveFrom} — awaiting approval`);
+  return rec;
+}
+/* Same "later of requested date or today" default as vxSuggestedApprovalDate
+   — a request sitting pending long enough can have its requested date slip
+   into the past before anyone signs it off. */
+function vxSuggestedLookupApprovalDate(req) {
+  const today = VX.referenceDate || new Date().toISOString().slice(0, 10);
+  return req.effectiveFrom > today ? req.effectiveFrom : today;
+}
+function vxApproveLookupRowChange(reqId, note, effectiveFrom) {
+  const req = (VX.lookupChangeRequests || []).find(r => r.id === reqId);
+  if (!req || req.status !== "Pending") return null;
+  const table = (VX.lookupTables || []).find(t => t.id === req.tableId);
+  if (!table) return null;
+
+  if (req.requestedBy === vxCurrentUser()) {
+    vxToast("Can't approve your own change", "A second person has to sign this off — that is what the step is for.", "err");
+    return null;
+  }
+
+  const goLive = effectiveFrom || req.effectiveFrom;
+  table.data = table.data || [];
+  // Close whichever revision of this row is currently open — there should
+  // only ever be one, but close every open one defensively rather than
+  // assume the invariant held.
+  table.data.filter(r => r.__rowId === req.rowId && !r.effectiveEnd)
+    .forEach(r => { r.effectiveEnd = vxDayBefore(goLive); });
+  if (req.action === "edit") {
+    table.data.push({ ...req.after, __rowId: req.rowId, effectiveStart: goLive, effectiveEnd: "" });
+  }
+  // A delete just lets the closed revision fall out of VX.lookupRowsAsOf from
+  // goLive onward — no replacement row is pushed.
+  table.rows = VX.lookupRowsAsOf(table).length;
+
+  req.status = "Approved"; req.decidedBy = vxCurrentUser(); req.decidedOn = vxNowStamp(); req.decisionNote = note || "";
+  req.effectiveFromRequested = req.effectiveFrom;   // what was asked for, kept for the record
+  req.effectiveFrom = goLive;                        // what actually went live
+  vxSaveLookupRequests();
+  try { localStorage.setItem("vxLookupTables", JSON.stringify(VX.lookupTables)); } catch (e) {}
+  vxAudit("Lookup Tables", "Row change approved",
+    `${req.tableName}: ${req.action === "delete" ? "row deleted" : "row updated"}, in force from ${goLive}`
+    + (goLive !== req.effectiveFromRequested ? ` (requested ${req.effectiveFromRequested})` : "")
+    + ` — requested by ${req.requestedBy}`);
+  return req;
+}
+function vxRejectLookupRowChange(reqId, note) {
+  const req = (VX.lookupChangeRequests || []).find(r => r.id === reqId);
+  if (!req || req.status !== "Pending") return null;
+  req.status = "Rejected"; req.decidedBy = vxCurrentUser(); req.decidedOn = vxNowStamp(); req.decisionNote = note || "";
+  vxSaveLookupRequests();
+  vxAudit("Lookup Tables", "Row change rejected",
+    `${req.tableName}: proposed ${req.action} was rejected${note ? " — " + note : ""}`);
   return req;
 }
 

@@ -194,7 +194,14 @@ function vxAgGrid(opt) {
   const gridApi = agGrid.createGrid(document.getElementById(id + "grid"), gridOptions);
 
   /* ---------- data load — AG Grid owns search/filter/sort/page client-side from here on; reload() just refetches VX[key] ---------- */
-  function reload() {
+  /* `focusId`: a record just created or edited can land anywhere in the sort
+     order — with no default sort, a new row is appended at the END of the
+     data and was silently landing on whatever the last page happens to be,
+     with nothing telling the person who just saved it that it worked. When
+     given, jump pagination to the page that record is actually on (respecting
+     whatever filter/sort is active) and flash its row so "did that save?"
+     has a visible answer instead of an empty-looking page 1. */
+  function reload(focusId) {
     API.list(key, { size: 1000000 }).then(res => {
       gridApi.setGridOption("rowData", res.data);
       const hasFilter = !!st.q || Object.values(st.filters).some(v => Array.isArray(v) ? v.length : v);
@@ -204,6 +211,16 @@ function vxAgGrid(opt) {
         : `No ${name.toLowerCase()}s yet.` + (opt.readOnly ? "" : `<br><button class="btn btn-primary btn-sm mt-2" id="${id}emptyAdd"><i class="fa-solid fa-plus me-1"></i>Add ${name}</button>`);
       const clr = document.getElementById(id + "emptyClr"); if (clr) clr.onclick = clearFilters;
       const eAdd = document.getElementById(id + "emptyAdd"); if (eAdd) eAdd.onclick = () => formModal(null);
+      if (focusId == null) return;
+      // Deferred a tick: AG Grid rebuilds its sorted/filtered row model
+      // asynchronously off the rowData change above.
+      setTimeout(() => {
+        let node = null;
+        gridApi.forEachNodeAfterFilterAndSort(n => { if (String(n.data && n.data.id) === String(focusId)) node = n; });
+        if (!node) return; // filtered out by an active search/filter — nothing to jump to
+        gridApi.paginationGoToPage(Math.floor(node.rowIndex / pageSize));
+        setTimeout(() => { try { gridApi.flashCells({ rowNodes: [node] }); } catch (e) {} }, 60);
+      }, 0);
     });
   }
 
@@ -355,8 +372,38 @@ function vxAgGrid(opt) {
       }
       if (f.t === "select") {
         const o = resolve(f.opts, cur);
+        const optsHtml = o.map(x => { const val = x && typeof x === "object" ? x.value : x;
+                       const lab = x && typeof x === "object" ? x.label : x;
+                       return `<option value="${val}" ${val == v ? "selected" : ""}>${lab}</option>`; }).join("");
+        // `f.search` keeps the closed, single-line dropdown (unlike
+        // "searchselect" below, which forces an always-open listbox) but adds
+        // a filter box above it for a long option list — the same [data-fsearch]
+        // wiring searchselect uses already works against any select, closed
+        // or open, so no extra JS is needed here, only the markup.
+        const searchBar = f.search ? `<div class="input-group input-group-sm mb-1">
+            <input class="form-control" type="search" data-fsearch="${f.k}"
+              placeholder="${f.searchPlaceholder || "Search…"}" aria-label="Search ${f.l}" aria-describedby="${id}searchStatus${f.k}">
+            <button class="btn btn-outline-secondary" type="button" data-fsearchclear="${f.k}" title="Clear search" aria-label="Clear ${f.l} search"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+          </div>
+          <div id="${id}searchStatus${f.k}" data-fsearchstatus="${f.k}" style="font-size:10.8px;color:var(--text-dim);margin:-1px 0 5px" aria-live="polite">${o.length} options available</div>` : "";
         return wrap(`<label>${f.l}</label>
-          <select class="form-select form-select-sm" data-f="${f.k}"${dis}>
+          ${searchBar}
+          <select class="form-select form-select-sm" data-f="${f.k}"${dis}>${optsHtml}</select>`);
+      }
+      /* A native select is hard to use once a registry has dozens of tables.
+         Keep its reliable value semantics, but pair it with a search box that
+         filters its options in place. This works with dependent fields too:
+         fieldHtml() recreates both controls when the parent selection changes. */
+      if (f.t === "searchselect") {
+        const o = resolve(f.opts, cur);
+        return wrap(`<label>${f.l}</label>
+          <div class="input-group input-group-sm mb-1">
+            <input class="form-control" type="search" data-fsearch="${f.k}"
+              placeholder="Search by table, line, or coverage…" aria-label="Search ${f.l}" aria-describedby="${id}searchStatus${f.k}">
+            <button class="btn btn-outline-secondary" type="button" data-fsearchclear="${f.k}" title="Clear search" aria-label="Clear ${f.l} search"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+          </div>
+          <div id="${id}searchStatus${f.k}" data-fsearchstatus="${f.k}" style="font-size:10.8px;color:var(--text-dim);margin:-1px 0 5px" aria-live="polite">${o.length} tables available</div>
+          <select class="form-select form-select-sm" data-f="${f.k}" size="${f.searchSize || 6}"${dis}>
             ${o.map(x => { const val = x && typeof x === "object" ? x.value : x;
                            const lab = x && typeof x === "object" ? x.label : x;
                            return `<option value="${val}" ${val == v ? "selected" : ""}>${lab}</option>`; }).join("")}
@@ -382,6 +429,44 @@ function vxAgGrid(opt) {
                 <label class="form-check-label" for="${id}m${f.k}${i}">${lab}</label></div>`; }).join("")
               : `<div style="font-size:12px;color:var(--text-mute)">${f.empty || "Nothing to choose from yet."}</div>`}
           </div>${f.hint ? `<div style="font-size:10.8px;color:var(--text-dim);margin-top:3px">${f.hint}</div>` : ""}</div>`;
+      }
+      /* Single-select combobox — a closed control, same as `select`, but the
+         search box lives INSIDE the opened panel instead of sitting as its
+         own separate control above a plain <select> (that was `search: true`
+         on `select`, now replaced everywhere it was used). One box when
+         closed, one box when open — never two stacked controls. Shares its
+         open/close, search-filter and outside-click wiring with `dropdown`
+         below (same data-dd/data-ddbtn/data-ddpanel/data-ddsearch attributes)
+         since both are "closed button opens a searchable panel"; only how a
+         row selects differs — one click here, not a checkbox. */
+      if (f.t === "combo") {
+        const o = resolve(f.opts, cur);
+        const selected = (v !== "" && v != null) ? o.find(x => String(x && typeof x === "object" ? x.value : x) === String(v)) : null;
+        const curLabel = selected ? (typeof selected === "object" ? selected.label : selected) : (f.placeholder || "— none —");
+        return `<div class="col-md-${f.w || 6}${lk ? " vx-fld-locked" : ""}" data-fw="${f.k}">
+          <label class="d-block">${f.l}</label>
+          <div class="vx-dd" data-dd="${f.k}">
+            <button type="button" class="vx-dd-btn" data-ddbtn="${f.k}"${dis}>
+              <span data-combolabel="${f.k}">${curLabel}</span><i class="fa-solid fa-chevron-down"></i></button>
+            <input type="hidden" data-f="${f.k}" value="${v ?? ""}">
+            <div class="vx-dd-panel" data-ddpanel="${f.k}">
+              <div class="vx-dd-head">
+                <input type="text" class="form-control form-control-sm" placeholder="${f.searchPlaceholder || "Search…"}" data-ddsearch="${f.k}">
+              </div>
+              <div class="vx-dd-list" data-combolist="${f.k}">
+                ${o.map((x, i) => { const val = x && typeof x === "object" ? x.value : x;
+                  const lab = x && typeof x === "object" ? x.label : x;
+                  // A divider row (empty value, label only — the "── other lines of
+                  // business ──" separators tableOptsFor()/formulaOptsFor() emit) is
+                  // shown but not selectable.
+                  const isDivider = val === "" && /^(—|─)/.test(String(lab));
+                  return isDivider
+                    ? `<div class="vx-dd-opt-hd">${lab}</div>`
+                    : `<div class="vx-dd-opt${String(val) === String(v ?? "") ? " sel" : ""}" data-comboopt="${f.k}" data-comboval="${val}" data-ddlabel="${String(lab).toLowerCase()}">${lab}</div>`;
+                }).join("")}
+              </div>
+            </div>
+          </div>${hint}</div>`;
       }
       /* Dropdown multi-select — a closed control that opens a searchable
          panel. For long lists (all 50 states) a flat inline checkbox wall
@@ -495,7 +580,7 @@ function vxAgGrid(opt) {
     const headerHtml = opt.formHeader ? (opt.formHeader(rec, isNew) || "") : "";
 
     vxModal(titleText,
-      `${headerHtml}<div class="row g-3">${inputs}</div>
+      `${headerHtml}<div class="row g-3" data-vxflds>${inputs}</div>
        <div class="vx-ai mt-3"><span class="tag"><i class="fa-solid fa-wand-magic-sparkles"></i>AI Validation</span>
        No conflicting effective-date ranges detected. Factor values fall within the expected statistical range for this ${name.toLowerCase()} type.
        ${isNew ? "This will be created in the current draft version." : "Changes create a new revision; the prior value stays queryable for in-force policies."}</div>`,
@@ -534,7 +619,7 @@ function vxAgGrid(opt) {
           for (const v of values) last = await API.create(key, { ...r, [fan.k]: v });
           if (opt.onAfterSave) await opt.onAfterSave(last && last.data, true);
           vxToast(`${values.length} ${name.toLowerCase()}s created`, `One per ${fan.l.toLowerCase()}: ${values.join(", ")}`, "ok");
-          vxAutoSave(); reload();
+          vxAutoSave(); reload(last && last.data && last.data.id);
           if (again) setTimeout(() => formModal(null), 260);
           return;
         }
@@ -547,7 +632,7 @@ function vxAgGrid(opt) {
            opt-in shape as onHist. */
         if (opt.onAfterSave) await opt.onAfterSave(res.data || r, isNew);
         vxToast(`${name} ${isNew ? "created" : "updated"}`, r.name || r.code || "Configuration saved", "ok");
-        vxAutoSave(); reload();
+        vxAutoSave(); reload(res.data && res.data.id);
         /* Reopen a blank form for the next one. Deferred so this dialog has
            finished closing before the next opens. */
         if (again) setTimeout(() => formModal(null), 260);
@@ -589,6 +674,28 @@ function vxAgGrid(opt) {
     };
 
     function wire() {
+      // Searchable single-select: hide non-matching options without changing
+      // the selected value. Matching includes the displayed label and value.
+      modal.querySelectorAll("[data-fsearch]").forEach(inp => {
+        const select = modal.querySelector(`[data-f="${inp.dataset.fsearch}"]`);
+        if (!select) return;
+        const status = modal.querySelector(`[data-fsearchstatus="${inp.dataset.fsearch}"]`);
+        const filter = () => {
+          const q = inp.value.trim().toLowerCase();
+          let matches = 0;
+          [...select.options].forEach(opt => {
+            const visible = !q || (opt.textContent + " " + opt.value).toLowerCase().includes(q);
+            opt.hidden = !visible;
+            if (visible) matches++;
+          });
+          if (status) status.textContent = q
+            ? (matches ? `${matches} matching table${matches === 1 ? "" : "s"}` : "No matching tables — try another search")
+            : `${matches} tables available`;
+        };
+        inp.oninput = filter;
+        const clear = modal.querySelector(`[data-fsearchclear="${inp.dataset.fsearch}"]`);
+        if (clear) clear.onclick = () => { inp.value = ""; filter(); inp.focus(); };
+      });
       // dropdown multi-select: open/close, search, outside-click
       modal.querySelectorAll("[data-ddbtn]").forEach(b => b.onclick = e => {
         e.preventDefault(); e.stopPropagation();
@@ -614,6 +721,20 @@ function vxAgGrid(opt) {
         modal.__ddOutside = true;
         modal.addEventListener("click", () => modal.querySelectorAll("[data-dd]").forEach(x => x.classList.remove("on")));
       }
+      // combo single-select: click a row to pick it and close — the same
+      // open/close/search/outside-click wiring above already applies, since
+      // combo shares the dropdown's data-dd/data-ddbtn/data-ddpanel/data-ddsearch.
+      modal.querySelectorAll("[data-comboopt]").forEach(o => o.onclick = () => {
+        const k = o.dataset.comboopt, val = o.dataset.comboval;
+        const hidden = modal.querySelector(`input[type="hidden"][data-f="${k}"]`);
+        if (hidden) { hidden.value = val; hidden.dispatchEvent(new Event("change", { bubbles: true })); }
+        const label = modal.querySelector(`[data-combolabel="${k}"]`);
+        if (label) label.textContent = o.textContent;
+        modal.querySelectorAll(`[data-combolist="${k}"] .vx-dd-opt`).forEach(x => x.classList.toggle("sel", x === o));
+        const dd = modal.querySelector(`[data-dd="${k}"]`);
+        if (dd) dd.classList.remove("on");
+        sync();
+      });
 
       // `columns` field: add/remove a row. Delegated on the modal (not bound
       // per-button) so a row appended after initial render is removable too.
@@ -730,16 +851,35 @@ function vxAgGrid(opt) {
         deps.forEach(depKey => {
           modal.querySelectorAll(`[data-f="${depKey}"]`).forEach(src => src.addEventListener("change", () => {
           sync();
-          const holder = modal.querySelector(`[data-fw="${f.k}"]`);
-          if (!holder) return;
           // the dependency changed, so a stale selection no longer applies —
           // skipped for a field with its own `val`, which recomputes instead
           // of reading back a stored property.
           if (f.clearOnChange !== false && typeof f.val !== "function") r[f.k] = Array.isArray(r[f.k]) ? [] : "";
           const tmp = document.createElement("div");
           tmp.innerHTML = fieldHtml(f, r);
-          if (tmp.firstElementChild) holder.replaceWith(tmp.firstElementChild);
-          else holder.remove();
+          const holder = modal.querySelector(`[data-fw="${f.k}"]`);
+          if (holder) {
+            if (tmp.firstElementChild) holder.replaceWith(tmp.firstElementChild);
+            else holder.remove();
+          } else if (tmp.firstElementChild) {
+            /* No holder to replace — a `hideIf` field (e.g. "Computed how",
+               shown only once Type is set to Computed) starts with no DOM
+               node at all, so there was nothing here for a dependsOn change
+               to find and swap. It has just become visible for the first
+               time this session: insert it back where `flds` order says it
+               belongs — right after the nearest earlier field that currently
+               has a holder — rather than dropping it silently. */
+            const row = modal.querySelector("[data-vxflds]");
+            if (row) {
+              const idx = flds.indexOf(f);
+              let anchor = null;
+              for (let i = idx - 1; i >= 0 && !anchor; i--) {
+                anchor = modal.querySelector(`[data-fw="${flds[i].k}"]`);
+              }
+              if (anchor) anchor.after(tmp.firstElementChild);
+              else row.prepend(tmp.firstElementChild);
+            }
+          }
           wire();
           }));
         });

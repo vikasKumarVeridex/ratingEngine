@@ -90,6 +90,12 @@
   --z-modal:      500;
   --z-toast:      600;
   --z-tooltip:    700;
+  /* Bootstrap's own .modal-backdrop (1050) and .modal (1055) sit well above
+     this whole scale — a page never needed anything higher until a tooltip
+     had to render on top of ITS content instead of alongside it. .vx-th-tip
+     is appended to <body>, a sibling of #vxModal, so its z-index alone
+     decides who wins; 300 lost silently behind the modal. */
+  --z-modal-tip:  1200;
 
   /* ====================================================================
      Migration aliases.
@@ -381,6 +387,11 @@ a:hover{text-decoration:underline}
 .vx-dd-opt:hover{background:var(--surface-2)}
 .vx-dd-opt input{flex:none;margin:0}
 .vx-dd-opt.hide{display:none}
+/* combo (single-select) rows have no checkbox to show state, so the
+   selected one gets its own highlight — the multi-select variant doesn't
+   need this since a checked box already says so. */
+.vx-dd-opt.sel{background:var(--primary-soft);color:var(--primary);font-weight:600}
+.vx-dd-opt-hd{padding:6px 8px 3px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-mute)}
 
 /* ---------- Collapsible parent/child checkbox tree (form field) ---------- */
 .vx-tree-grp{border-bottom:1px solid var(--border)}
@@ -782,7 +793,7 @@ table.vx-t th{position:relative}
 table.vx-t th:hover .vx-th-tip-icon,
 table.vx-t th:focus-within .vx-th-tip-icon{color:var(--cat-1)}
 
-.vx-th-tip{position:absolute;z-index:var(--z-overlay,300);max-width:320px;min-width:210px;
+.vx-th-tip{position:absolute;z-index:var(--z-modal-tip,1200);max-width:320px;min-width:210px;
   padding:10px 12px;border-radius:8px;background:var(--surface);border:1px solid var(--border);
   box-shadow:var(--shadow-lg);opacity:0;transform:translateY(-2px);
   transition:opacity .12s ease, transform .12s ease;pointer-events:none;

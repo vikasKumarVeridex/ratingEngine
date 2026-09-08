@@ -42,44 +42,195 @@ document.getElementById("vxBody").innerHTML = `
     are not loaded here. <b>${Object.keys(LOOKUP_LIVE).length} of ${VX.lookupTables.length}</b> tables (all Commercial
     Trucking) have real rows extracted and browsable — click <i class="fa-solid fa-table-cells"></i> on those rows.
     The rest are sized but not yet loaded.</div>
+  <div id="lookupApprovals"></div>
   <div class="vx-card vx-anim"><div id="grid"></div></div>`;
 /* Rows is never typed in — it always reflects reality. A table whose
-   structure has been defined (columns.length) reports the actual number of
-   rows entered through "Add row"; a table nobody has touched yet still shows
-   its original production-scale sizing estimate, unchanged. */
-const rowCount = r => (r.columns && r.columns.length) ? (r.data ? r.data.length : 0) : r.rows;
+   structure has been defined (columns.length) reports the number of rows
+   actually in force today (VX.lookupRowsAsOf — see data.js), not the raw
+   length of `data`, which now also holds every past revision of an edited
+   or deleted row. A table nobody has touched yet still shows its original
+   production-scale sizing estimate, unchanged. */
+const rowCount = r => (r.columns && r.columns.length) ? VX.lookupRowsAsOf(r).length : r.rows;
 
 const grid = vxAgGrid({ el:"#grid", key:"lookupTables", name:"Lookup Table",
+  noClone: true,
+  noHist: true,
 
   // Same pattern as products.html/vxProductsState — an admin-defined table
   // (and the columns on it) is real configuration, not demo data, so it must
   // survive a refresh instead of resetting to the seed inventory.
-  onAfterSave: () => { try { localStorage.setItem("vxLookupTables", JSON.stringify(VX.lookupTables)); } catch (e) {} },
-  onAfterDelete: () => { try { localStorage.setItem("vxLookupTables", JSON.stringify(VX.lookupTables)); } catch (e) {} },
+  onAfterSave: rec => { refreshSampleCsv(rec); persistLookupTables(); },
+  onAfterDelete: () => persistLookupTables(),
 
   cols:[{k:"name",l:"Lookup Table"},{k:"lob",l:"LOB"},{k:"keys",l:"Key Columns"},
       {k:"rows",l:"Rows",r:r=>'<b>'+vxNum(rowCount(r))+'</b>'},
-      {k:"records",l:"Records",r:r=>(LOOKUP_LIVE[r.name] || (r.data && r.data.length)) ? '<span class="vx-b green">Loaded</span>' : vxWiredChip(false,"Not loaded")}],
+      {k:"records",l:"Records",r:r=>(LOOKUP_LIVE[r.name] || rowCount(r)) ? '<span class="vx-b green">Loaded</span>' : vxWiredChip(false,"Not loaded")}],
   form:[{k:"name",l:"Table Name"},{k:"lob",l:"LOB",t:"select",opts:vxLobNames()},
       {k:"columns",l:"Columns",t:"columns",
         hint:"Define the table's structure — rows are added afterwards from the grid, and the Rows count updates automatically as you add them."}],
   filters:[{k:"lob",l:"LOB",opts:vxLobNames()}],
-  rowActions:[{i:"fa-table-cells",t:"View records",fn:viewRecords},{i:"fa-plus",t:"Add row",fn:addRow}] });
+  rowActions:[{i:"fa-table-cells",t:"View records",fn:viewRecords},{i:"fa-plus",t:"Add row",fn:addRow},
+    {i:"fa-file-csv",t:"Download sample CSV",fn:downloadSampleCsv},{i:"fa-upload",t:"Upload CSV",fn:uploadCsv}] });
+renderLookupApprovals();
+
+function persistLookupTables() {
+  try { localStorage.setItem("vxLookupTables", JSON.stringify(VX.lookupTables)); } catch (e) {}
+}
+function csvCell(v) {
+  const s = String(v ?? "");
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+function sampleValue(column, index) {
+  const key = `${column.name || ""} ${column.id || ""}`.toLowerCase();
+  if (column.type === "Boolean") return "false";
+  if (column.type === "Date") return VX.referenceDate || "2026-09-07";
+  if (column.type === "Number" || column.type === "Range") return column.min ?? (/(factor|rate)/.test(key) ? "1" : "100");
+  if (/state/.test(key)) return "CA";
+  if (/zip|postal/.test(key)) return "00000";
+  if (/territory/.test(key)) return "001";
+  if (/code/.test(key)) return `SAMPLE_${index + 1}`;
+  return `Sample ${column.name || index + 1}`;
+}
+/* The template is regenerated from the current field definitions every time
+   a table is saved or downloaded. Adding/renaming a column therefore cannot
+   leave a stale CSV header behind. */
+function buildSampleCsv(rec) {
+  const cols = (rec && rec.columns) || [];
+  if (!cols.length) return "# Define one or more columns, then download the sample again.\r\n";
+  return [cols.map(c => csvCell(c.name)).join(","), cols.map((c, i) => csvCell(sampleValue(c, i))).join(",")].join("\r\n") + "\r\n";
+}
+function refreshSampleCsv(rec) {
+  if (rec) rec.sampleCsv = buildSampleCsv(rec);
+}
+function downloadSampleCsv(rec) {
+  refreshSampleCsv(rec);
+  const blob = new Blob([rec.sampleCsv], { type: "text/csv;charset=utf-8" });
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  link.href = url;
+  link.download = `${String(rec.name || "lookup-table").replace(/[^a-z0-9]+/gi, "-").replace(/(^-|-$)/g, "").toLowerCase()}-sample.csv`;
+  document.body.appendChild(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+  vxToast("Sample CSV downloaded", `${rec.name}: ${((rec.columns || []).length)} field${(rec.columns || []).length === 1 ? "" : "s"} plus one example row`, "ok");
+}
+function parseCsv(text) {
+  const rows = [[]]; let cell = "", quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '"' && quoted && text[i + 1] === '"') { cell += '"'; i++; }
+    else if (ch === '"') quoted = !quoted;
+    else if (ch === "," && !quoted) { rows[rows.length - 1].push(cell); cell = ""; }
+    else if ((ch === "\n" || ch === "\r") && !quoted) {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      rows[rows.length - 1].push(cell); cell = ""; rows.push([]);
+    } else cell += ch;
+  }
+  if (cell || rows[rows.length - 1].length) rows[rows.length - 1].push(cell);
+  return rows.filter(r => r.some(v => String(v).trim() !== ""));
+}
+function typedCsvValue(value, column) {
+  if (column.type === "Boolean") return /^(true|1|yes)$/i.test(value);
+  if (column.type === "Number" || column.type === "Range") return value === "" ? "" : Number(value);
+  return value;
+}
+function uploadCsv(rec) {
+  if (LOOKUP_LIVE[rec.name]) { vxToast("Not editable here", `${rec.name} is a filed dataset.`, "info"); return; }
+  if (!rec.columns || !rec.columns.length) { vxToast("Define columns first", "Add fields before uploading a CSV.", "warn"); return; }
+  vxModal(`Upload CSV — ${rec.name}`, `<div class="sub mb-3">Use this table's <b>Download sample CSV</b> action for the exact headers. Uploading replaces this table's local rows only.</div>
+    <input id="lookupCsvFile" type="file" class="form-control" accept=".csv,text/csv">`,
+    [{t:"Cancel",c:"secondary"},{t:"Upload CSV",c:"primary",fn:() => importCsv(rec)}]);
+}
+function importCsv(rec) {
+  const file = document.getElementById("lookupCsvFile").files[0];
+  if (!file) { vxToast("Choose a CSV", "Select a .csv file to upload.", "warn"); return false; }
+  const reader = new FileReader();
+  reader.onerror = () => vxToast("Upload failed", "The CSV file could not be read.", "err");
+  reader.onload = () => {
+    const csv = parseCsv(String(reader.result || ""));
+    const headers = csv.shift() || [];
+    const expected = rec.columns.map(c => c.name);
+    const missing = expected.filter(name => !headers.includes(name));
+    if (missing.length) { vxToast("Upload failed", `Missing column${missing.length === 1 ? "" : "s"}: ${missing.join(", ")}`, "err"); return; }
+    const rows = csv.map((values, i) => ({
+      ...Object.fromEntries(rec.columns.map(c => [c.name, typedCsvValue(values[headers.indexOf(c.name)] ?? "", c)])),
+      __rowId: i + 1, effectiveStart: "", effectiveEnd: "",
+    }));
+    rec.data = rows; rec.rows = rows.length; refreshSampleCsv(rec);
+    // A full CSV upload replaces every row's identity, so any change request
+    // still pending against this table is now pointing at a __rowId that no
+    // longer exists — reject it rather than leave it dangling on the
+    // approvals panel with nothing left for an approver to apply it to.
+    (VX.lookupChangeRequests || []).filter(r => r.tableId === rec.id && r.status === "Pending")
+      .forEach(r => vxRejectLookupRowChange(r.id, "Table replaced by a CSV upload before this could be approved"));
+    API.update("lookupTables", rec.id, { data: rows, rows: rec.rows, sampleCsv: rec.sampleCsv }).then(() => {
+      persistLookupTables(); vxAutoSave(); grid.reload(); renderLookupApprovals();
+      vxToast("CSV uploaded", `${rec.name} now has ${rows.length} row${rows.length === 1 ? "" : "s"}`, "ok");
+    });
+  };
+  reader.readAsText(file);
+}
 
 function viewRecords(rec) {
   const tableId = LOOKUP_LIVE[rec.name];
   if (tableId) { location.href = "rate-tables.html?table=" + encodeURIComponent(tableId); return; }
-  if (rec.data && rec.data.length) { viewLocalData(rec); return; }
+  if (rowCount(rec)) { viewLocalData(rec); return; }
   vxToast("No records loaded", `${rec.name} is sized in the inventory but its rows haven't been extracted yet. Use "Add row" to start entering data.`, "warn");
 }
 
+/* Rows could only ever be ADDED, never fixed — a typo entered through "Add
+   row" had no way back except deleting the whole table and starting over.
+   Each row now carries its own Edit/Delete; both go through the same
+   approve-then-effective-date gate as a Rating Factor's Default Value
+   (vxRequestLookupRowChange in core.js) rather than writing over the row
+   immediately, so the list here always shows VX.lookupRowsAsOf — the row in
+   force TODAY, not a proposed change still waiting on someone else. */
 function viewLocalData(rec) {
   const cols = rec.columns || [];
-  vxModal(`${rec.name} — ${rec.data.length} row${rec.data.length === 1 ? "" : "s"}`,
-    `<div class="vx-tw"><table class="vx-t"><thead><tr>${cols.map(c => `<th>${c.name}</th>`).join("")}</tr></thead>
-      <tbody>${rec.data.map(row => `<tr>${cols.map(c => `<td>${row[c.name] ?? '<span style="color:var(--text-mute)">—</span>'}</td>`).join("")}</tr>`).join("")}</tbody>
+  const editable = !LOOKUP_LIVE[rec.name];
+  const rows = VX.lookupRowsAsOf(rec).slice().sort((a, b) => a.__rowId - b.__rowId);
+  vxModal(`${rec.name} — ${rows.length} row${rows.length === 1 ? "" : "s"}`,
+    `<div class="vx-tw"><table class="vx-t"><thead><tr>${cols.map(c => `<th>${c.name}</th>`).join("")}${editable ? "<th></th>" : ""}</tr></thead>
+      <tbody>${rows.map(row => {
+        const pending = editable && vxPendingLookupRequest(rec.id, row.__rowId);
+        return `<tr>${cols.map(c => `<td>${row[c.name] ?? '<span style="color:var(--text-mute)">—</span>'}</td>`).join("")}
+        ${editable ? `<td style="white-space:nowrap;text-align:end">
+          ${pending ? `<span class="vx-b amber hintdot" style="margin-inline-end:6px" title="${pending.action === "delete" ? "Pending deletion" : "Pending edit"}, effective ${pending.effectiveFrom} — requested by ${pending.requestedBy.split("@")[0]}. This row still shows what's in force today.">pending</span>` : ""}
+          <button class="vx-icobtn" data-rowedit="${row.__rowId}" title="Edit this row" style="width:28px;height:28px"><i class="fa-solid fa-pen" style="font-size:11px"></i></button>
+          <button class="vx-icobtn" data-rowdel="${row.__rowId}" title="Delete this row" style="width:28px;height:28px"><i class="fa-solid fa-trash" style="font-size:11px"></i></button>
+        </td>` : ""}</tr>`;
+      }).join("")}</tbody>
     </table></div>`,
-    [{ t:"Close", c:"secondary" }, { t:"Add Row", c:"primary", fn:() => { setTimeout(() => addRow(rec), 300); } }], "modal-lg");
+    [{ t:"Close", c:"secondary" }, ...(editable ? [{ t:"Add Row", c:"primary", fn:() => { setTimeout(() => addRow(rec), 300); } }] : [])], "modal-lg");
+  if (!editable) return;
+  const modal = document.getElementById("vxModal");
+  modal.querySelectorAll("[data-rowedit]").forEach(b => b.onclick = () => { setTimeout(() => openRowModal(rec, +b.dataset.rowedit), 260); });
+  modal.querySelectorAll("[data-rowdel]").forEach(b => b.onclick = () => deleteRow(rec, +b.dataset.rowdel));
+}
+
+/* `rowId` is the row's stable __rowId, not an array index — table.data now
+   holds every revision of every row (see VX.lookupRowsAsOf), so an index
+   into it stopped meaning "this row" the moment a second revision existed. */
+function deleteRow(rec, rowId) {
+  const row = VX.lookupRowsAsOf(rec).find(r => r.__rowId === rowId);
+  if (!row) return;
+  const label = (rec.columns || []).map(c => row[c.name]).filter(v => v !== undefined && v !== "").slice(0, 2).join(" · ") || "this row";
+  const suggested = VX.referenceDate || new Date().toISOString().slice(0, 10);
+  vxModal("Delete this row?", `
+    <div style="font-size:13px;line-height:1.6">Removes <b>${label}</b> from <b>${rec.name}</b>.
+      <div style="margin-top:8px">Sent for someone else's approval first — the row stays in force, unchanged, until then.</div>
+    </div>
+    <div class="row g-3 mt-2">
+      <div class="col-md-6"><label>In force from</label><input type="date" class="form-control form-control-sm" id="rowDelEffDate" value="${suggested}"></div>
+      <div class="col-md-6"><label>Reason</label><input type="text" class="form-control form-control-sm" id="rowDelReason" placeholder="Optional"></div>
+    </div>`,
+    [{ t:"Cancel", c:"secondary" }, { t:"Send for approval", c:"primary", fn:() => {
+      const effDate = document.getElementById("rowDelEffDate").value || suggested;
+      const reason = document.getElementById("rowDelReason").value;
+      const req = vxRequestLookupRowChange(rec, rowId, row, null, effDate, reason);
+      vxToast("Sent for approval", `${rec.name}: row deletion effective ${req.effectiveFrom}. It stays in force until someone else approves it.`, "info");
+      renderLookupApprovals(); grid.reload();
+      setTimeout(() => viewLocalData(rec), 260);
+    } }]);
 }
 
 /* Entering rows is a separate step from defining the table, and reuses
@@ -100,22 +251,44 @@ function addRow(rec) {
   openRowModal(rec);
 }
 
-function openRowModal(rec) {
-  const body = `<div class="row g-3">${rec.columns.map(c => {
+/* `rowId` (undefined on Add) switches this into edit mode: fields pre-fill
+   from the row's current, in-force values, the title reads "Edit", there's
+   no "Save & Add Another" (you're fixing one row, not entering a run of new
+   ones), and saving raises an approval request instead of writing over the
+   row — see the effective-date/reason fields added below the form. Adding a
+   brand-new row stays immediate: nothing was relying on a row that did not
+   exist yet, the same distinction Rating Factors draws between creating a
+   factor and changing an existing one's value. */
+function openRowModal(rec, rowId) {
+  const editing = rowId != null;
+  const existing = editing ? (VX.lookupRowsAsOf(rec).find(r => r.__rowId === rowId) || {}) : {};
+  const fields = `<div class="row g-3">${rec.columns.map(c => {
+    const val = existing[c.name];
     if (c.type === "Boolean") return `<div class="col-md-6"><label class="d-block">${c.name}</label>
-      <div class="form-check form-switch"><input class="form-check-input" type="checkbox" data-rf="${c.name}"></div></div>`;
+      <div class="form-check form-switch"><input class="form-check-input" type="checkbox" data-rf="${c.name}"${val ? " checked" : ""}></div></div>`;
     if (c.type === "Range") return `<div class="col-md-6"><label>${c.name} <span style="font-weight:400;color:var(--text-mute)">(${c.min ?? "–"}–${c.max ?? "–"})</span></label>
-      <input type="number" class="form-control form-control-sm" data-rf="${c.name}"${c.min !== undefined ? ` min="${c.min}"` : ""}${c.max !== undefined ? ` max="${c.max}"` : ""}></div>`;
+      <input type="number" class="form-control form-control-sm" data-rf="${c.name}" value="${val ?? ""}"${c.min !== undefined ? ` min="${c.min}"` : ""}${c.max !== undefined ? ` max="${c.max}"` : ""}></div>`;
     const type = c.type === "Number" ? "number" : c.type === "Date" ? "date" : "text";
-    return `<div class="col-md-6"><label>${c.name}</label><input type="${type}" class="form-control form-control-sm" data-rf="${c.name}"></div>`;
+    return `<div class="col-md-6"><label>${c.name}</label><input type="${type}" class="form-control form-control-sm" data-rf="${c.name}" value="${val ?? ""}"></div>`;
   }).join("")}</div>`;
-  vxModal(`Add Row — ${rec.name}`, body,
-    [{ t:"Cancel", c:"secondary" },
-     { t:"Save & Add Another", c:"secondary", fn:() => saveRow(rec, true) },
-     { t:"Save Row", c:"primary", fn:() => saveRow(rec, false) }]);
+  const suggested = VX.referenceDate || new Date().toISOString().slice(0, 10);
+  const approvalFields = editing ? `
+    <div class="row g-3 mt-1">
+      <div class="col-md-6"><label>In force from</label><input type="date" class="form-control form-control-sm" id="rowEffDate" value="${suggested}"></div>
+      <div class="col-md-6"><label>Reason for the change</label><input type="text" class="form-control form-control-sm" id="rowReason" placeholder="e.g. Filed rate revision 2026-09"></div>
+    </div>
+    <div class="mt-2" style="font-size:11.4px;color:var(--text-dim)">
+      Sent for someone else's approval — this row keeps showing its current values until then.
+    </div>` : "";
+  vxModal(`${editing ? "Edit" : "Add"} Row — ${rec.name}`, fields + approvalFields,
+    editing
+      ? [{ t:"Cancel", c:"secondary" }, { t:"Send for approval", c:"primary", fn:() => saveRow(rec, false, rowId, existing) }]
+      : [{ t:"Cancel", c:"secondary" },
+         { t:"Save & Add Another", c:"secondary", fn:() => saveRow(rec, true) },
+         { t:"Save Row", c:"primary", fn:() => saveRow(rec, false) }]);
 }
 
-function saveRow(rec, again) {
+function saveRow(rec, again, rowId, beforeRow) {
   const el = document.getElementById("vxModal");
   const row = {};
   el.querySelectorAll("[data-rf]").forEach(inp => {
@@ -126,13 +299,103 @@ function saveRow(rec, again) {
     return false;
   }
   rec.data = rec.data || [];
-  rec.data.push(row);
-  rec.rows = rec.data.length;
+  const editing = rowId != null;
+  if (editing) {
+    const effDate = document.getElementById("rowEffDate").value || VX.referenceDate || new Date().toISOString().slice(0, 10);
+    const reason = document.getElementById("rowReason").value;
+    const req = vxRequestLookupRowChange(rec, rowId, beforeRow, row, effDate, reason);
+    vxToast("Sent for approval", `${rec.name}: row change effective ${req.effectiveFrom}. The current value stays in force until someone else approves it.`, "info");
+    renderLookupApprovals(); grid.reload();
+    setTimeout(() => viewLocalData(rec), 260);
+    return;
+  }
+  const nextRowId = Math.max(0, ...rec.data.map(r => +r.__rowId || 0)) + 1;
+  rec.data.push({ ...row, __rowId: nextRowId, effectiveStart: "", effectiveEnd: "" });
+  rec.rows = VX.lookupRowsAsOf(rec).length;
   API.update("lookupTables", rec.id, { data: rec.data, rows: rec.rows }).then(() => {
     try { localStorage.setItem("vxLookupTables", JSON.stringify(VX.lookupTables)); } catch (e) {}
-    vxToast("Row added", `${rec.name} now has ${rec.data.length} row${rec.data.length === 1 ? "" : "s"}`, "ok");
+    vxToast("Row added", `${rec.name} now has ${rec.rows} row${rec.rows === 1 ? "" : "s"}`, "ok");
     vxAutoSave(); grid.reload();
     if (again) setTimeout(() => openRowModal(rec), 260);
+  });
+}
+
+/* Pending row changes across every table, shown above the grid — the same
+   "it exists to be cleared" reasoning as factors.html's approvals panel:
+   burying this would let a change wait unnoticed while a table quietly
+   still showed the old row. */
+function renderLookupApprovals() {
+  const host = document.getElementById("lookupApprovals");
+  if (!host) return;
+  const pending = (VX.lookupChangeRequests || []).filter(r => r.status === "Pending");
+  const recent = (VX.lookupChangeRequests || []).filter(r => r.status !== "Pending").slice(0, 3);
+  if (!pending.length && !recent.length) { host.innerHTML = ""; return; }
+
+  const me = vxCurrentUser();
+  const row = r => {
+    const mine = r.requestedBy === me;
+    return `<tr>
+      <td><b>${r.tableName}</b><div style="font-size:10.6px;color:var(--text-mute)">${r.action === "delete" ? "delete row" : "edit row"}</div></td>
+      <td>${r.effectiveFrom}</td>
+      <td style="font-size:11.4px">${r.requestedBy.split("@")[0]}
+        <div style="color:var(--text-mute);font-size:10.5px">${r.requestedOn}</div></td>
+      <td style="font-size:11.4px;color:var(--text-dim)">${r.reason || "—"}</td>
+      <td style="text-align:right;white-space:nowrap">
+        ${mine
+          ? `<span class="vx-b gray hintdot" title="You raised this change. Approval is a second pair of eyes, so it has to be someone else — that is the only thing this step guarantees.">awaiting someone else</span>`
+          : `<button class="btn btn-outline-secondary btn-sm" data-lrej="${r.id}">Reject</button>
+             <button class="btn btn-primary btn-sm ms-1" data-lapp="${r.id}">Approve</button>`}
+      </td></tr>`;
+  };
+
+  host.innerHTML = `
+    ${pending.length ? `<div class="vx-card vx-anim" style="margin-bottom:14px;border-left:3px solid var(--warn)">
+      <div class="vx-card-head">
+        <div><h2>Row changes awaiting approval <span class="vx-b amber">${pending.length}</span></h2>
+          <div class="sub">A row edit or delete does not take effect until someone else approves it, and then only from its effective date.</div></div>
+      </div>
+      <div class="vx-tw"><table class="vx-t" style="font-size:12.2px">
+        <thead><tr><th>Table</th><th>Effective from</th><th>Requested by</th><th>Reason</th><th></th></tr></thead>
+        <tbody>${pending.map(row).join("")}</tbody></table></div>
+      <div style="font-size:11px;color:var(--text-mute);margin-top:8px">
+        The table keeps showing the row currently in force while a change waits here — so what you see is what applies.
+      </div>
+    </div>` : ""}
+    ${recent.length ? `<div style="font-size:11.4px;color:var(--text-mute);margin-bottom:14px">
+      Recently decided: ${recent.map(r => `<b>${r.tableName}</b> ${r.status.toLowerCase()} by ${String(r.decidedBy || "").split("@")[0] || "—"}`).join(" · ")}
+    </div>` : ""}`;
+
+  host.querySelectorAll("[data-lapp]").forEach(b => b.onclick = () => {
+    const r = VX.lookupChangeRequests.find(x => x.id === +b.dataset.lapp);
+    const suggested = vxSuggestedLookupApprovalDate(r);
+    const stale = suggested !== r.effectiveFrom;
+    vxModal("Approve this change?", `
+      <div style="font-size:13px;line-height:1.6">
+        <b>${r.tableName}</b> — ${r.action === "delete" ? "delete this row" : "update this row"}.
+        <div style="margin-top:8px">The current row stays on file, closed the day before — nothing that already read it changes retroactively.</div>
+      </div>
+      <div class="row g-3 mt-2">
+        <div class="col-md-7">
+          <label>In force from</label>
+          <input type="date" class="form-control form-control-sm" id="lookupApEffDate" value="${suggested}">
+          ${stale ? `<div style="font-size:11px;color:var(--warn);margin-top:4px">
+              <i class="fa-solid fa-triangle-exclamation me-1"></i>${r.effectiveFrom} was requested, but that date has already passed while this sat pending — defaulted to today instead.</div>`
+            : `<div style="font-size:11px;color:var(--text-mute);margin-top:4px">As requested.</div>`}
+        </div>
+      </div>`,
+      [{ t: "Cancel", c: "secondary" }, { t: "Approve", c: "primary", fn: () => {
+        const eff = document.getElementById("lookupApEffDate").value || suggested;
+        if (vxApproveLookupRowChange(r.id, "", eff)) {
+          vxToast("Approved", `${r.tableName} in force from ${eff}`, "ok");
+          renderLookupApprovals(); grid.reload();
+        }
+      } }], "modal-md");
+  });
+  host.querySelectorAll("[data-lrej]").forEach(b => b.onclick = () => {
+    const r = VX.lookupChangeRequests.find(x => x.id === +b.dataset.lrej);
+    vxConfirm("Reject this change?",
+      `<b>${r.tableName}</b> keeps its current row, unchanged. The request stays in the audit trail with your name on it.`,
+      () => { vxRejectLookupRowChange(r.id, ""); vxToast("Rejected", r.tableName + " unchanged", "err"); renderLookupApprovals(); grid.reload(); }, true);
   });
 }
 </script>

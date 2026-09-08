@@ -60,7 +60,7 @@
                          && (!r.effectiveEnd || r.effectiveEnd >= asOf));
   };
 
-  const VX_DATA_VERSION = "2026-09-04-derived-class-and-rate-versioning";
+  const VX_DATA_VERSION = "2026-09-07-lookup-table-picker";
   try {
     if (localStorage.getItem("vxDataVersion") !== VX_DATA_VERSION) {
       localStorage.clear();
@@ -1292,6 +1292,40 @@
   // update's persistIfTracked in grid.js, which is what keeps this in sync).
   D.lookupTables = loadPersisted("vxLookupTables", D.lookupTables);
 
+  /* Every row needs a stable identity that survives an edit — its position
+     in the array does not, once revisions of the same row can coexist (see
+     D.lookupRowsAsOf below). Backfilled once here so every row, old or new,
+     has one; assignment is per-table so ids stay small and readable. */
+  D.lookupTables.forEach(t => {
+    let nextRowId = Math.max(0, ...(t.data || []).map(r => +r.__rowId || 0)) + 1;
+    (t.data || []).forEach(r => {
+      if (r.__rowId == null) r.__rowId = nextRowId++;
+      if (r.effectiveStart === undefined) r.effectiveStart = "";
+      if (r.effectiveEnd === undefined) r.effectiveEnd = "";
+    });
+  });
+  /* A row change on Lookup Tables goes through the same approve-then-
+     effective-date gate as a Rating Factor's Default Value (see
+     D.factorChangeRequests above and vxRequestLookupRowChange in core.js) —
+     approving an edit does not overwrite the row, it closes the old
+     revision's effectiveEnd and opens a new one, so table.data ends up
+     holding every revision of a row, not just its current values.
+     lookupRowsAsOf resolves that back down to "what a reader sees today":
+     one row per __rowId, the revision in force as of the given date —
+     built on D.tableAsOf so it uses the exact same effectiveStart/
+     effectiveEnd rules the rest of the platform already versions tables by. */
+  D.lookupRowsAsOf = (table, asOf) => {
+    const rows = (table && table.data || []).filter(r => r.__rowId != null);
+    const inForce = D.tableAsOf(rows, asOf || D.referenceDate);
+    const byId = new Map();
+    inForce.forEach(r => {
+      const cur = byId.get(r.__rowId);
+      if (!cur || (r.effectiveStart || "") > (cur.effectiveStart || "")) byId.set(r.__rowId, r);
+    });
+    return [...byId.values()];
+  };
+  D.lookupChangeRequests = loadPersisted("vxLookupChangeRequests", []);
+
   /* ---------------- Pricing rules ---------------- */
   /* Which LOB a credit/debit belongs to is derived from what it IS, not drawn
      at random. assemble() filters discounts and surcharges by LOB, so a random
@@ -2457,6 +2491,36 @@
     if (!missing.length) return;
     D.savedFormulas = D.savedFormulas.concat(missing);
     try { localStorage.setItem("vxSavedFormulas", JSON.stringify(D.savedFormulas)); } catch (e) {}
+  })();
+
+  /* Cross-reference a Computed rating factor to the real formula (built on
+     Formula Builder) that documents its calculation — factors.html's
+     "Attached formula" field. Matched by (lob, cob) rather than a hardcoded
+     id, so it stays correct even if SEED_FORMULAS is reordered. This one is
+     not a placeholder: __ACCOUNT__ is the exact (lob, cob) pair engine.js's
+     assemble() calls applySavedFormula() with for Commercial Trucking's own
+     account-level factor (see truckingReal()), so Account-Level Factor is
+     the rare Computed row where the attached formula genuinely IS what the
+     engine runs — most factors added later will only have this as a
+     documentation cross-reference, since the engine does not read a
+     factor's formulaId at rating time. */
+  (() => {
+    const acct = D.ratingFactors.find(f => f.code === "ACCT_FACTOR");
+    const acctFormula = D.savedFormulas.find(f => f.lob === "Commercial Trucking" && f.cob === "__ACCOUNT__");
+    if (acct && acctFormula) acct.formulaId = acctFormula.id;
+
+    /* A second, deliberately different kind of pairing — same honesty rule,
+       different relationship. ACCT_FACTOR above equals a formula's entire
+       OUTPUT (Account-Level Factor *is* what __ACCOUNT__ computes). Driver
+       Class Factor is not a formula's output — it is one of many terms
+       "Trucking — Auto Liability" (id 1) multiplies together (its tokens
+       include DriverClassFactor alongside PrimaryClassFactor, FleetSizeFactor
+       and the rest). Attaching it here documents "this factor is ONE INPUT
+       consumed by this formula", the more common case a Computed factor will
+       actually be in once more than the account-level one carry a link. */
+    const drvClass = D.ratingFactors.find(f => f.code === "DRV_CLASS");
+    const alFormula = D.savedFormulas.find(f => f.lob === "Commercial Trucking" && f.cob === "Auto Liability");
+    if (drvClass && alFormula) drvClass.formulaId = alFormula.id;
   })();
 
   /* ---------------- Rating factor value rows ----------------

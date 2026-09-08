@@ -20,7 +20,6 @@
 <script src="assets/js/core.js"></script>
 <script src="assets/js/grid.js"></script>
 <script src="assets/js/ag-grid-adapter.js"></script>
-<script src="assets/js/rating-context.js"></script>
 <script>
 vxShell("Rating Factors", "Every factor the rating engine actually applies. || What drives it, which sheet it came from, and the range it can take.",
   [{ l: "Products & Rating" }, { l: "Rating Factors" }]);
@@ -60,7 +59,6 @@ document.getElementById("vxBody").innerHTML = `
     <div class="bd"><p>Every row is read from the rating engine's own tables — nothing here is stored separately. Open any factor to see its rows in <a href="rate-tables.html">Rate Tables</a>.</p><p>Adding a factor here registers it, but the engine does not execute configured factors yet, so new factors are marked <span class="vx-b amber">Not wired</span> until that loop is closed.</p></div>
   </div>
 
-  <div id="ctxBar"></div>
   <div id="approvals"></div>
   <div class="vx-card vx-anim"><div id="grid"></div></div>`;
 
@@ -334,11 +332,40 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
       },
       hint: "Every factor added here is marked Not wired regardless of Type — the engine does not yet execute configured factors — so pick whichever actually describes how the value would be found once it is." },
     /* Which table a Lookup factor actually reads. Re-renders on LOB change so
-       the list leads with that line of business's own tables. */
-    { k: "tableId", l: "Lookup Table", t: "select", opts: r => tableOptsFor(r), dependsOn: "lob",
+       the list leads with that line of business's own tables. A closed,
+       single control either way — `combo` puts the search box INSIDE the
+       opened panel instead of as a second, separate control sitting above a
+       plain select. tableOptsFor() scopes the list to the chosen LOB plus
+       its admin-defined tables, which for Trucking alone still runs past 20
+       entries — too many to scan by eye once you're picking, not browsing. */
+    { k: "tableId", l: "Lookup Table", t: "combo", opts: r => tableOptsFor(r), dependsOn: "lob",
+      searchPlaceholder: "Search by table name…",
       hint: "Which rate table this factor reads. Only meaningful when Type is Lookup — leave as none for Constant or Computed." },
     { k: "driver", l: "Driven by (which insured answer)",
       hint: "The question on the quote that selects the row, or that feeds a Computed formula — \"Radius of Operation\", \"Vehicle stated value\". Leave blank for a Constant; it is driven by nothing." },
+    /* Picking "Computed" used to be a dead end — nowhere on this form asked
+       WHAT the computation actually is, so a non-technical user chose it and
+       then had nothing left to fill in. This does not make Computed real
+       (nothing added here is — see the Type hint above) — it gives the
+       person configuring it a real place to build the calculation: Formula
+       Builder already has the working canvas (drag-and-drop tokens, a live
+       evaluator, the real variable palette) for exactly this, so rather than
+       a second, smaller canvas duplicating it here, this links straight to
+       it and keeps a cross-reference on the factor. Both fields appear only
+       for Computed. */
+    { k: "formulaId", l: "Attached formula", t: "combo", dependsOn: ["kind", "lob"],
+      hideIf: (r, isNew) => (r && r.kind) !== "Computed",
+      opts: r => formulaOptsFor(r), searchPlaceholder: "Search by formula name…",
+      hint: (r, isNew) => {
+        const fid = r && +r.formulaId;
+        const href = fid ? `formula-builder.html?id=${fid}` : "formula-builder.html?new=1";
+        const label = fid ? "Open in Formula Builder" : "Build a new one in Formula Builder";
+        return `The real formula (built on Formula Builder) that documents this factor's computation — a reference for readers, not an execution link, since the engine calls its own hardcoded calculators rather than reading this field. `
+          + `<a href="${href}" target="_blank" rel="noopener">${label} →</a>`;
+      } },
+    { k: "computedFrom", l: "Computed how (quick note)", t: "textarea", dependsOn: "kind",
+      hideIf: (r, isNew) => (r && r.kind) !== "Computed",
+      hint: "A short description if there's no formula attached above yet — e.g. \"Base Rate × Territory Factor × Increased Limits Factor\". Documentation only, same as the attached formula." },
     { k: "defaultValue", l: "Default Value", t: "number", step: "0.001", def: 1,
       hint: "Applied on every quote (Constant), or as a fallback when a Lookup factor's table has no matching row. 1.000 is neutral — it changes no premium." },
 
@@ -459,6 +486,13 @@ function rangeColLabel(a, b) {
    rare VX table with no registry entry. */
 function factorValueRows(rec) {
   if (!rec.tableId) return null;
+  const lt = ltTableFor(rec.tableId);
+  if (lt) {
+    if (!lt.columns || !lt.columns.length || !lt.data || !lt.data.length) return null;
+    const cols = lt.columns.map(c => c.name);
+    const rows = lt.data.slice(0, 40).map(row => cols.map(c => row[c] ?? ""));
+    return { cols, rows };
+  }
   const t = allRateTables().find(x => x.id === rec.tableId);
   if (t) {
     let raw = []; try { raw = t.rows() || []; } catch (e) { raw = []; }
@@ -590,6 +624,19 @@ function openFactorPanel(rec) {
           <b>Source:</b> <span class="vx-b ${s.cls}">${s.label}</span>
           <div style="color:var(--text-dim);margin-top:4px">${s.detail}</div>
         </div>
+        ${rec.kind === "Computed" ? (() => {
+          const fname = rec.formulaId ? formulaName(rec.formulaId) : null;
+          const body = fname
+            ? `Documented in <a href="formula-builder.html?id=${rec.formulaId}" target="_blank" rel="noopener">${fname}</a> on Formula Builder.`
+            : (rec.computedFrom
+                ? rec.computedFrom.replace(/</g, "&lt;")
+                : '<span style="color:var(--text-mute)">Not described yet — open Edit and attach a formula or add a note.</span>');
+          return `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:12.3px">
+            <b>Computed how</b>
+            <div style="color:var(--text-dim);margin-top:4px;line-height:1.6">${body}</div>
+            <div style="color:var(--text-mute);font-size:11px;margin-top:5px">A cross-reference for readers — the engine calls its own hardcoded calculators rather than reading this field.</div>
+          </div>`;
+        })() : ""}
         ${/* What this factor was worth, and when. An approved change closes the
              previous value rather than overwriting it, so a quote rate-locked
              before the change can still be shown the value it was priced on. */""}
@@ -650,10 +697,10 @@ function openFactorPanel(rec) {
               const thead = `<thead><tr>${labels.map((l, i) => `<th${i === labels.length - 1 ? rangeAttr : ""}>${l}</th>`).join("")}</tr></thead>`;
               const body = `<tbody>${rows.map(r => `<tr>${r.map(c => `<td style="font-size:11.8px">${c === null || c === undefined || c === "" ? "—" : c}</td>`).join("")}</tr>`).join("")}</tbody>`;
               return `<div class="vx-tw" style="max-height:340px;overflow:auto"><table class="vx-t">${thead}${body}</table></div>`
-                   + (rec.rowCount > rows.length ? `<div style="font-size:11.3px;color:var(--text-mute);margin-top:7px">Showing first ${rows.length} of ${vxNum(rec.rowCount)} — <a href="rate-tables.html?table=${encodeURIComponent(rec.tableId)}">open the full table →</a></div>` : "");
+                   + (rec.rowCount > rows.length ? `<div style="font-size:11.3px;color:var(--text-mute);margin-top:7px">Showing first ${rows.length} of ${vxNum(rec.rowCount)} — <a href="${tableLinkHref(rec.tableId)}">open the full table →</a></div>` : "");
             })()
           : (rec.rowCount
-              ? `<div style="font-size:12.3px"><a href="rate-tables.html?table=${encodeURIComponent(rec.tableId || "")}">Browse this factor's rows in Rate Tables →</a></div>`
+              ? `<div style="font-size:12.3px"><a href="${tableLinkHref(rec.tableId)}">${isLtId(rec.tableId) ? "Browse this factor's rows in Lookup Tables" : "Browse this factor's rows in Rate Tables"} →</a></div>`
               : "")}
       </div>
     </div>`;
@@ -673,23 +720,48 @@ function openFactorPanel(rec) {
 function vxFactorById(id) { return (VX.ratingFactors || []).find(f => f.id === id); }
 function allRateTables() { return (typeof RATE_TABLES !== "undefined") ? RATE_TABLES : []; }
 
+/* A table an admin defines on Lookup Tables (VX.lookupTables -- "Add" on that
+   screen) is a second, separate registry from RATE_TABLES: real config, not
+   a filed workbook. Addressed with an "lt:" prefix so its ids (small
+   integers assigned by the grid) never collide with RATE_TABLES' own string
+   ids -- a table added there shows up here without either registry having
+   to know about the other's id scheme. */
+function isLtId(id) { return typeof id === "string" && id.slice(0, 3) === "lt:"; }
+function ltIdOf(id) { return +String(id).slice(3); }
+function ltTableFor(id) { return isLtId(id) ? (VX.lookupTables || []).find(t => t.id === ltIdOf(id)) : null; }
+/* Where "open the full table" should send you — Rate Tables for the filed
+   registry, Lookup Tables for an admin-defined one. */
+function tableLinkHref(tableId) {
+  return isLtId(tableId) ? "lookup-tables.html" : "rate-tables.html?table=" + encodeURIComponent(tableId || "");
+}
+
 /* Tables for this factor's LOB first, then the rest — a Trucking factor almost
-   always wants a Trucking table, but cross-LOB picks stay possible. */
+   always wants a Trucking table, but cross-LOB picks stay possible. Admin-
+   defined lookup tables for the same LOB are appended under their own
+   heading -- tableOptsFor() re-reads VX.lookupTables live every call (on
+   open, and again whenever Line of Business changes), so a table just added
+   on Lookup Tables becomes selectable here without a page reload. */
 function tableOptsFor(rec) {
   const lob = rec && rec.lob;
   const all = allRateTables();
-  const mine = all.filter(t => t.lob === lob);
-  const rest = all.filter(t => t.lob !== lob);
-  const opt = t => ({ value: t.id, label: `${t.name} \u00b7 ${t.cov}` });
-  return [{ value: "", label: "\u2014 none (no table) \u2014" }]
-    .concat(mine.map(opt))
-    .concat(rest.length ? [{ value: "", label: "\u2500\u2500 other lines of business \u2500\u2500" }] : [])
-    .concat(rest.map(t => ({ value: t.id, label: `${t.name} \u00b7 ${t.lob}` })));
+  const opt = t => ({ value: t.id, label: `${t.name} · ${t.cov}` });
+  const none = [{ value: "", label: "— none (no table) —" }];
+  const admin = (VX.lookupTables || []).filter(t => !lob || t.lob === lob)
+    .map(t => ({ value: "lt:" + t.id, label: `${t.name} (admin-defined)` }));
+  const adminHeading = admin.length ? [{ value: "", label: "-- admin-defined lookup tables --" }] : [];
+  // A Trucking factor should only ever be offered Trucking tables, not
+  // General Liability's or Property's — cross-LOB entries in this list were
+  // never a real choice, just noise the reader had to scroll past.
+  if (!lob) return none.concat(all.map(t => ({ value: t.id, label: `${t.name} · ${t.lob}` }))).concat(adminHeading).concat(admin);
+  return none.concat(all.filter(t => t.lob === lob).map(opt)).concat(adminHeading).concat(admin);
 }
 function tableName(id) {
+  const lt = ltTableFor(id);
+  if (lt) return lt.name;
   const t = allRateTables().find(x => x.id === id);
-  return t ? t.name : (id || "\u2014");
+  return t ? t.name : (id || "—");
 }
+
 
 /* ---------------------------------------------------------------------------
    System-generated Factor Code.
@@ -761,6 +833,25 @@ function coverageOptsFor(rec) {
     out.unshift({ value: rec.coverage, label: rec.coverage + " (current)" });
   }
   return out;
+}
+
+/* Formulas for the "Attached formula" field on a Computed factor — this
+   line of business's own first, matching the same lead-with-your-own-LOB
+   pattern the Lookup Table picker uses. */
+function formulaOptsFor(rec) {
+  const lob = rec && rec.lob;
+  const all = VX.savedFormulas || [];
+  const mine = all.filter(f => f.lob === lob);
+  const rest = all.filter(f => f.lob !== lob);
+  const none = [{ value: "", label: "— none —" }];
+  const opt = f => ({ value: f.id, label: f.name });
+  return none.concat(mine.map(opt))
+    .concat(rest.length ? [{ value: "", label: "── other lines of business ──" }] : [])
+    .concat(rest.map(opt));
+}
+function formulaName(id) {
+  const f = (VX.savedFormulas || []).find(x => x.id === +id);
+  return f ? f.name : null;
 }
 
 /* ---- value editing -------------------------------------------------------
@@ -858,6 +949,12 @@ function setPath(root, path, value) {
    the panel (for example State -> Base Loss Cost); array tables use their
    registry columns so their row fields stay named after the actual table. */
 function addFactorValue(rec) {
+  if (rec && isLtId(rec.tableId)) {
+    vxModal(`${rec.name} — add value`,
+      `<div class="sub">This factor reads an admin-defined lookup table, not the filed rate-table registry — add rows to it from <a href="lookup-tables.html">Lookup Tables</a> instead.</div>`,
+      [{ t: "Close", c: "secondary" }]);
+    return;
+  }
   const root = rec && rec.tableId && VX[rec.tableId];
   const table = rec && allRateTables().find(t => t.id === rec.tableId);
   if (!root || !table) {
@@ -919,6 +1016,12 @@ function addFactorValue(rec) {
 }
 
 function editFactorValues(rec) {
+  if (isLtId(rec.tableId)) {
+    vxModal(`${rec.name} — edit values`,
+      `<div class="sub">This factor reads an admin-defined lookup table, not the filed rate-table registry — edit its rows from <a href="lookup-tables.html">Lookup Tables</a> instead.</div>`,
+      [{ t: "Close", c: "secondary" }]);
+    return;
+  }
   if (!rec.tableId || !VX[rec.tableId]) {
     vxModal(`${rec.name} \u2014 no table attached`, `
       ${vxNotWiredBanner("This factor has no lookup table to edit.",
@@ -1059,7 +1162,7 @@ function viewRows(rec) {
       [{ t: "Close", c: "secondary" }]);
     return;
   }
-  location.href = "rate-tables.html?table=" + encodeURIComponent(rec.tableId);
+  location.href = tableLinkHref(rec.tableId);
 }
 
 renderApprovals();
@@ -1074,18 +1177,6 @@ function persistCustom() {
 }
 ["click", "change"].forEach(ev => document.addEventListener(ev, () => setTimeout(persistCustom, 200), true));
 
-/* Persistent rating context. The LOB selection genuinely filters the grid
-   below; product and version are shown because an admin needs to know which
-   rating plan they're configuring against — but the note says plainly that
-   factors are LOB-scoped rather than versioned, so nobody assumes picking a
-   different version shows a different factor set. */
-vxContextBar("#ctxBar", {
-  note: "Rating factors are shared across every version of a line of business — changing the version above updates the context shown, not the factor list.",
-  onChange: ctx => {
-    const sel = document.querySelector('#grid [data-f="lob"]');
-    if (sel && sel.value !== ctx.lob) { sel.value = ctx.lob; sel.dispatchEvent(new Event("change")); }
-  },
-});
 </script>
 <script src="assets/js/tooltip-dictionary.js"></script>
 <script src="assets/js/column-tooltips.js"></script>
