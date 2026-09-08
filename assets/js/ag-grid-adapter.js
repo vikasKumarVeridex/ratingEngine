@@ -164,8 +164,14 @@ function vxAgGrid(opt) {
     animateRows: true, domLayout: "normal",
     isExternalFilterPresent: () => Object.values(st.filters).some(v => Array.isArray(v) ? v.length : v),
     doesExternalFilterPass: node => Object.entries(st.filters).every(([k, v]) => {
-      if (Array.isArray(v)) return v.length === 0 || v.map(String).includes(String(node.data[k]));
-      return !v || String(node.data[k]) === String(v);
+      // A row's own field can now hold several values (a multi-select field
+      // like Rating Factors' lob/coverage/scope) — matching is "does the
+      // filter's selection overlap the row's values" either direction,
+      // rather than a straight equality that only ever worked for one value
+      // on each side.
+      const rowVals = Array.isArray(node.data[k]) ? node.data[k].map(String) : [String(node.data[k])];
+      if (Array.isArray(v)) return v.length === 0 || v.some(x => rowVals.includes(String(x)));
+      return !v || rowVals.includes(String(v));
     }),
     overlayNoRowsTemplate: `<div class="vx-empty"><i class="fa-solid fa-inbox"></i><div id="${id}emptyMsg"></div></div>`,
     onCellValueChanged: e => {
@@ -474,8 +480,15 @@ function vxAgGrid(opt) {
          collapses to a single summary line and supports typing to filter. */
       if (f.t === "dropdown") {
         const o = resolve(f.opts, cur), sel = asArr(v).map(String);
+        // A divider row (empty value, label only — the "── primary coverages
+        // ──" style separators coverageOptsFor()/tableOptsFor() emit for the
+        // `combo`/`select` pickers) is shown but never selectable here either,
+        // so a grouped option list reads the same way in a checklist as it
+        // does in a single-choice dropdown.
+        const isDivider = x => (x && typeof x === "object" ? x.value : x) === "" && /^(—|─)/.test(String(x && typeof x === "object" ? x.label : x));
+        const real = o.filter(x => !isDivider(x));
         const summary = sel.length === 0 ? (f.placeholder || "None selected")
-          : sel.length === o.length ? `All ${o.length} selected`
+          : sel.length === real.length ? `All ${real.length} selected`
           : sel.length <= 6 ? sel.join(", ") : `${sel.length} selected`;
         return `<div class="col-md-${f.w || 12}${lk ? " vx-fld-locked" : ""}" data-fw="${f.k}">
           <label class="d-block">${f.l}</label>
@@ -492,7 +505,8 @@ function vxAgGrid(opt) {
               <div class="vx-dd-list" data-fg="${f.k}">
                 ${o.map((x, i) => { const val = x && typeof x === "object" ? x.value : x;
                   const lab = x && typeof x === "object" ? x.label : x;
-                  return `<label class="vx-dd-opt" data-ddlabel="${String(lab).toLowerCase()}">
+                  return isDivider(x) ? `<div class="vx-dd-opt-hd">${lab}</div>`
+                    : `<label class="vx-dd-opt" data-ddlabel="${String(lab).toLowerCase()}">
                     <input class="form-check-input" type="checkbox" data-fm="${f.k}" value="${val}" ${sel.includes(String(val)) ? "checked" : ""}>
                     <span>${lab}</span></label>`; }).join("")}
               </div>
@@ -844,12 +858,15 @@ function vxAgGrid(opt) {
       // re-render fields whose options depend on another field — `dependsOn`
       // may name one key or several (e.g. a system-generated code depends on
       // both Name and Line of Business), and the source itself may be more
-      // than one element (a `tiles` field is a radio per option, all sharing
-      // one data-f), so every matching element gets its own listener.
+      // than one element: a `tiles` field is a radio per option (data-f), and
+      // a `multi`/`dropdown` field (e.g. a multi-select Line of Business) is a
+      // checkbox per option (data-fm) — every matching element, of either
+      // kind, gets its own listener.
       flds.filter(f => f.dependsOn).forEach(f => {
         const deps = Array.isArray(f.dependsOn) ? f.dependsOn : [f.dependsOn];
         deps.forEach(depKey => {
-          modal.querySelectorAll(`[data-f="${depKey}"]`).forEach(src => src.addEventListener("change", () => {
+          const srcs = [...modal.querySelectorAll(`[data-f="${depKey}"]`), ...modal.querySelectorAll(`[data-fm="${depKey}"]`)];
+          srcs.forEach(src => src.addEventListener("change", () => {
           sync();
           // the dependency changed, so a stale selection no longer applies —
           // skipped for a field with its own `val`, which recomputes instead

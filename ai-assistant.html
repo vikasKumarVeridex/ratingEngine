@@ -249,8 +249,11 @@ function matchWorkbook(lob, filename) {
 }
 
 function factorConfigFor(lob) {
+  // A factor's lob is multi-select on Rating Factors (an array when added
+  // through that screen; still a plain string on every seeded factor), so
+  // membership is checked either way rather than assuming one shape.
   const rows = (typeof COSMOS !== "undefined" ? COSMOS.query("ratingFactors", {}) : VX.ratingFactors)
-    .filter(f => f.lob === lob);
+    .filter(f => Array.isArray(f.lob) ? f.lob.includes(lob) : f.lob === lob);
   const seen = new Set();
   return rows.filter(f => (seen.has(f.code) ? false : (seen.add(f.code), true)));
 }

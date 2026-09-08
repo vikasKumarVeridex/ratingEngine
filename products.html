@@ -198,8 +198,11 @@ function productExportEligibility(r) {
   }));
 }
 function productExportRating(r) {
+  // A factor's lob is multi-select on Rating Factors (an array when added
+  // through that screen; still a plain string on every seeded factor), so
+  // membership is checked either way rather than assuming one shape.
   const factors = (typeof COSMOS !== "undefined" ? COSMOS.query("ratingFactors", {}) : VX.ratingFactors)
-    .filter(f => f.lob === r.lob);
+    .filter(f => Array.isArray(f.lob) ? f.lob.includes(r.lob) : f.lob === r.lob);
   const groups = {};
   factors.forEach(f => {
     const g = f.coverage || f.driver || "Other";

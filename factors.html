@@ -62,6 +62,24 @@ document.getElementById("vxBody").innerHTML = `
   <div id="approvals"></div>
   <div class="vx-card vx-anim"><div id="grid"></div></div>`;
 
+/* Line of Business, Coverage and Scope are multi-select — a factor can be
+   assigned against more than one of each at once — so every place that used
+   to interpolate the field directly as a string goes through here instead.
+   Kept tolerant of the OLD single-value shape too: every factor seeded with
+   the platform still stores these as plain strings, and this screen is the
+   only thing that ever turns them into arrays, so the two shapes coexist
+   until a seeded factor is next edited here. */
+function vxJoinField(v, fallback) {
+  if (Array.isArray(v)) return v.length ? v.join(", ") : (fallback || "—");
+  return v || fallback || "—";
+}
+/* Same idea, but always an array — for logic that needs to iterate or test
+   membership (Coverage/Lookup Table option filtering, the code generator)
+   rather than render text. */
+function vxAsFieldArr(v) {
+  return Array.isArray(v) ? v : (v ? [v] : []);
+}
+
 function fmtRange(r) {
   if (!r.rowCount) return r.defaultValue != null ? `<span style="color:var(--text-mute)">${r.defaultValue} (fixed)</span>` : '<span style="color:var(--text-mute)">—</span>';
   if (r.minValue === r.maxValue) return `${r.minValue}`;
@@ -238,8 +256,8 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
               : `<span class="vx-b amber" title="A working value that has not been checked against a filed source.">Approximated</span>`)}
       </div>
       <div style="font-size:11.6px;color:var(--text-dim);margin-top:5px;line-height:1.6">
-        ${rec.lob} · ${rec.coverage || "unassigned"} ·
-        <span class="hintdot" title="What the factor is measured against. Scope is what a factor varies BY; the coverage above is what it prices.">${rec.scope || "no scope"} scope</span>
+        ${vxJoinField(rec.lob)} · ${vxJoinField(rec.coverage, "unassigned")} ·
+        <span class="hintdot" title="What the factor is measured against. Scope is what a factor varies BY; the coverage above is what it prices.">${vxJoinField(rec.scope, "no scope")} scope</span>
         ${rec.rowCount
           ? ` · <span class="hintdot" title="This factor reads a row out of a rate table, so editing the Default Value below only changes the fallback used when no row matches — not what most quotes are charged.">${vxNum(rec.rowCount)} table values</span>`
           : ` · <span class="hintdot" title="No lookup table: the Default Value below is applied on every quote, so changing it changes every quote on this line.">fixed value</span>`}
@@ -254,7 +272,7 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
   },
   cols: [
     { k: "name", l: "Rating Factor" },
-    { k: "lob", l: "Line of Business" },
+    { k: "lob", l: "Line of Business", r: r => vxJoinField(r.lob) },
     { k: "defaultValue", l: "Default", r: r => r.defaultValue != null
         ? `<b>${r.defaultValue}</b>`
         : (r.rowCount ? '<span style="color:var(--text-mute)" title="No single default — the value is always looked up">from table</span>'
@@ -267,8 +285,8 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
         return `<span class="vx-b ${k.c}" title="${k.d}"><i class="fa-solid ${k.i} me-1"></i>${r.kind}</span>`; } },
     { k: "driver", l: "Driven by", r: r => r.driver === "—"
         ? '<span style="color:var(--text-mute)">nothing — fixed</span>' : r.driver },
-    { k: "coverage", l: "Coverage" },
-    { k: "scope", l: "Scope", r: r => `<span class="vx-b gray">${r.scope || "—"}</span>` },
+    { k: "coverage", l: "Coverage", r: r => vxJoinField(r.coverage) },
+    { k: "scope", l: "Scope", r: r => `<span class="vx-b gray">${vxJoinField(r.scope)}</span>` },
     { k: "_product", l: "Product", sort: false, r: r => (r.attachments || []).length
         ? (r.attachments || []).map(a => a.product).join(", ") : '<span style="color:var(--text-mute)">—</span>' },
     { k: "tableId", l: "Lookup Table", sort: false,
@@ -324,15 +342,17 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
         : "Short stable identifier, upper snake case (VEH_RADIUS). Used in exports and the change log, so it should not be renamed after quotes have used it." },
 
     { k: "_secWhere", l: "Where it applies", t: "section",
-      sub: "The line of business, coverage and scope this factor is assigned to." },
-    { k: "lob", l: "Line of Business", t: "select", opts: vxLobNames(),
-      hint: "The line whose engine reads this factor. Changing it reloads the Coverage and Lookup Table lists below, and regenerates the Factor Code above." },
-    /* Re-renders when the LOB changes, so the list always shows that line's
-       own coverage tree rather than another line's. */
-    { k: "coverage", l: "Coverage (Assigned To)", t: "select", opts: r => coverageOptsFor(r), dependsOn: "lob",
-      hint: "Which coverage this factor prices — drives the Factor → Assigned To chain on the detail panel. Pick Account Level for factors that price the whole policy." },
-    { k: "scope", l: "Scope", t: "select", opts: ["Account", "Insured", "Risk", "Vehicle", "Coverage", "Policy", "Location", "State", "Class of Business"],
-      hint: "What the factor is measured against: one Vehicle, one Driver's Risk, the whole Account, and so on. Scope is what a factor varies BY; Coverage above is what it prices." },
+      sub: "The line(s) of business, coverage(s) and scope(s) this factor is assigned to — pick more than one where the same factor genuinely applies across all of them." },
+    { k: "lob", l: "Line of Business", t: "dropdown", opts: vxLobNames(), placeholder: "No line of business selected",
+      hint: "The line(s) whose engine reads this factor. Selecting more than one applies the same definition across all of them. Changing this reloads the Coverage and Lookup Table lists below, and regenerates the Factor Code above (from whichever line is picked first)." },
+    /* Re-renders when the LOB selection changes, so the list always leads
+       with the chosen lines' own coverage tree rather than another line's. */
+    { k: "coverage", l: "Coverage (Assigned To)", t: "dropdown", opts: r => coverageOptsFor(r), dependsOn: "lob",
+      placeholder: "No coverage selected",
+      hint: "Which coverage(s) this factor prices — drives the Factor → Assigned To chain on the detail panel. Pick Account Level for factors that price the whole policy." },
+    { k: "scope", l: "Scope", t: "dropdown", placeholder: "No scope selected",
+      opts: ["Account", "Insured", "Risk", "Vehicle", "Coverage", "Policy", "Location", "State", "Class of Business"],
+      hint: "What the factor is measured against: one Vehicle, one Driver's Risk, the whole Account, and so on. Scope is what a factor varies BY; Coverage above is what it prices. Select more than one if the factor genuinely varies by several." },
 
     { k: "_secType", l: "Type & value", t: "section",
       sub: "How the factor's value is determined, and what it defaults to." },
@@ -413,10 +433,17 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
       hint: "Shown to whoever approves it, and kept on the factor's value history. e.g. \"Filed rate revision 2026-09\" or \"Corrects a transcription error\"." },
   ],
   filters: [
-    { k: "lob", l: "LOB", opts: [...new Set(VX.ratingFactors.map(f => f.lob))] },
+    /* LOB/Coverage/Scope are multi-select on the record itself, so `opts`
+       flattens every row's array (or lone string, for a seeded factor that
+       predates this) instead of collecting the arrays themselves — a Set of
+       arrays would never dedupe. `multi: true` matches the checklist filter
+       to the checklist field: picking Trucking here surfaces every factor
+       that includes Trucking among its lines, not only the ones with
+       Trucking alone. */
+    { k: "lob", l: "LOB", multi: true, opts: [...new Set(VX.ratingFactors.flatMap(f => vxAsFieldArr(f.lob)))] },
     { k: "kind", l: "Type", opts: ["Lookup", "Computed", "Judgment", "Constant"] },
-    { k: "coverage", l: "Coverage", opts: [...new Set(VX.ratingFactors.map(f => f.coverage))] },
-    { k: "scope", l: "Scope", opts: ["Account", "Insured", "Risk", "Vehicle", "Coverage", "Policy", "Location", "State", "Class of Business"] },
+    { k: "coverage", l: "Coverage", multi: true, opts: [...new Set(VX.ratingFactors.flatMap(f => vxAsFieldArr(f.coverage)))] },
+    { k: "scope", l: "Scope", multi: true, opts: ["Account", "Insured", "Risk", "Vehicle", "Coverage", "Policy", "Location", "State", "Class of Business"] },
   ],
   rowActions: [
     { i: "fa-pen-to-square", t: "Open factor detail", fn: openFactorPanel },
@@ -597,7 +624,7 @@ function openFactorPanel(rec) {
       <div style="flex:1">
         <h5 class="offcanvas-title" style="font-size:16px;margin:0">${rec.name}</h5>
         <div style="font-size:11.5px;color:var(--text-mute);margin-top:2px">
-          <code>${rec.code}</code> · ${rec.lob} · ${rec.coverage || "unassigned"}</div>
+          <code>${rec.code}</code> · ${vxJoinField(rec.lob)} · ${vxJoinField(rec.coverage, "unassigned")}</div>
         <div class="d-flex align-items-center gap-2 flex-wrap" style="margin-top:8px">
           <span class="vx-b ${k.c}" title="${k.d}"><i class="fa-solid ${k.i} me-1"></i>${rec.kind}</span>
           <span class="vx-b ${s.cls}" title="${s.detail}">${s.label}</span>
@@ -606,7 +633,7 @@ function openFactorPanel(rec) {
             : (rec.verified
                 ? `<span class="vx-b green" title="Matched line-by-line to a filed workbook or rating manual.">Verified</span>`
                 : `<span class="vx-b amber" title="A working value that has not been checked against a filed source.">Approximated</span>`)}
-          <span class="hintdot vx-b gray" style="border:none" title="What the factor is measured against. Scope is what a factor varies BY; the coverage above is what it prices.">${rec.scope || "no scope"} scope</span>
+          <span class="hintdot vx-b gray" style="border:none" title="What the factor is measured against. Scope is what a factor varies BY; the coverage above is what it prices.">${vxJoinField(rec.scope, "no scope")} scope</span>
           ${pending ? `<span class="vx-b amber" title="Requested by ${pending.requestedBy} on ${pending.requestedOn}: ${factorChangeSummary(pending)}, effective ${pending.effectiveFrom}. The value shown below is still the one in force.">pending ${factorChangeSummary(pending)}</span>` : ""}
         </div>
       </div>
@@ -623,14 +650,14 @@ function openFactorPanel(rec) {
         <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;font-size:12px">
           <span class="vx-b purple">${rec.name}</span>
           <i class="fa-solid fa-arrow-right" style="font-size:9px;color:var(--text-mute)"></i>
-          <a href="coverages.html" class="vx-b blue" style="text-decoration:none">${rec.assignedTo || rec.coverage || "—"}</a>
+          <a href="coverages.html" class="vx-b blue" style="text-decoration:none">${rec.assignedTo || vxJoinField(rec.coverage)}</a>
           <i class="fa-solid fa-arrow-right" style="font-size:9px;color:var(--text-mute)"></i>
-          <span class="vx-b gray">${rec.scope || "—"} scope</span>
+          <span class="vx-b gray">${vxJoinField(rec.scope)} scope</span>
           <i class="fa-solid fa-arrow-right" style="font-size:9px;color:var(--text-mute)"></i>
           ${(rec.attachments || []).length
             ? rec.attachments.map(a => `<a href="products.html" class="vx-b cyan" style="text-decoration:none">${a.product}</a>
                 <span style="color:var(--text-mute);font-size:10.5px">(<a href="versions.html" style="color:inherit">${a.ratingVersion}</a>)</span>`).join(" · ")
-            : `<span style="color:var(--text-mute)">${rec.lob} — no product attached</span>`}
+            : `<span style="color:var(--text-mute)">${vxJoinField(rec.lob)} — no product attached</span>`}
         </div>
       </div>
       <div class="vx-card" style="margin-bottom:14px">
@@ -765,18 +792,19 @@ function tableLinkHref(tableId) {
    open, and again whenever Line of Business changes), so a table just added
    on Lookup Tables becomes selectable here without a page reload. */
 function tableOptsFor(rec) {
-  const lob = rec && rec.lob;
+  const lobArr = vxAsFieldArr(rec && rec.lob);
   const all = allRateTables();
   const opt = t => ({ value: t.id, label: `${t.name} · ${t.cov}` });
   const none = [{ value: "", label: "— none (no table) —" }];
-  const admin = (VX.lookupTables || []).filter(t => !lob || t.lob === lob)
+  const admin = (VX.lookupTables || []).filter(t => !lobArr.length || lobArr.includes(t.lob))
     .map(t => ({ value: "lt:" + t.id, label: `${t.name} (admin-defined)` }));
   const adminHeading = admin.length ? [{ value: "", label: "-- admin-defined lookup tables --" }] : [];
   // A Trucking factor should only ever be offered Trucking tables, not
   // General Liability's or Property's — cross-LOB entries in this list were
-  // never a real choice, just noise the reader had to scroll past.
-  if (!lob) return none.concat(all.map(t => ({ value: t.id, label: `${t.name} · ${t.lob}` }))).concat(adminHeading).concat(admin);
-  return none.concat(all.filter(t => t.lob === lob).map(opt)).concat(adminHeading).concat(admin);
+  // never a real choice, just noise the reader had to scroll past. A factor
+  // assigned to several lines gets each of THEIR tables led first instead.
+  if (!lobArr.length) return none.concat(all.map(t => ({ value: t.id, label: `${t.name} · ${t.lob}` }))).concat(adminHeading).concat(admin);
+  return none.concat(all.filter(t => lobArr.includes(t.lob)).map(opt)).concat(adminHeading).concat(admin);
 }
 function tableName(id) {
   const lt = ltTableFor(id);
@@ -816,7 +844,10 @@ function slugifyFactorName(name) {
 }
 function vxGenerateFactorCode(name, lob) {
   if (!name) return "";
-  const prefix = vxLobPrefix(lob), slug = slugifyFactorName(name);
+  // Multi-select now — the prefix comes from whichever line was picked
+  // first, so a factor assigned to several lines still gets one readable
+  // code rather than a prefix per line.
+  const prefix = vxLobPrefix(vxAsFieldArr(lob)[0]), slug = slugifyFactorName(name);
   // Skip the prefix rather than double it when the name already starts with
   // it — "MPL Increased Limits Factor" reads as MPL_INCREASED_LIMITS, not
   // MPL_MPL_INCREASED_LIMITS.
@@ -843,18 +874,22 @@ function vxGenerateFactorCode(name, lob) {
        existing assignment is kept selectable rather than silently reset to
        something the factor was never assigned to. */
 function coverageOptsFor(rec) {
-  const lob = rec && rec.lob;
-  const tree = (VX.cob || []).filter(c => c.lob === lob);
-  const primary = tree.filter(c => c.level === "Primary").map(c => c.name);
-  const child = tree.filter(c => c.level !== "Primary").map(c => c.name);
+  const lobArr = vxAsFieldArr(rec && rec.lob);
+  const tree = (VX.cob || []).filter(c => lobArr.includes(c.lob));
+  // Dedupe: two selected lines can share a coverage NAME (e.g. "Auto
+  // Liability" exists under more than one LOB's tree) \u2014 it should appear
+  // once in the picker, not once per line that happens to define it.
+  const primary = [...new Set(tree.filter(c => c.level === "Primary").map(c => c.name))];
+  const child = [...new Set(tree.filter(c => c.level !== "Primary").map(c => c.name))];
   const out = [];
   if (primary.length) out.push({ value: "", label: "\u2500\u2500 primary coverages \u2500\u2500" }, ...primary.map(n => ({ value: n, label: n })));
   if (child.length) out.push({ value: "", label: "\u2500\u2500 child coverages \u2500\u2500" }, ...child.map(n => ({ value: n, label: n })));
   out.push({ value: "", label: "\u2500\u2500 other \u2500\u2500" }, { value: "Account Level", label: "Account Level (whole account, not one coverage)" });
   const known = new Set(out.map(o => o.value));
-  if (rec && rec.coverage && !known.has(rec.coverage)) {
-    out.unshift({ value: rec.coverage, label: rec.coverage + " (current)" });
-  }
+  vxAsFieldArr(rec && rec.coverage).filter(c => c && !known.has(c)).forEach(c => {
+    out.unshift({ value: c, label: c + " (current)" });
+    known.add(c);
+  });
   return out;
 }
 
@@ -862,10 +897,10 @@ function coverageOptsFor(rec) {
    line of business's own first, matching the same lead-with-your-own-LOB
    pattern the Lookup Table picker uses. */
 function formulaOptsFor(rec) {
-  const lob = rec && rec.lob;
+  const lobArr = vxAsFieldArr(rec && rec.lob);
   const all = VX.savedFormulas || [];
-  const mine = all.filter(f => f.lob === lob);
-  const rest = all.filter(f => f.lob !== lob);
+  const mine = all.filter(f => lobArr.includes(f.lob));
+  const rest = all.filter(f => !lobArr.includes(f.lob));
   const none = [{ value: "", label: "— none —" }];
   const opt = f => ({ value: f.id, label: f.name });
   return none.concat(mine.map(opt))
@@ -1076,7 +1111,7 @@ function editFactorValues(rec) {
               : `<span class="vx-b amber" title="Working values that have not been checked against a filed source.">Approximated</span>`)}
       </div>
       <div style="font-size:11.6px;color:var(--text-dim);margin-top:6px;line-height:1.6">
-        ${rec.lob} \u00b7 ${rec.coverage || "unassigned"} \u00b7
+        ${vxJoinField(rec.lob)} \u00b7 ${vxJoinField(rec.coverage, "unassigned")} \u00b7
         <span class="hintdot" title="The real workbook sheet (or filed manual) these ${vxNum(items.length)} rows were extracted from \u2014 the actual file behind this table, not just this factor's display name.">
           source: <b>${rec.sourceSheet || "\u2014"}</b></span>
         \u00b7
