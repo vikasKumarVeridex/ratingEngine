@@ -73,6 +73,12 @@
 #fbTip tr.def{background:var(--primary-soft)}
 #fbTip .fbtip-more{font-size:10px;color:var(--text-mute);margin-top:4px;text-align:center}
 #fbTip .fbtip-foot{font-size:9.5px;color:var(--text-mute);margin-top:6px;border-top:1px solid var(--border);padding-top:5px}
+/* A long formula (Trucking's real Auto Liability chain runs 50+ terms) can
+   push the canvas tall enough that the operator toolbar above it (.vx-fb-ops)
+   scrolls off screen — the one control reached for on every single term.
+   Capping the canvas and scrolling it internally keeps the toolbar fixed in
+   place instead. */
+#canvas{max-height:340px;overflow-y:auto}
 </style>
 </head>
 <body><div id="vxApp"></div>
@@ -249,8 +255,26 @@ function customFactorForVar(n) {
 }
 function customVarsForCob(cobKey) {
   const coverage = cobKey === ACCOUNT_KEY ? "Account Level" : cobKey;
+  /* Coverage is multi-select on a Rating Factor (a factor can be assigned to
+     more than one at once), so a factor saved through the real Add form
+     carries it as an array — `f.coverage === coverage` never matched that,
+     which meant a genuinely new custom factor silently never appeared here
+     no matter what coverage it was assigned to. vxAsFieldArr (core.js)
+     stays tolerant of the old single-string shape too. */
   return (VX.ratingFactors || [])
-    .filter(f => (f.custom || f.verified === undefined) && f.coverage === coverage && f.code)
+    .filter(f => (f.custom || f.verified === undefined) && f.approvedForFormulas && vxAsFieldArr(f.coverage).includes(coverage) && f.code)
+    .map(f => ({ n: f.code, v: f.defaultValue != null ? +f.defaultValue : 1 }));
+}
+/* Same lookup, but the ones still AWAITING approval — a factor invisible
+   here gave no signal it existed at all, which read as "the platform lost
+   my factor" rather than "this needs a second person to approve it first."
+   Shown in the palette as a locked tile instead: visible, explains why it
+   can't be used yet, but not draggable — customVarsForCob above stays the
+   only source of tokens Evaluate/Save actually accept. */
+function pendingCustomVarsForCob(cobKey) {
+  const coverage = cobKey === ACCOUNT_KEY ? "Account Level" : cobKey;
+  return (VX.ratingFactors || [])
+    .filter(f => (f.custom || f.verified === undefined) && !f.approvedForFormulas && vxAsFieldArr(f.coverage).includes(coverage) && f.code)
     .map(f => ({ n: f.code, v: f.defaultValue != null ? +f.defaultValue : 1 }));
 }
 function varsForCob(cobKey) {
@@ -478,13 +502,29 @@ const KIND_META = {
   constant: { l: "Constant", c: "gray",   i: "fa-lock",        d: "Same on every quote — not driven by insured input" },
   input:    { l: "Input",    c: "cyan",   i: "fa-keyboard",    d: "Entered directly on the quote, not looked up" },
   custom:   { l: "Not wired", c: "amber", i: "fa-plug-circle-xmark",
-    d: "Added on Rating Factors. The engine does not execute configured factors yet, so this documents intent — it is not a filed number." },
+    d: "Added on Rating Factors. Not yet folded into this coverage's premium — see the factor's Path to Wired card on Rating Factors for exactly what's missing." },
+  "custom-live": { l: "Live", c: "green", i: "fa-bolt",
+    d: "Added on Rating Factors and approved — this coverage's Active formula automatically folds its value into every quote." },
 };
 function varSource(n) {
   if (VAR_SOURCE[n]) return VAR_SOURCE[n];
   const f = customFactorForVar(n);
-  if (f) return { kind: "custom", driver: f.driver && f.driver !== "—" ? f.driver : null,
-    note: `Added on Rating Factors${f.lob ? " for " + f.lob : ""} — open it there to edit.` };
+  /* ENGINE.factorIsLive is the same check Rating Factors' own status badges
+     use — this tile's kind badge can't say "Not wired" for a factor that is
+     genuinely, checkably live. */
+  if (f) {
+    const live = typeof ENGINE !== "undefined" && ENGINE.factorIsLive(f).live;
+    // Real rows from the factor's own Lookup Table (admin-defined ones only —
+    // see customFactorTableInfo, engine.js), not a placeholder "no neutral
+    // row" for a factor that plainly has real data attached.
+    const tinfo = typeof ENGINE !== "undefined" ? ENGINE.customFactorTableInfo(f) : null;
+    return { kind: live ? "custom-live" : "custom", driver: f.driver && f.driver !== "—" ? f.driver : null,
+      rows: tinfo ? () => tinfo.rows : undefined,
+      base: tinfo ? tinfo.base : (f.defaultValue != null ? +f.defaultValue : undefined),
+      note: tinfo
+        ? `Added on Rating Factors${f.lob ? " for " + f.lob : ""} — reads ${tinfo.tableName} (${tinfo.rows.length} row${tinfo.rows.length === 1 ? "" : "s"}). ${live ? "Applied as the table's average, flat, on every quote — not yet varying per-quote until a developer wires the real key." : "Approve it for Formula Builder to have it applied."}`
+        : `Added on Rating Factors${f.lob ? " for " + f.lob : ""} — open it there to edit.` };
+  }
   return { kind: "constant", driver: null };
 }
 function varRows(n) {
@@ -763,9 +803,8 @@ document.getElementById("vxBody").innerHTML = `
    already on hand (TOK and DEFAULT_TOKENS). */
 function palVars(f) {
   const q = (f || "").toLowerCase();
-  document.getElementById("palVar").innerHTML = currentVars()
-    .filter(v => !q || v.n.toLowerCase().includes(q) || varLabel(v.n).toLowerCase().includes(q))
-    .map(v => {
+  const matches = v => !q || v.n.toLowerCase().includes(q) || varLabel(v.n).toLowerCase().includes(q);
+  const usable = currentVars().filter(matches).map(v => {
       const s = varSource(v.n), km = KIND_META[s.kind] || KIND_META.constant, rng = varRange(v.n);
       // A lookup has a RANGE, not a value. Showing one number implies it's fixed.
       const valueLine = rng
@@ -784,10 +823,31 @@ function palVars(f) {
         <div class="vx-vartile-meta"><code>${v.n}</code>${valueLine}</div>
       </div>`;
     }).join("");
+  /* A pending custom factor still shows here — locked, not draggable — so
+     "I added it and it's gone" reads as "it's here, awaiting approval"
+     instead. Clicking it explains why rather than silently doing nothing. */
+  const pending = pendingCustomVarsForCob(currentCob || ACCOUNT_KEY).filter(matches).map(v => `
+    <div class="vx-vartile" style="opacity:.55;cursor:not-allowed" title="Awaiting approval — click for details" onclick="pendingVarClick('${v.n}')">
+      <div class="d-flex justify-content-between align-items-start gap-2">
+        <div class="vx-vartile-label">${varLabel(v.n)}</div>
+        <span class="vx-b amber" style="font-size:8.5px"><i class="fa-solid fa-hourglass-half me-1"></i>Awaiting approval</span>
+      </div>
+      <div class="vx-vartile-meta"><code>${v.n}</code></div>
+    </div>`).join("");
+  document.getElementById("palVar").innerHTML = usable + pending;
   const sub = document.getElementById("palSub");
-  if (sub) sub.textContent = `${currentVars().length} variables for ${currentCob || "Account Level"} — hover for the lookup table, click for full detail`;
+  const pendingCount = pendingCustomVarsForCob(currentCob || ACCOUNT_KEY).length;
+  if (sub) sub.textContent = `${currentVars().length} variables for ${currentCob || "Account Level"}`
+    + (pendingCount ? ` · ${pendingCount} more awaiting approval` : "")
+    + ` — hover for the lookup table, click for full detail`;
   bindDrag();
-  bindTip(".vx-vartile", el => el.dataset.v);
+  bindTip(".vx-vartile[draggable]", el => el.dataset.v);
+}
+function pendingVarClick(n) {
+  const f = customFactorForVar(n);
+  vxToast("Awaiting approval",
+    `${varLabel(n)} was added on Rating Factors, but someone other than ${(f && f.createdBy || "its creator").split("@")[0]} needs to approve it there before it can be used in a formula.`,
+    "info");
 }
 
 /* Full provenance for one variable: what drives it, which table it comes

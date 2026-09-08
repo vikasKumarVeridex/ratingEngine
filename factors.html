@@ -19,6 +19,7 @@
 <script src="assets/js/tenant-setup.js"></script>
 <script src="assets/js/core.js"></script>
 <script src="assets/js/grid.js"></script>
+<script src="assets/js/engine.js"></script>
 <script src="assets/js/ag-grid-adapter.js"></script>
 <script>
 vxShell("Rating Factors", "Every factor the rating engine actually applies. || What drives it, which sheet it came from, and the range it can take.",
@@ -56,9 +57,10 @@ document.getElementById("vxBody").innerHTML = `
 
   <div class="vx-exp2 vx-anim" id="expFac" style="border-left-color:var(--primary)">
     <div class="hd"><i class="fa-solid fa-database" style="color:var(--primary);font-size:11.5px"></i><b>Derived from the engine</b><span>Ranges and row counts are computed live. Open a factor to see its rows.</span><button type="button" class="tog" onclick="vxExpToggle(&#39;expFac&#39;)">Why?</button></div>
-    <div class="bd"><p>Every row is read from the rating engine's own tables — nothing here is stored separately. Open any factor to see its rows in <a href="rate-tables.html">Rate Tables</a>.</p><p>Adding a factor here registers it, but the engine does not execute configured factors yet, so new factors are marked <span class="vx-b amber">Not wired</span> until that loop is closed.</p></div>
+    <div class="bd"><p>Every row is read from the rating engine's own tables — nothing here is stored separately. Open any factor to see its rows in <a href="rate-tables.html">Rate Tables</a>.</p><p>Adding a factor here registers it, marked <span class="vx-b amber">Not wired</span> until someone else approves it for Formula Builder AND its coverage runs a formula ending in RemainingFactors — at that point the engine folds its value into every quote on that coverage automatically. A factor's own "Path to Wired" card shows exactly which of those is still missing.</p></div>
   </div>
 
+  <div id="formulaApprovals"></div>
   <div id="approvals"></div>
   <div class="vx-card vx-anim"><div id="grid"></div></div>`;
 
@@ -73,12 +75,9 @@ function vxJoinField(v, fallback) {
   if (Array.isArray(v)) return v.length ? v.join(", ") : (fallback || "—");
   return v || fallback || "—";
 }
-/* Same idea, but always an array — for logic that needs to iterate or test
-   membership (Coverage/Lookup Table option filtering, the code generator)
-   rather than render text. */
-function vxAsFieldArr(v) {
-  return Array.isArray(v) ? v : (v ? [v] : []);
-}
+/* vxAsFieldArr (same idea, but always an array — for logic that needs to
+   iterate or test membership rather than render text) now lives in core.js,
+   shared with Formula Builder's own custom-factor lookup. */
 
 function fmtRange(r) {
   if (!r.rowCount) return r.defaultValue != null ? `<span style="color:var(--text-mute)">${r.defaultValue} (fixed)</span>` : '<span style="color:var(--text-mute)">—</span>';
@@ -120,7 +119,43 @@ function factorChangeSummary(r) {
    above the grid because it is a queue, not a report: it exists to be
    cleared, and burying it would let a change wait unnoticed while the
    registry quietly still showed the old value. */
+/* Same idea as the value-change queue below, for factors waiting on the
+   OTHER approval — Formula Builder visibility (vxApproveFactorForFormulas,
+   core.js). Without a list here, the only way to find one was opening every
+   custom factor's detail panel to check its "Path to Wired" card one at a
+   time, which is exactly the "I approved it, where did it go" confusion
+   this screen kept running into. */
+function renderFormulaApprovals() {
+  const host = document.getElementById("formulaApprovals");
+  if (!host) return;
+  const pending = (VX.ratingFactors || []).filter(f => (f.custom || f.verified === undefined) && !f.approvedForFormulas);
+  if (!pending.length) { host.innerHTML = ""; return; }
+
+  const row = f => {
+    const mine = f.createdBy && f.createdBy === vxCurrentUser();
+    return `<tr>
+      <td><b>${f.name}</b> <code style="font-size:10.5px">${f.code}</code>
+        <div style="font-size:10.6px;color:var(--text-mute)">${vxJoinField(f.lob)} · ${vxJoinField(f.coverage, "unassigned")}</div></td>
+      <td style="font-size:11.4px">${(f.createdBy || "—").split("@")[0]}
+        <div style="color:var(--text-mute);font-size:10.5px">${f.createdOn || ""}</div></td>
+      <td style="text-align:right;white-space:nowrap">
+        ${mine
+          ? `<span class="vx-b gray hintdot" title="You created this factor. A second person has to approve it — use Switch User (account menu) to approve as someone else.">awaiting someone else</span>`
+          : `<button class="btn btn-primary btn-sm" onclick="approveFactorForFormulas('${f.code}')">Approve</button>`}
+      </td></tr>`;
+  };
+  host.innerHTML = `<div class="vx-card vx-anim" style="margin-bottom:14px;border-left:3px solid var(--warn)">
+    <div class="vx-card-head">
+      <div><h2>Awaiting Formula Builder approval <span class="vx-b amber">${pending.length}</span></h2>
+        <div class="sub">Not yet approved to appear as a usable variable in Formula Builder — shows there as a locked "Awaiting approval" tile until then.</div></div>
+    </div>
+    <div class="vx-tw"><table class="vx-t" style="font-size:12.2px">
+      <thead><tr><th>Factor</th><th>Created by</th><th></th></tr></thead>
+      <tbody>${pending.map(row).join("")}</tbody></table></div>
+  </div>`;
+}
 function renderApprovals() {
+  renderFormulaApprovals();
   const host = document.getElementById("approvals");
   if (!host) return;
   const pending = (VX.factorChangeRequests || []).filter(r => r.status === "Pending");
@@ -196,6 +231,7 @@ function renderApprovals() {
         const eff = document.getElementById("apEffDate").value || suggested;
         const ok = isTable ? vxApproveFactorTableChange(r.id, "", eff) : vxApproveFactorChange(r.id, "", eff);
         if (ok) {
+          persistCustom();   // synchronous, not left to the debounced global listener — see approveFactorForFormulas
           vxToast("Approved", `${r.factorName} in force from ${eff}`, "ok");
           renderApprovals(); grid.reload();
         }
@@ -209,6 +245,7 @@ function renderApprovals() {
               : `<b>${r.factorName}</b> keeps its current value of <b>${r.from ?? "none"}</b>. The request stays in the audit trail with your name on it.`,
       () => {
         if (isTable) vxRejectFactorTableChange(r.id, ""); else vxRejectFactorChange(r.id, "");
+        persistCustom();
         vxToast("Rejected", r.factorName + " unchanged", "err"); renderApprovals(); grid.reload();
       }, true);
   });
@@ -235,13 +272,14 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
       return `<div class="vx-ai mb-3" style="padding:10px 14px;font-size:12.3px;line-height:1.6">
         <i class="fa-solid fa-circle-info me-1"></i>
         Registers a new rating factor against a line of business.
-        <span class="hintdot" title="The engine executes its own built-in factor chain. A factor added here is recorded, reportable and exportable, but it is not read while rating until that loop is closed — which is why it lands marked Not wired.">It will be marked <b>Not wired</b></span>
-        until the configure-to-rate loop is closed.
+        <span class="hintdot" title="It stays recorded but unread until someone else approves it for Formula Builder AND its coverage runs a formula ending in RemainingFactors — check the factor's Path to Wired card after saving to see exactly which of those it's still missing.">It will be marked <b>Not wired</b></span>
+        until that path is complete — not necessarily a code change.
       </div>`;
     }
     const s = sourceLabel(rec);
     const k = KIND[rec.kind] || KIND.Constant;
     const wired = rec.custom || rec.verified === undefined;
+    const live = wired && factorIsLiveInfo(rec).live;
     return `<div class="mb-3" style="border:1px solid var(--border);border-left:3px solid var(--primary);
         border-radius:0 10px 10px 0;background:var(--surface-2);padding:11px 14px">
       <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -250,7 +288,9 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
         <span class="vx-b ${k.c}" title="${k.d}"><i class="fa-solid ${k.i} me-1"></i>${rec.kind}</span>
         <span class="vx-b ${s.cls}" title="${s.detail}">${s.label}</span>
         ${wired
-          ? `<span class="vx-b amber" title="Added through this screen. The engine does not execute configured factors yet, so this factor is recorded but not read while rating.">Not wired</span>`
+          ? (live
+              ? `<span class="vx-b green" title="Approved, and its coverage runs a formula that automatically folds this factor's value into every quote — see the Path to Wired card below.">Live</span>`
+              : `<span class="vx-b amber" title="Added through this screen. See the Path to Wired card below for exactly what's still missing before it affects a quote.">Not wired</span>`)
           : (rec.verified
               ? `<span class="vx-b green" title="Matched line-by-line to a filed workbook or rating manual.">Verified</span>`
               : `<span class="vx-b amber" title="A working value that has not been checked against a filed source.">Approximated</span>`)}
@@ -307,12 +347,16 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
       } },
     /* A factor added through this screen has no `verified` flag at all —
        that absence is what identifies it, rather than intercepting the
-       grid's save. Anything user-added is Not wired, because the engine
-       does not execute configured factors. */
-    { k: "verified", l: "Status", r: r => (r.custom || r.verified === undefined)
-        ? vxWiredChip(false)
-        : (r.verified ? '<span class="vx-b green">Verified</span>'
-                      : '<span class="vx-b amber">Approximated</span>') },
+       grid's save. Not automatically Not Wired any more, though: checked
+       for real against factorIsLiveInfo (approved + real data + its
+       coverage's Active formula ends in RemainingFactors) rather than
+       asserted, since the generic engine.js bridge can make one genuinely
+       live with no code change at all. */
+    { k: "verified", l: "Status", r: r => {
+        if (!(r.custom || r.verified === undefined)) return r.verified ? '<span class="vx-b green">Verified</span>' : '<span class="vx-b amber">Approximated</span>';
+        const live = factorIsLiveInfo(r).live;
+        return vxWiredChip(live, live ? "Live" : "Not wired");
+      } },
   ],
   form: [
     /* Grouped into named sections rather than one flat wall of fields — the
@@ -372,7 +416,7 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
           ? [{ value: r.kind, label: r.kind, icon: "fa-user-pen", desc: "Kept as-is — no longer offered for new factors, since this screen has no workflow to wire it to." }, ...base]
           : base;
       },
-      hint: "Every factor added here is marked Not wired regardless of Type — the engine does not yet execute configured factors — so pick whichever actually describes how the value would be found once it is." },
+      hint: "Every factor added here starts Not wired regardless of Type, until approved for Formula Builder and its coverage folds it in automatically — pick whichever Type actually describes how the value would be found." },
     /* Which table a Lookup factor actually reads. Re-renders on LOB change so
        the list leads with that line of business's own tables. A closed,
        single control either way — `combo` puts the search box INSIDE the
@@ -597,32 +641,56 @@ function closeFactorPanelThenEdit(id) {
   if (inst) inst.hide();
   setTimeout(() => grid.formModal(vxFactorById(id)), 260);
 }
+/* Whether this factor is genuinely, actively folded into a real premium
+   right now — checked, not implied. ENGINE.factorIsLive (engine.js) is the
+   canonical implementation, shared with Formula Builder's variable palette
+   so the two screens can't drift into reporting different answers for the
+   same factor. */
+function factorIsLiveInfo(rec) {
+  if (typeof ENGINE === "undefined") return { live: false, reason: "engine" };
+  return ENGINE.factorIsLive(rec);
+}
 /* A visual answer to "how do we make this real", built so it can be shown
    to a business stakeholder directly from this screen rather than explained
    over chat every time it comes up. Only rendered for a Not-wired factor —
    a Verified/Approximated one already IS wired, there's no path left to
-   show. Steps 1-2 are things this UI can actually do; 3-4 require a
-   developer to edit engine.js, which this screen is honest about rather
-   than implying a config toggle exists for it. */
+   show. The last step is genuinely automatic, not a placeholder: once
+   approved and given real data, engine.js picks it up on its own for any
+   coverage that already runs a formula ending in RemainingFactors — checked
+   live via factorIsLiveInfo above, not asserted. */
 function pathToWiredCard(rec) {
   const hasRealData = (rec.kind === "Lookup" && !!rec.tableId) || (rec.kind !== "Lookup" && rec.defaultValue != null);
+  const approved = !!rec.approvedForFormulas;
+  // Always requires someone other than the creator — see vxApproveFactorForFormulas (core.js).
+  const mine = rec.createdBy && rec.createdBy === vxCurrentUser();
+  const liveInfo = approved && hasRealData ? factorIsLiveInfo(rec) : { live: false };
+  const LIVE_REASON = {
+    noRoute: "None of this factor's assigned coverages run a saved formula at all (see ENGINE.FORMULA_HOOKS) — a developer would need to add real engine.js logic for this coverage specifically.",
+    noActiveFormula: "The coverage runs saved formulas, but none is Active yet for it — publish one on Formula Builder / Rating Versions.",
+    noRemaining: "An Active formula exists for the coverage, but its expression doesn't include RemainingFactors, so it only uses the variables it names explicitly. Add RemainingFactors to it on Formula Builder, or it won't pick up new factors automatically.",
+  };
   const steps = [
     { label: "Registered", done: true,
       note: "This factor exists on Rating Factors — name, coverage, scope and type are on file." },
+    { label: "Approved for Formula Builder", done: approved,
+      note: approved
+        ? `Approved by ${(rec.formulaApprovedBy || "").split("@")[0] || "—"} on ${rec.formulaApprovedOn || "—"} — this factor can now be dragged into a formula.`
+        : "A second person has to approve this factor before it can be dragged into a formula in Formula Builder — the person who created it can't approve their own." },
     { label: "Real data attached", done: hasRealData,
       note: hasRealData
         ? (rec.kind === "Lookup" ? `Reads ${tableName(rec.tableId)}.` : `Has a Default Value (${rec.defaultValue}).`)
         : "Pick a Lookup Table, or set a Default Value, on Edit." },
-    { label: "Engine code written", done: false,
-      note: "A developer adds real logic to engine.js that computes this factor from actual quote inputs." },
-    { label: "Live in every quote", done: false,
-      note: "The engine multiplies it into the premium automatically once the step above ships." },
+    { label: "Live in every quote", done: liveInfo.live,
+      note: liveInfo.live
+        ? `Automatically folded into "${liveInfo.formulaName}" (${liveInfo.lob} · ${liveInfo.coverage}) — every quote on that coverage now multiplies this factor's value in. No engine.js edit needed.`
+        : (!approved ? "Needs to be approved first (step 2)."
+          : !hasRealData ? "Needs real data attached first (step 3)."
+          : LIVE_REASON[liveInfo.reason] || "Not yet live.") },
   ];
-  const devStep = i => i >= 2; // steps 3-4 (0-indexed 2-3) are code, not configuration
   return `<div class="vx-card" style="margin-bottom:14px">
     <div class="d-flex align-items-center justify-content-between">
       <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-mute)">Path to Wired</div>
-      <span class="vx-b amber" style="font-size:9.5px">${steps.filter(s => s.done).length}/4 done</span>
+      <span class="vx-b amber" style="font-size:9.5px">${steps.filter(s => s.done).length}/${steps.length} done</span>
     </div>
     <div class="d-flex align-items-start" style="margin-top:12px">
       ${steps.map((s, i) => `
@@ -633,14 +701,39 @@ function pathToWiredCard(rec) {
             ${s.done ? '<i class="fa-solid fa-check"></i>' : (i + 1)}
           </div>
           <div class="hintdot" title="${s.note}" style="font-size:10.5px;font-weight:600;margin-top:6px;color:${s.done ? "var(--text)" : "var(--text-mute)"};line-height:1.3;padding:0 2px">
-            ${s.label}${devStep(i) ? ' <i class="fa-solid fa-code" style="font-size:8px;color:var(--text-mute)" title="Requires a developer to edit engine.js"></i>' : ""}
+            ${s.label}
           </div>
         </div>`).join("")}
     </div>
-    <div style="font-size:11px;color:var(--text-mute);margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">
-      <i class="fa-solid fa-code me-1"></i>Steps 3-4 are a code change (engine.js), not a setting — nothing on this screen can complete them.
-    </div>
+    ${!approved ? `<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">
+      ${mine
+        ? `<span class="vx-b gray hintdot" title="You created this factor. Approval is a second pair of eyes, so it has to be someone else — that is the only thing this step guarantees.">Awaiting someone else to approve it for Formula Builder</span>`
+        : `<button class="btn btn-primary btn-sm" onclick="approveFactorForFormulas('${rec.code}')"><i class="fa-solid fa-check me-1"></i>Approve for Formula Builder</button>`}
+    </div>` : ""}
+    ${approved && !liveInfo.live ? `<div style="font-size:11px;color:var(--text-mute);margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">
+      <i class="fa-solid fa-circle-info me-1"></i>${steps[3].note}
+    </div>` : ""}
   </div>`;
+}
+function approveFactorForFormulas(code) {
+  const f = vxApproveFactorForFormulas(code);
+  if (!f) return;
+  /* Written synchronously, not left to the page's global click-listener
+     debounce (setTimeout(persistCustom, 200) below) — that gap is real:
+     clicking Approve and then immediately navigating to Formula Builder
+     could beat the 200ms timer, so the approval never made it to
+     localStorage and the factor kept showing as unapproved everywhere
+     else, which is exactly what "already approved, still not showing"
+     looks like. */
+  persistCustom();
+  vxToast("Approved", `${f.name} can now be used as a variable in Formula Builder`, "ok");
+  renderApprovals();   // clears this factor off the "Awaiting Formula Builder approval" list
+  // Only re-render the detail panel if it's the one open — approving from
+  // that list shouldn't pop the offcanvas open for a factor you weren't looking at.
+  const panelEl = document.getElementById("vxFactorPanel");
+  const panelOpen = panelEl && panelEl.classList.contains("show");
+  if (panelOpen) openFactorPanel(vxFactorById(f.id));
+  grid.reload();
 }
 function openFactorPanel(rec) {
   const s = sourceLabel(rec);
@@ -663,6 +756,7 @@ function openFactorPanel(rec) {
      it read as if it had no header worth the name next to that one. */
   const k = KIND[rec.kind] || KIND.Constant;
   const wired = rec.custom || rec.verified === undefined;
+  const live = wired && factorIsLiveInfo(rec).live;
   const pending = vxPendingFactorRequest(rec.code);
   el.innerHTML = `
     <div class="offcanvas-header" style="border-bottom:1px solid var(--border);align-items:flex-start">
@@ -674,7 +768,9 @@ function openFactorPanel(rec) {
           <span class="vx-b ${k.c}" title="${k.d}"><i class="fa-solid ${k.i} me-1"></i>${rec.kind}</span>
           <span class="vx-b ${s.cls}" title="${s.detail}">${s.label}</span>
           ${wired
-            ? `<span class="vx-b amber" title="Added through this screen. The engine does not execute configured factors yet, so this factor is recorded but not read while rating.">Not wired</span>`
+            ? (live
+                ? `<span class="vx-b green" title="Approved, and its coverage runs a formula that automatically folds this factor's value into every quote — see Path to Wired below.">Live</span>`
+                : `<span class="vx-b amber" title="Added through this screen. See the Path to Wired card below for exactly what's still missing before it affects a quote.">Not wired</span>`)
             : (rec.verified
                 ? `<span class="vx-b green" title="Matched line-by-line to a filed workbook or rating manual.">Verified</span>`
                 : `<span class="vx-b amber" title="A working value that has not been checked against a filed source.">Approximated</span>`)}
@@ -1151,7 +1247,9 @@ function editFactorValues(rec) {
         <code style="font-size:11px">${rec.code}</code>
         <span class="vx-b ${s.cls}" title="${s.detail}">${s.label}</span>
         ${rec.custom || rec.verified === undefined
-          ? `<span class="vx-b amber" title="Added through the Rating Factors screen. The engine does not execute configured factors yet, so this table is recorded but not read while rating.">Not wired</span>`
+          ? (factorIsLiveInfo(rec).live
+              ? `<span class="vx-b green" title="Approved, and its coverage runs a formula that automatically folds this factor's value into every quote.">Live</span>`
+              : `<span class="vx-b amber" title="Added through the Rating Factors screen. See its Path to Wired card for exactly what's still missing before it affects a quote.">Not wired</span>`)
           : (rec.verified
               ? `<span class="vx-b green" title="Matched line-by-line to a filed workbook or rating manual.">Verified</span>`
               : `<span class="vx-b amber" title="Working values that have not been checked against a filed source.">Approximated</span>`)}

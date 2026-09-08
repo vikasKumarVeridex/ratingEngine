@@ -1166,6 +1166,33 @@ function vxRejectFactorTableChange(reqId, note) {
   return req;
 }
 
+/* ---------- Approve a custom factor for use in Formula Builder ----------
+   Creating a factor stays instant (no approval — see vxRequestFactorChange's
+   comment for why only a VALUE change is gated), so a brand-new custom
+   factor shows on Rating Factors immediately. But letting it be DRAGGED
+   INTO A FORMULA is a step further — the whole point of Formula Builder's
+   Not-wired palette is that a coverage's real formula could pick it up — so
+   that needs its own sign-off by someone other than whoever created it.
+   No effective-dating here (unlike a value change): this is a yes/no
+   capability, not a number with a date it takes effect.
+   Always requires someone other than whoever created the factor — including
+   when that creator is a Rating Administrator. Use Switch User (account
+   menu) to approve as a genuinely different person. */
+function vxApproveFactorForFormulas(code) {
+  const f = (VX.ratingFactors || []).find(x => x.code === code);
+  if (!f) return null;
+  if (f.createdBy && f.createdBy === vxCurrentUser()) {
+    vxToast("Can't approve your own factor", "A second person has to sign this off — that is what the step is for. Use Switch User (account menu) to approve as someone else.", "err");
+    return null;
+  }
+  f.approvedForFormulas = true;
+  f.formulaApprovedBy = vxCurrentUser();
+  f.formulaApprovedOn = vxNowStamp();
+  vxAudit("Rating Factors", "Approved for Formula Builder",
+    `${f.name} (${f.code}) can now be used as a variable in Formula Builder — approved by ${f.formulaApprovedBy}`);
+  return f;
+}
+
 function vxAutoSave() {
   clearTimeout(_asT);
   const id = "vxAS";
@@ -1181,6 +1208,19 @@ function vxAutoSave() {
 }
 
 /* ---------- helpers ---------- */
+/* Line of Business, Coverage and Scope are multi-select on a Rating Factor —
+   a factor can be assigned against more than one of each at once — so every
+   place that needs to test membership or iterate goes through here instead
+   of assuming a single string. Kept tolerant of the OLD single-value shape
+   too: every factor seeded with the platform still stores these as plain
+   strings, so the two shapes coexist until a seeded factor is next edited.
+   Shared here (not just on factors.html) because Formula Builder's own
+   lookup of a custom factor by coverage needs the same tolerance — a
+   strict `f.coverage === coverage` string check silently never matches a
+   factor saved through the real multi-select form. */
+function vxAsFieldArr(v) {
+  return Array.isArray(v) ? v : (v ? [v] : []);
+}
 const vxMoney = n => "$" + Math.round(n).toLocaleString();
 const vxMoney2 = n => Number(n).toLocaleString("en-US", { style: "currency", currency: "USD" });
 const vxPct = n => (n * 100).toFixed(1) + "%";

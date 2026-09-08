@@ -1537,11 +1537,75 @@ const ENGINE = (() => {
     }).join(" ");
   }
 
+  /* A Lookup-kind custom factor pointed at an admin-defined Lookup Table
+     (Lookup Tables screen, "lt:" table ids) — real rows, read live, keyed
+     off the table's own column convention (every column but the last is a
+     key, the last is the value, same convention the registry-derived
+     tables already use). Shared so a factor's real data reads the same way
+     everywhere it's shown: the Formula Builder tooltip/inspector no longer
+     has to say "no neutral row" for a factor that plainly has rows, and
+     approvedCustomFactorVars below resolves its actual quote-time value the
+     same way. Returns null for anything else (a real filed table has no
+     generic row shape to read here, and a non-Lookup factor has no table at
+     all) — callers fall back to defaultValue themselves. */
+  function customFactorTableInfo(f) {
+    if (!f || f.kind !== "Lookup" || typeof f.tableId !== "string" || f.tableId.slice(0, 3) !== "lt:") return null;
+    if (typeof VX === "undefined") return null;
+    const table = (VX.lookupTables || []).find(t => t.id === +f.tableId.slice(3));
+    if (!table || !table.columns || !table.columns.length) return null;
+    const rawRows = typeof VX.lookupRowsAsOf === "function" ? VX.lookupRowsAsOf(table, VX.referenceDate) : (table.data || []);
+    const valueCol = table.columns[table.columns.length - 1].name;
+    const keyCols = table.columns.slice(0, -1).map(c => c.name);
+    const rows = rawRows.map(r => ({ l: keyCols.map(k => `${k}: ${r[k]}`).join(", ") || table.name, v: +r[valueCol] }))
+      .filter(r => isFinite(r.v));
+    if (!rows.length) return null;
+    return { rows, base: rows.reduce((a, r) => a + r.v, 0) / rows.length, tableName: table.name };
+  }
+
+  /* Once a custom Rating Factor is approved for Formula Builder use (see
+     vxApproveFactorForFormulas, core.js), this is what makes "approved"
+     actually mean something to a quote, generically, with no per-factor
+     engine.js edit: its value is folded into varMap here, so RemainingFactors
+     (above) picks it up on the very next quote — same mechanism that already
+     made a new named variable in a formula's varMap take effect immediately.
+     Only reaches a coverage that already runs a saved formula (the eight
+     ENGINE.FORMULA_HOOKS pairs) — a factor assigned to a coverage outside
+     that set has nothing here to fold into, and stays exactly what it always
+     was: recorded, not rated. Value resolution is honest about its own
+     limit: a plain Default Value is a real, single number; a Lookup-kind
+     factor pointed at an admin-defined Lookup Table (Lookup Tables screen)
+     uses the AVERAGE of that table's own real rows — genuine data, but
+     applied FLAT to every quote, since which real quote field the table's
+     key column should look up by is exactly the kind of decision this
+     platform has repeatedly said only a developer should make, not a
+     default this function invents. A factor on a real filed table (not
+     admin-defined) has no generic row shape to read here, so it's skipped
+     rather than guessed at. */
+  function approvedCustomFactorVars(lobName, cobKey) {
+    if (typeof VX === "undefined" || !VX.ratingFactors) return {};
+    const coverage = cobKey === "__ACCOUNT__" || cobKey === "__ACCOUNT_PD__" ? "Account Level" : cobKey;
+    const asArr = v => Array.isArray(v) ? v : (v ? [v] : []);
+    const out = {};
+    VX.ratingFactors.forEach(f => {
+      if (!(f.custom || f.verified === undefined) || !f.approvedForFormulas || !f.code) return;
+      if (!asArr(f.lob).includes(lobName) || !asArr(f.coverage).includes(coverage)) return;
+      let v = null;
+      const tinfo = customFactorTableInfo(f);
+      if (tinfo) v = tinfo.base;
+      else if (f.defaultValue != null) v = +f.defaultValue;
+      if (v != null && isFinite(v)) out[f.code] = v;
+    });
+    return out;
+  }
+
   function applySavedFormula(lobName, cobKey, varMap, defaultValue, context) {
     const tid = (typeof VX !== "undefined") ? VX.activeTenantId : null;
     const f = (typeof VX !== "undefined" && VX.savedFormulas || [])
       .find(x => x.status === "Active" && x.lob === lobName && x.cob === cobKey
         && (x.tenantId == null || tid == null || x.tenantId === tid));
+    // Approved custom factors fill gaps only — never override a value the
+    // engine itself explicitly computed and passed in as varMap.
+    varMap = Object.assign({}, approvedCustomFactorVars(lobName, cobKey), varMap || {});
     /* Only the variables this evaluation actually had — reported alongside
        the result so a reader can check the arithmetic themselves. */
     const vars = Object.keys(varMap || {})
@@ -1972,5 +2036,35 @@ const ENGINE = (() => {
       { lob: "Workers' Compensation", cob: "Workers' Compensation" },
     ],
     runsFormula: (lob, cob) => ENGINE.FORMULA_HOOKS.some(h => h.lob === lob && h.cob === cob),
+    customFactorTableInfo,
+    /* The single, canonical answer to "is this approved custom Rating Factor
+       actually affecting a premium right now" — used by both Rating Factors
+       (the Path to Wired card and status badges) and Formula Builder (the
+       variable palette's kind badge), so the two screens can't drift into
+       reporting different answers for the same factor. See
+       approvedCustomFactorVars above for what "affecting" means precisely:
+       folded into varMap, honoured by RemainingFactors. */
+    factorIsLive(f) {
+      if (!f || !f.approvedForFormulas) return { live: false, reason: !f ? "missing" : "notApproved" };
+      const asArr = v => Array.isArray(v) ? v : (v ? [v] : []);
+      const lobs = asArr(f.lob), covs = asArr(f.coverage);
+      let sawRoute = false, sawFormula = false;
+      for (const lob of lobs) {
+        for (const cov of covs) {
+          if (!ENGINE.runsFormula(lob, cov)) continue;
+          sawRoute = true;
+          const af = (typeof VX !== "undefined" && VX.savedFormulas || [])
+            .find(x => x.status === "Active" && x.lob === lob && x.cob === cov);
+          if (!af) continue;
+          sawFormula = true;
+          if ((af.tokens || []).some(t => t.t === "var" && t.v === REMAINING)) {
+            return { live: true, lob, coverage: cov, formulaName: af.name };
+          }
+        }
+      }
+      if (!sawRoute) return { live: false, reason: "noRoute" };
+      if (!sawFormula) return { live: false, reason: "noActiveFormula" };
+      return { live: false, reason: "noRemaining" };
+    },
   };
 })();

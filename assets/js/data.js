@@ -2046,7 +2046,7 @@
      and how a decision is reached. `perms` remains as the plain-language
      summary shown in lists — it describes the matrix, it no longer IS it. */
   D.roles = [
-    { id: 1, name: "Rating Administrator", users: 2, level: "Admin",
+    { id: 1, name: "Rating Administrator", users: 3, level: "Admin",
       perms: "Full access: products, versions, all factor tables, publish to production",
       permissions: {
         lobs: ["view","create","edit","delete"], coverages: ["view","create","edit","delete"],
@@ -2066,7 +2066,7 @@
            action gated on the admin having MFA on. */
         { attr: "mfa", op: "isTrue", resources: ["versions","products","formulas"] } ] },
 
-    { id: 2, name: "Actuarial Analyst", users: 3, level: "Write",
+    { id: 2, name: "Actuarial Analyst", users: 1, level: "Write",
       perms: "Edit factor tables and rate versions; cannot publish to production",
       permissions: {
         lobs: ["view"], coverages: ["view"], products: ["view"], units: ["view"],
@@ -2084,7 +2084,7 @@
            filed rates, so it is not editable by this role at all. */
         { attr: "status", op: "notIn", value: ["Published"], resources: ["versions","formulas","baseRates"] } ] },
 
-    { id: 3, name: "Product Manager", users: 2, level: "Write",
+    { id: 3, name: "Product Manager", users: 1, level: "Write",
       perms: "Manage products, versions, coverages; read-only on rate tables",
       permissions: {
         lobs: ["view"], coverages: ["view","create","edit"], products: ["view","create","edit"],
@@ -2096,7 +2096,7 @@
         { attr: "tenantId", op: "eqUser", resources: [] },
         { attr: "lob", op: "inUser", resources: ["products","coverages","versions"] } ] },
 
-    { id: 4, name: "Underwriter", users: 6, level: "Operate",
+    { id: 4, name: "Underwriter", users: 0, level: "Operate",
       perms: "Quote calculation, UW rules (read), eligibility overrides within authority",
       permissions: {
         lobs: ["view"], coverages: ["view"], products: ["view"], versions: ["view"],
@@ -2110,7 +2110,7 @@
         { attr: "premium", op: "lte", value: "@authorityLimit", resources: ["quotes"] },
         { attr: "state", op: "inUser", resources: ["quotes"] } ] },
 
-    { id: 5, name: "Compliance Officer", users: 1, level: "Read",
+    { id: 5, name: "Compliance Officer", users: 0, level: "Read",
       perms: "Read-only across all modules; manage state filing status",
       permissions: {
         lobs: ["view"], coverages: ["view"], products: ["view"], units: ["view"], versions: ["view","approve"],
@@ -2120,7 +2120,7 @@
         quotes: ["view"], lossRuns: ["view","export"], audit: ["view","export"] },
       constraints: [ { attr: "tenantId", op: "eqUser", resources: [] } ] },
 
-    { id: 6, name: "Agent / Broker", users: 12, level: "External",
+    { id: 6, name: "Agent / Broker", users: 0, level: "External",
       perms: "Quote Portal only; own submissions",
       permissions: { products: ["view"], coverages: ["view"], quotes: ["view","create"] },
       constraints: [
@@ -2130,7 +2130,7 @@
         { attr: "owner", op: "eqUser", resources: ["quotes"] },
         { attr: "state", op: "inUser", resources: ["quotes"] } ] },
 
-    { id: 7, name: "Service Account", users: 2, level: "System",
+    { id: 7, name: "Service Account", users: 0, level: "System",
       perms: "API access for rating calls; no UI access",
       permissions: { quotes: ["view","create"], products: ["view"], factors: ["view"], rateTables: ["view"] },
       constraints: [ { attr: "tenantId", op: "eqUser", resources: [] } ] },
@@ -2145,7 +2145,7 @@
        / update_all_approvals / ignore_rejected_approvals in requireparams.py
        — which this platform's own eligibility system already produces
        "refer" outcomes for but had no role modeling who actually clears them. */
-    { id: 8, name: "Underwriter Manager", users: 1, level: "Operate",
+    { id: 8, name: "Underwriter Manager", users: 0, level: "Operate",
       perms: "Everything an Underwriter has, plus approve/reject quotes referred by eligibility rules",
       permissions: {
         lobs: ["view"], coverages: ["view"], products: ["view"], versions: ["view"],
@@ -2157,7 +2157,7 @@
         { attr: "premium", op: "lte", value: "@authorityLimit", resources: ["quotes"] },
         { attr: "state", op: "inUser", resources: ["quotes"] } ] },
   ];
-  const UNAMES = [["Vikas Kumar","Rating Administrator"],["Jorge Romero","Actuarial Analyst"],["Maria Alvarez","Product Manager"],["Sanjay Patel","Compliance Officer"],["Kim Nguyen","Underwriter"],["Dana Whitfield","Underwriter"],["Tom Brennan","Actuarial Analyst"],["Priya Raman","Rating Administrator"],["Alex Chen","Product Manager"],["Rosa Delgado","Underwriter"],["Marcus Webb","Agent / Broker"],["Elena Popov","Agent / Broker"],["AI Rating Copilot","Service Account"],["Rating API Client","Service Account"],["Grace Ellsworth","Underwriter Manager"]];
+  const UNAMES = [["Vikas Kumar","Rating Administrator"],["Tom Brennan","Actuarial Analyst"],["Priya Raman","Rating Administrator"],["Maria Alvarez","Product Manager"],["Neha Kapoor","Rating Administrator"]];
   /* ABAC needs something on the user's side to compare against, so every user
      carries the attributes the role constraints reference. "*" means
      unrestricted on that axis — an administrator is not licensed state by
