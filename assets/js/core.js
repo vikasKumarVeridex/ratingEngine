@@ -1188,8 +1188,28 @@ function vxApproveFactorForFormulas(code) {
   f.approvedForFormulas = true;
   f.formulaApprovedBy = vxCurrentUser();
   f.formulaApprovedOn = vxNowStamp();
+  // A later approval supersedes an earlier rejection — the reviewer changed
+  // their mind, or the factor was edited to address why it was declined.
+  f.formulaRejected = false;
   vxAudit("Rating Factors", "Approved for Formula Builder",
     `${f.name} (${f.code}) can now be used as a variable in Formula Builder — approved by ${f.formulaApprovedBy}`);
+  return f;
+}
+/* Reject: no self-check, unlike approve — withdrawing your own factor from
+   consideration needs no second opinion, only signing off on it does.
+   Not terminal: stays in the pending list (still not approved) with the
+   rejection recorded, rather than disappearing as if nothing happened —
+   the factor can still be edited and re-submitted for approval later. */
+function vxRejectFactorForFormulas(code, note) {
+  const f = (VX.ratingFactors || []).find(x => x.code === code);
+  if (!f) return null;
+  f.approvedForFormulas = false;
+  f.formulaRejected = true;
+  f.formulaRejectedBy = vxCurrentUser();
+  f.formulaRejectedOn = vxNowStamp();
+  f.formulaRejectionNote = note || "";
+  vxAudit("Rating Factors", "Formula Builder approval rejected",
+    `${f.name} (${f.code}): declined by ${f.formulaRejectedBy}${note ? " — " + note : ""}`);
   return f;
 }
 

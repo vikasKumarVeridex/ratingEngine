@@ -138,10 +138,15 @@ function renderFormulaApprovals() {
         <div style="font-size:10.6px;color:var(--text-mute)">${vxJoinField(f.lob)} · ${vxJoinField(f.coverage, "unassigned")}</div></td>
       <td style="font-size:11.4px">${(f.createdBy || "—").split("@")[0]}
         <div style="color:var(--text-mute);font-size:10.5px">${f.createdOn || ""}</div></td>
+      <td style="font-size:11.2px;color:var(--text-dim)">${f.formulaRejected
+          ? `<span class="vx-b amber">Rejected</span> by ${(f.formulaRejectedBy || "").split("@")[0] || "—"}${f.formulaRejectionNote ? ": " + f.formulaRejectionNote : ""}`
+          : `<span class="vx-b gray">Pending</span>`}</td>
       <td style="text-align:right;white-space:nowrap">
         ${mine
-          ? `<span class="vx-b gray hintdot" title="You created this factor. A second person has to approve it — use Switch User (account menu) to approve as someone else.">awaiting someone else</span>`
-          : `<button class="btn btn-primary btn-sm" onclick="approveFactorForFormulas('${f.code}')">Approve</button>`}
+          ? `<span class="vx-b gray hintdot" title="You created this factor. A second person has to approve it — use Switch User (account menu) to approve as someone else." style="margin-inline-end:8px">awaiting someone else</span>
+             <button class="btn btn-outline-secondary btn-sm" onclick="rejectFactorForFormulas('${f.code}')" title="Withdraw your own factor from consideration — no second person needed for this.">Withdraw</button>`
+          : `<button class="btn btn-outline-secondary btn-sm" onclick="rejectFactorForFormulas('${f.code}')">Reject</button>
+             <button class="btn btn-primary btn-sm ms-1" onclick="approveFactorForFormulas('${f.code}')">Approve</button>`}
       </td></tr>`;
   };
   host.innerHTML = `<div class="vx-card vx-anim" style="margin-bottom:14px;border-left:3px solid var(--warn)">
@@ -150,7 +155,7 @@ function renderFormulaApprovals() {
         <div class="sub">Not yet approved to appear as a usable variable in Formula Builder — shows there as a locked "Awaiting approval" tile until then.</div></div>
     </div>
     <div class="vx-tw"><table class="vx-t" style="font-size:12.2px">
-      <thead><tr><th>Factor</th><th>Created by</th><th></th></tr></thead>
+      <thead><tr><th>Factor</th><th>Created by</th><th>Status</th><th></th></tr></thead>
       <tbody>${pending.map(row).join("")}</tbody></table></div>
   </div>`;
 }
@@ -706,9 +711,13 @@ function pathToWiredCard(rec) {
         </div>`).join("")}
     </div>
     ${!approved ? `<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">
+      ${rec.formulaRejected ? `<div style="font-size:11.3px;color:var(--warn);margin-bottom:8px"><i class="fa-solid fa-triangle-exclamation me-1"></i>
+        Rejected by ${(rec.formulaRejectedBy || "").split("@")[0] || "—"} on ${rec.formulaRejectedOn || "—"}${rec.formulaRejectionNote ? ": " + rec.formulaRejectionNote : ""} — can still be re-submitted.</div>` : ""}
       ${mine
-        ? `<span class="vx-b gray hintdot" title="You created this factor. Approval is a second pair of eyes, so it has to be someone else — that is the only thing this step guarantees.">Awaiting someone else to approve it for Formula Builder</span>`
-        : `<button class="btn btn-primary btn-sm" onclick="approveFactorForFormulas('${rec.code}')"><i class="fa-solid fa-check me-1"></i>Approve for Formula Builder</button>`}
+        ? `<span class="vx-b gray hintdot" title="You created this factor. Approval is a second pair of eyes, so it has to be someone else — that is the only thing this step guarantees." style="margin-inline-end:8px">Awaiting someone else to approve it for Formula Builder</span>
+           <button class="btn btn-outline-secondary btn-sm" onclick="rejectFactorForFormulas('${rec.code}')" title="Withdraw your own factor from consideration.">Withdraw</button>`
+        : `<button class="btn btn-outline-secondary btn-sm" onclick="rejectFactorForFormulas('${rec.code}')">Reject</button>
+           <button class="btn btn-primary btn-sm ms-1" onclick="approveFactorForFormulas('${rec.code}')"><i class="fa-solid fa-check me-1"></i>Approve for Formula Builder</button>`}
     </div>` : ""}
     ${approved && !liveInfo.live ? `<div style="font-size:11px;color:var(--text-mute);margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">
       <i class="fa-solid fa-circle-info me-1"></i>${steps[3].note}
@@ -734,6 +743,22 @@ function approveFactorForFormulas(code) {
   const panelOpen = panelEl && panelEl.classList.contains("show");
   if (panelOpen) openFactorPanel(vxFactorById(f.id));
   grid.reload();
+}
+function rejectFactorForFormulas(code) {
+  const f = vxFactorById((VX.ratingFactors || []).find(x => x.code === code)?.id);
+  const mine = f && f.createdBy === vxCurrentUser();
+  vxConfirm(mine ? "Withdraw this factor?" : "Reject this factor for Formula Builder?",
+    `<b>${f ? f.name : code}</b> ${mine ? "won't be offered for approval until you resubmit it." : "stays off Formula Builder's palette. It can still be edited and approved later — this isn't final."}`,
+    () => {
+      const r = vxRejectFactorForFormulas(code, "");
+      if (!r) return;
+      persistCustom();   // synchronous, same reasoning as approveFactorForFormulas above
+      vxToast(mine ? "Withdrawn" : "Rejected", `${r.name} stays off Formula Builder`, "err");
+      renderApprovals();
+      const panelEl = document.getElementById("vxFactorPanel");
+      if (panelEl && panelEl.classList.contains("show")) openFactorPanel(vxFactorById(r.id));
+      grid.reload();
+    });
 }
 function openFactorPanel(rec) {
   const s = sourceLabel(rec);
