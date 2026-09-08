@@ -349,10 +349,11 @@ function vxShell(title, subtitle, crumbs) {
           <!-- Was a <div> with a click handler: unreachable by keyboard and
                announced as nothing. It is a menu button, so it is one now. -->
           <button class="vx-avatar" id="vxProfBtn" aria-haspopup="true" aria-expanded="false"
-            aria-controls="vxProf" aria-label="Account menu for Vikas Kumar">VK</button>
+            aria-controls="vxProf" aria-label="Account menu for ${vxActiveUser().name}">${vxActiveUser().name.split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase()}</button>
           <div class="vx-pop" id="vxProf" style="width:250px">
-            <h6>Vikas Kumar</h6>
-            <div class="it"><div><b style="font-size:12.5px">Rating Administrator</b><small>vikas.kumar@veridex.io</small></div></div>
+            <h6>${vxActiveUser().name}</h6>
+            <div class="it"><div><b style="font-size:12.5px">${vxActiveUser().role}</b><small>${vxActiveUser().email}</small></div></div>
+            <a class="it" href="settings.html#switch-user"><div class="ic" style="background:var(--text-mute)"><i class="fa-solid fa-user-group"></i></div><div><b style="font-size:12.5px">Switch User</b><small>Act as someone else</small></div></a>
             <a class="it" href="settings.html"><div class="ic" style="background:var(--text-mute)"><i class="fa-solid fa-gear"></i></div><div><b style="font-size:12.5px">System Settings</b></div></a>
             <a class="it" href="audit.html"><div class="ic" style="background:var(--text-mute)"><i class="fa-solid fa-clock-rotate-left"></i></div><div><b style="font-size:12.5px">My Activity</b></div></a>
             <a class="it" href="index.html"><div class="ic" style="background:var(--bad)"><i class="fa-solid fa-arrow-right-from-bracket"></i></div><div><b style="font-size:12.5px">Sign Out</b></div></a>
@@ -794,9 +795,29 @@ let _asT;
    Kept deliberately small and generic — any page that mutates configuration
    can call vxAudit(); factor edits additionally write the purpose-built
    before/after row that the Loss Run and factor-history views read. */
+/* Which of VX.users this browser is acting as — same shape as the tenant
+   switcher (VX.activeTenantId), persisted, defaulting to the platform's own
+   Rating Administrator so every existing screen keeps working unchanged
+   until someone actually switches. This is what makes the approval flows
+   (factor changes, lookup-table row changes, table values, formulas) usable
+   through the real UI at all: every one of them blocks approving your own
+   request, and a single-user prototype had no way to become a second user
+   to approve as, short of a browser console. */
+function vxActiveUser() {
+  const byId = VX.activeUserId && (VX.users || []).find(u => u.id === VX.activeUserId);
+  return byId || (VX.users || []).find(x => x.role === "Rating Administrator") || (VX.users || [])[0];
+}
 function vxCurrentUser() {
-  const u = (VX.users || []).find(x => x.role === "Rating Administrator") || (VX.users || [])[0];
+  const u = vxActiveUser();
   return (u && u.email) || "unknown@veridex.io";
+}
+function vxSetActiveUser(id) {
+  const u = (VX.users || []).find(x => x.id === +id);
+  if (!u) return;
+  VX.activeUserId = u.id;
+  try { localStorage.setItem("vxActiveUserId", JSON.stringify(u.id)); } catch (e) {}
+  vxToast("Switched user", `Now acting as ${u.name} · ${u.role}`, "ok");
+  setTimeout(() => location.reload(), 550);
 }
 function vxNowStamp() {
   const d = new Date();

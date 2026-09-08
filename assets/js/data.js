@@ -2386,6 +2386,13 @@
   });
 
   D.activeTenantId = +(loadPersisted("vxActiveTenant", null) || 1);
+  /* Which VX.users row this browser is acting as — see vxSetActiveUser /
+     vxCurrentUser in core.js. null means "no explicit switch yet", so
+     vxCurrentUser() falls back to the platform's own Rating Administrator,
+     exactly the fixed identity every screen already assumed before this
+     existed. */
+  const persistedUserId = loadPersisted("vxActiveUserId", null);
+  D.activeUserId = persistedUserId != null ? +persistedUserId : null;
   const activeTenant = D.tenants.find(t => t.id === D.activeTenantId) || D.tenants[0];
 
   D.meta = { tenant: activeTenant.name, carrier: activeTenant.carrier, env: "Sandbox", build: "2026.08.05", engine: "Veridex Rating Engine v1.0" };

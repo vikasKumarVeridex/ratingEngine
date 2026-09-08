@@ -233,8 +233,33 @@ const OPS_ADV = ["+", "−", "^", ","];
 const OPS = [...OPS_BASIC, ...OPS_ADV];
 const FNS = ["IF", "ELSE", "MIN", "MAX", "ROUND", "LOOKUP", "AND", "OR", ">", "<", "="];
 
+/* A factor added on Rating Factors used to be invisible here no matter
+   which coverage it was scoped to — COB_VARS was hand-typed and nothing
+   read VX.ratingFactors at all. Reads live, so a factor added there shows
+   up here without this file changing; only ADDS to the hardcoded set below
+   (a real, workbook-verified name always wins if the two ever collide), and
+   uses the factor's own `code` as the token name — already unique, already
+   stable, so no second naming scheme to keep in sync. Every one of these is
+   marked "Not wired" wherever it's shown (see KIND_META.custom below) —
+   same honesty rule as everywhere else: the engine does not execute
+   configured factors yet, so a formula built with one of these documents
+   intent, it does not compute anything real. */
+function customFactorForVar(n) {
+  return (VX.ratingFactors || []).find(f => f.code === n && (f.custom || f.verified === undefined));
+}
+function customVarsForCob(cobKey) {
+  const coverage = cobKey === ACCOUNT_KEY ? "Account Level" : cobKey;
+  return (VX.ratingFactors || [])
+    .filter(f => (f.custom || f.verified === undefined) && f.coverage === coverage && f.code)
+    .map(f => ({ n: f.code, v: f.defaultValue != null ? +f.defaultValue : 1 }));
+}
+function varsForCob(cobKey) {
+  const base = COB_VARS[cobKey] || [];
+  const known = new Set(base.map(v => v.n));
+  return base.concat(customVarsForCob(cobKey).filter(v => !known.has(v.n)));
+}
 function toTokens(arr, cobKey) {
-  const varNames = new Set((COB_VARS[cobKey] || []).map(v => v.n));
+  const varNames = new Set(varsForCob(cobKey).map(v => v.n));
   /* Function names are structure, not data — classifying MIN/MAX as numbers
      styled them as literals and made an additive, clamped chain read as if it
      were multiplying by a constant called MIN. */
@@ -243,9 +268,11 @@ function toTokens(arr, cobKey) {
 }
 function findVarDefault(name) {
   for (const key in COB_VARS) { const hit = COB_VARS[key].find(x => x.n === name); if (hit) return hit.v; }
+  const f = customFactorForVar(name);
+  if (f) return f.defaultValue != null ? +f.defaultValue : 1;
   return 1;
 }
-function currentVars() { return COB_VARS[currentCob || ACCOUNT_KEY] || []; }
+function currentVars() { return varsForCob(currentCob || ACCOUNT_KEY); }
 
 /* Plain-language label + definition + value type for every variable name —
    PascalCase identifiers like "LiabDeductibleFactor" are what the formula
@@ -450,8 +477,16 @@ const KIND_META = {
   judgment: { l: "Judgment", c: "amber",  i: "fa-user-pen",    d: "Set by an underwriter, not by a table" },
   constant: { l: "Constant", c: "gray",   i: "fa-lock",        d: "Same on every quote — not driven by insured input" },
   input:    { l: "Input",    c: "cyan",   i: "fa-keyboard",    d: "Entered directly on the quote, not looked up" },
+  custom:   { l: "Not wired", c: "amber", i: "fa-plug-circle-xmark",
+    d: "Added on Rating Factors. The engine does not execute configured factors yet, so this documents intent — it is not a filed number." },
 };
-function varSource(n) { return VAR_SOURCE[n] || { kind: "constant", driver: null }; }
+function varSource(n) {
+  if (VAR_SOURCE[n]) return VAR_SOURCE[n];
+  const f = customFactorForVar(n);
+  if (f) return { kind: "custom", driver: f.driver && f.driver !== "—" ? f.driver : null,
+    note: `Added on Rating Factors${f.lob ? " for " + f.lob : ""} — open it there to edit.` };
+  return { kind: "constant", driver: null };
+}
 function varRows(n) {
   const s = varSource(n);
   if (!s.rows) return null;
@@ -463,8 +498,16 @@ function varRange(n) {
   const vals = rows.map(r => +r.v);
   return { min: Math.min(...vals), max: Math.max(...vals), count: rows.length };
 }
-function varLabel(n) { return (VAR_META[n] && VAR_META[n].l) || n; }
-function varDef(n) { return (VAR_META[n] && VAR_META[n].d) || ""; }
+function varLabel(n) {
+  if (VAR_META[n]) return VAR_META[n].l;
+  const f = customFactorForVar(n);
+  return f ? f.name : n;
+}
+function varDef(n) {
+  if (VAR_META[n]) return VAR_META[n].d;
+  const f = customFactorForVar(n);
+  return f ? `Added on Rating Factors${f.driver && f.driver !== "—" ? " — driven by " + f.driver : ""}.` : "";
+}
 function fmtVarValue(n, v) {
   const u = VAR_META[n] && VAR_META[n].u;
   if (u === "money") return "$" + Number(v).toLocaleString();
@@ -1207,6 +1250,8 @@ function saveF() {
       <option value="Class of Business" ${defScope === "Class of Business" ? "selected" : ""}>Class of Business Level — applies to one coverage</option>
     </select></div>
     <div class="col-md-6" id="sfCobWrap" style="${defScope === "Account" ? "display:none" : ""}"><label>Class of Business</label><select class="form-select form-select-sm" id="sfCob">${cobOpts(defLob)}</select></div>
+    <div class="col-md-6"><label>In force from</label><input type="date" class="form-control form-control-sm" id="sfEffDate" value="${(typeof VX !== "undefined" && VX.referenceDate) || new Date().toISOString().slice(0, 10)}"></div>
+    <div class="col-md-6"><label>Reason for this version</label><input class="form-control form-control-sm" id="sfReason" placeholder="Optional — e.g. \"Filed rate revision 2026-09\""></div>
     <div class="col-12">
       <div class="d-flex align-items-center justify-content-between mb-1">
         <label class="mb-0">Attach to Rating Versions</label>
@@ -1230,16 +1275,37 @@ function saveF() {
       const cob = scope === "Class of Business" ? document.getElementById("sfCob").value : "";
       const attachments = [...document.querySelectorAll("#sfProducts [data-prod]:checked")]
         .map(el => ({ product: el.dataset.prod, ratingVersion: el.dataset.ver }));
+      const effDate = document.getElementById("sfEffDate").value || new Date().toISOString().slice(0, 10);
+      const reason = document.getElementById("sfReason").value;
+      const newTokens = TOK.slice();
+      /* Every saved revision of a formula's expression is kept, not just the
+         current one — same reasoning as a Rating Factor's valueHistory:
+         Formula Builder already gates when a change goes LIVE (saving always
+         stages Draft; nothing rates on it until its version is published),
+         but until now it never kept a record of what the expression WAS
+         before an edit overwrote it. `effectiveFrom` here is the same record-
+         keeping the other approval flows use — no scheduler resolves an
+         expression "as of" a date, this documents intent alongside Publish. */
+      const prevTokens = currentFormula ? currentFormula.tokens : null;
+      const tokensChanged = !prevTokens || JSON.stringify(prevTokens) !== JSON.stringify(newTokens);
+      const tokenHistory = (currentFormula && currentFormula.tokenHistory) || [];
+      if (tokensChanged) {
+        tokenHistory.filter(h => !h.effectiveEnd).forEach(h => { h.effectiveEnd = vxDayBefore(effDate); });
+        tokenHistory.push({ tokens: newTokens, effectiveStart: effDate, effectiveEnd: "",
+          savedBy: vxCurrentUser(), savedOn: vxNowStamp(), note: reason || (prevTokens ? "Formula edited" : "Initial version") });
+      }
       const rec = {
         id: currentFormula ? currentFormula.id : Date.now(),
         name, lob, scope, cob, attachments, status: "Draft",
         tested: canvasTested, lastTestedAt: canvasTested ? (src.lastTestedAt || new Date().toISOString().slice(0, 10)) : null,
         createdBy: (src.createdBy || "vikas.kumar@veridex.io"), updated: new Date().toISOString().slice(0, 10),
-        tokens: TOK.slice(),
+        tokens: newTokens, tokenHistory,
       };
       const i = VX.savedFormulas.findIndex(f => f.id === rec.id);
       if (i >= 0) VX.savedFormulas[i] = rec; else VX.savedFormulas.push(rec);
       localStorage.setItem("vxSavedFormulas", JSON.stringify(VX.savedFormulas));
+      vxAudit("Rating Formulas", tokensChanged ? (prevTokens ? "Formula edited" : "Formula created") : "Formula re-saved (no expression change)",
+        `${name} (${lob}${cob ? " · " + cob : ""}) — staged as Draft, effective ${effDate}${reason ? ": " + reason : ""}`);
       currentFormula = rec;
       vxToast("Formula saved", name + " staged as Draft" + (attachments.length ? ` on ${attachments.length} rating version${attachments.length === 1 ? "" : "s"}` : "") + " — publish each version to go live", "ok");
       renderCanvasContext();
@@ -1332,9 +1398,37 @@ function bulkAttach(recs) {
   </div>`;
 })();
 
+/* Real version history for a formula's expression — replaces the grid
+   adapter's generic default (four hardcoded demo rows every record used to
+   show, regardless of what it actually was) with what this formula was
+   actually saved as, each time it changed. */
+function showFormulaHistory(rec) {
+  const hist = (rec.tokenHistory || []).slice().reverse();
+  if (!hist.length) {
+    vxModal(`Version history — ${rec.name}`,
+      `<div class="sub">No saved revisions on file yet — history starts recording from the next save.</div>`,
+      [{ t: "Close", c: "secondary" }]);
+    return;
+  }
+  vxModal(`Version history — ${rec.name}`, `
+    <div class="sub mb-3">Every revision this formula's expression has been saved as. Saving stages Draft — nothing here goes live until its rating version is published.</div>
+    <div class="vx-tw"><table class="vx-t">
+      <thead><tr><th>In force</th><th>Expression</th><th>Saved by</th><th>Note</th></tr></thead>
+      <tbody>${hist.map((h, i) => `<tr>
+        <td style="white-space:nowrap;font-size:11.8px">${h.effectiveStart}${h.effectiveEnd ? " – " + h.effectiveEnd : " onward"}
+          ${i === 0 && !h.effectiveEnd ? '<div><span class="vx-b green" style="font-size:9.5px">current</span></div>' : ""}</td>
+        <td><code style="font-size:11px">${(h.tokens || []).map(t => t.v).join(" ") || "—"}</code></td>
+        <td style="font-size:11.4px">${(h.savedBy || "—").split("@")[0]}<div style="color:var(--text-mute);font-size:10.3px">${h.savedOn || ""}</div></td>
+        <td style="font-size:11.4px;color:var(--text-dim)">${h.note || "—"}</td>
+      </tr>`).join("")}</tbody>
+    </table></div>`,
+    [{ t: "Close", c: "secondary" }], "modal-lg");
+}
+
 /* ---------- Formula grid (landing view) ---------- */
 let fbGrid = null;
 fbGrid = vxAgGrid({ el: "#fbGrid", key: "savedFormulas", name: "Formula", size: 12, readOnly: true,
+  onHist: r => showFormulaHistory(r),
   cols: [
     { k: "name", l: "Formula" },
     { k: "lob", l: "Line of Business" },

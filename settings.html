@@ -20,7 +20,43 @@
 <script src="assets/js/ag-grid-adapter.js"></script>
 <script>
 vxShell("System Settings", "Global platform settings. || Govern calculation behaviour, versioning, AI features, security and API limits.", [{l:"Administration"},{l:"System Settings"}]);
-document.getElementById("vxBody").innerHTML = `<div class="vx-card vx-anim"><div id="grid"></div></div>`;
+
+/* This browser has no real login — every screen assumed a single fixed
+   identity (Vikas Kumar, Rating Administrator). That made the approval
+   flows built into Rating Factors, Lookup Tables and Formula Builder
+   impossible to actually exercise: every one of them blocks approving your
+   own request, and there was no way to become a second person to approve
+   as. Switching here is the same shape as the tenant switcher in the top
+   bar — persisted, and it reloads so every screen picks it up. */
+function renderUserSwitch() {
+  const me = vxActiveUser();
+  const users = (VX.users || []).filter(u => u.status !== "Suspended").slice().sort((a, b) => a.name.localeCompare(b.name));
+  const host = document.getElementById("userSwitch");
+  host.innerHTML = `
+    <div class="vx-card vx-anim" id="switch-user" style="margin-bottom:16px">
+      <h2>Acting As <span class="vx-b blue">${me.role}</span></h2>
+      <div class="sub">Every change you make, request, or approve is stamped with whoever this is set to — switch here to approve a request as someone other than whoever raised it.</div>
+      <div class="row g-2 align-items-end mt-2">
+        <div class="col-md-6">
+          <label class="mb-1">Acting as</label>
+          <select class="form-select form-select-sm" id="userSwitchSel">
+            ${users.map(u => `<option value="${u.id}" ${u.id === me.id ? "selected" : ""}>${u.name} — ${u.role} (${u.email})</option>`).join("")}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <button class="btn btn-primary btn-sm" id="userSwitchBtn"><i class="fa-solid fa-user-group me-1"></i>Switch</button>
+        </div>
+      </div>
+    </div>`;
+  document.getElementById("userSwitchBtn").onclick = () => {
+    const id = +document.getElementById("userSwitchSel").value;
+    if (id === me.id) { vxToast("Already acting as this user", me.name, "info"); return; }
+    vxSetActiveUser(id);
+  };
+}
+
+document.getElementById("vxBody").innerHTML = `<div id="userSwitch"></div><div class="vx-card vx-anim"><div id="grid"></div></div>`;
+renderUserSwitch();
 vxAgGrid({ el:"#grid", key:"settings", name:"Setting",
   size:15,
   cols:[{k:"label",l:"Setting"},{k:"category",l:"Category",r:r=>'<span class="vx-b blue">'+r.category+'</span>'},
