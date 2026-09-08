@@ -1374,8 +1374,10 @@ function saveF() {
           savedBy: vxCurrentUser(), savedOn: vxNowStamp(), note: reason || (prevTokens ? "Formula edited" : "Initial version") });
       }
       const rec = {
+        ...src,
         id: currentFormula ? currentFormula.id : Date.now(),
         name, lob, scope, cob, attachments, status: "Draft",
+        tenantId: src.tenantId != null ? src.tenantId : VX.activeTenantId,
         tested: canvasTested, lastTestedAt: canvasTested ? (src.lastTestedAt || new Date().toISOString().slice(0, 10)) : null,
         createdBy: (src.createdBy || "vikas.kumar@veridex.io"), updated: new Date().toISOString().slice(0, 10),
         tokens: newTokens, tokenHistory,

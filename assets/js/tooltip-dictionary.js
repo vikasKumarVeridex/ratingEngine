@@ -13,6 +13,7 @@
     "Area":           { d: "Subsystem of the Rating Engine that was touched (Factors, Rate Tables, Versions, Formulas, Tenants).", w: "Lets compliance officers filter activity to a single concern without reviewing the whole tenant log." },
     "Action":         { d: "Verb describing the change: Create, Update, Publish, Rollback, Deprecate, Import.", w: "Standardised vocabulary so SIEM rules and approval workflows can pattern-match safely." },
 
+    "Created by": { d: "User recorded as the creator of this rating configuration.", w: "Identifies the author for review and follow-up." },
     /* factors.html */
     "Factor":         { d: "A named rating variable (e.g. driver_age, territory, class_code) consumed by the rating pipeline.", w: "Factors are the atomic inputs of premium calculation; their catalog is versioned and audited." },
     "Change":         { d: "Magnitude and direction of the value change vs. the previously published version (e.g. +0.05, -10%).", w: "Helps reviewers quantify expected premium impact before approval and release." },

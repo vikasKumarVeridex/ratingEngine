@@ -42,9 +42,8 @@ document.getElementById("vxBody").innerHTML = `
       <span>Only the coverage-pricing stage differs per line of business.</span>
       <button type="button" class="tog" onclick="vxExpToggle('expFlow')">Why?</button></div>
     <div class="bd">
-      <p>Stages 1, 2, 4, 5 and 6 are <code>assemble()</code> in <code>engine.js</code> — shared by every line, so a
-      change to how tax, fees, credits or the minimum premium work applies everywhere at once. Stage 3 is the only
-      part each line implements for itself.</p>
+      <p>The engine evaluates eligibility, runs the selected coverage formulas, then assembles credits, fees,
+      taxes and minimums. A declined risk can still carry an indicative calculation; the quote portal blocks issuance.</p>
       <p>Stage 3 is read from the same pipeline definition the
       <a href="versions.html">Rating Versions</a> screen documents, so this diagram cannot drift from it.</p>
     </div>
@@ -60,6 +59,16 @@ document.getElementById("vxBody").innerHTML = `
     </div>
   </div>
 
+  <div class="vx-card vx-anim mb-3">
+    <h2 style="font-size:16px">ISO and program rating</h2>
+    <p><b>ISO-based:</b> loss costs, class and territory mappings, limit and deductible factors, then carrier LCM and program overlays.</p>
+    <p><b>Proprietary:</b> program-owned base rates and segmentation factors, with eligibility, appetite and referral rules.
+    A custom-built calculator can use ISO content; “Custom” application type does not mean proprietary rate content.</p>
+    <p><b>Current platform:</b> six working calculators, editable formulas and partial effective dating.
+    Product/version attachments select saved formulas. Shared rate tables are not immutable filing snapshots.
+    Licensed ISO ingestion, complete crosswalks, carrier/program/state override layers and production release governance remain to be built.</p>
+    <a href="docs/rating-engine-study.md">Read folder study and implementation gaps</a>
+  </div>
   <div id="flowHost"></div>`;
 
 function renderFlow() {

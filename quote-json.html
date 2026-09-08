@@ -781,8 +781,8 @@ function generate() {
 
   let result, elig = null;
   try {
-    if (typeof evaluateEligibility === "function") elig = evaluateEligibility(adapted.lob, adapted.input);
     result = ENGINE.rate(adapted.lob, adapted.input);
+    elig = result.eligibility;
   } catch (e) { setStatus("Rating failed: " + e.message, "err"); return; }
 
   LAST = { payload, adapted, result, elig };
@@ -828,6 +828,8 @@ function renderOut() {
           available: result.ratingVersion.available,
         } : null,
         licenceBasis: result.licenceBasis,
+        ratingBasis: result.ratingBasis,
+        underwriting: result.underwriting,
         coveragePremium: result.coveragePremium,
         discounts: result.discounts, surcharges: result.surcharges,
         creditsNotApplied: (result.creditsSkipped || []).map(c => ({
@@ -849,6 +851,7 @@ function renderOut() {
       eligibility: elig ? {
         declines: elig.declines.map(e => e.rule.name),
         refers: elig.refers.map(e => e.rule.name),
+        notEvaluable: elig.notEvaluable.map(e => ({ rule: e.rule.name, reason: e.reason })),
       } : null,
       adapter: {
         fieldsMapped: adapted.mapped.length,

@@ -6,6 +6,11 @@
 
 const ENGINE = (() => {
 
+  // Request context is synchronous and restored after every call, including errors.
+  let ratingInput = null;
+  const ratingTenant = () => ratingInput && ratingInput.tenantId != null
+    ? ratingInput.tenantId : VX.activeTenantId;
+
   const find = (arr, fn, fb) => arr.find(fn) || fb || arr[0];
 
   /* ==========================================================================
@@ -105,10 +110,10 @@ const ENGINE = (() => {
     const lob = (VX.lobs || []).find(l => l.name === lobName);
     if (lob && lob.licenceBasis === "Admitted") return true;          // 1. statutory
     if (productName) {
-      const p = (VX.products || []).find(x => x.name === productName);
+      const p = (VX.products || []).filter(ofTenant).find(x => x.name === productName);
       if (p && p.licenceBasis) return p.licenceBasis === "Admitted";  // 2. product paper
     }
-    const tid = tenantId != null ? tenantId : VX.activeTenantId;
+    const tid = tenantId != null ? tenantId : ratingTenant();
     const t = (VX.tenants || []).find(x => x.id === tid);
     return !!(t && t.nonAdmitted === false);                          // 3. carrier licence
   }
@@ -124,7 +129,7 @@ const ENGINE = (() => {
   const TXN_KEY = { "New Business": "new", "Renewal": "renewal", "Endorsement": "endorsement" };
   function productVersionOverride(productName, policyType) {
     if (!productName || !policyType) return null;
-    const p = (VX.products || []).find(x => x.name === productName);
+    const p = (VX.products || []).filter(ofTenant).find(x => x.name === productName);
     const key = TXN_KEY[policyType];
     const label = p && p.versionByTransaction && key ? p.versionByTransaction[key] : "";
     return label || null;
@@ -133,7 +138,7 @@ const ENGINE = (() => {
   function resolveRatingVersion(lobName, asOf, productName, policyType) {
     /* Date resolution needs an effective date; a version without one cannot
        be placed on a timeline. An explicit PIN does not — see below. */
-    const dateable = (VX.versions || []).filter(v => v.lob === lobName && v.effectiveStart
+    const dateable = (VX.versions || []).filter(ofTenant).filter(v => v.lob === lobName && v.effectiveStart
       && (!productName || v.product === productName));
     const all = dateable;
 
@@ -150,7 +155,7 @@ const ENGINE = (() => {
        falls through, because there is nothing to honour. */
     const pinned = productVersionOverride(productName, policyType);
     if (pinned) {
-      const everyVersion = (VX.versions || []).filter(v => v.lob === lobName
+      const everyVersion = (VX.versions || []).filter(ofTenant).filter(v => v.lob === lobName
         && (!productName || v.product === productName));
       const rec = everyVersion.find(v => v.version === pinned);
       if (rec) {
@@ -1465,6 +1470,19 @@ const ENGINE = (() => {
   }
 
   function evalTokens(tokens, vars) {
+    if (!Array.isArray(tokens) || !tokens.length) throw new Error("Formula needs tokens");
+    const operators = new Set(["+", "-", "*", "/", "×", "÷", "−", "^", "(", ")", ",", "MIN", "MAX", "ROUND", "ABS"]);
+    tokens.forEach(t => {
+      if (!t || !["var", "op", "num"].includes(t.t)) throw new Error("Invalid formula token");
+      if (t.t === "var") {
+        if (t.v !== REMAINING && (!Object.prototype.hasOwnProperty.call(vars, t.v)
+          || typeof vars[t.v] !== "number" || !Number.isFinite(vars[t.v])))
+          throw new Error("missing or non-numeric value for " + t.v);
+      } else if (!operators.has(t.v)
+        && !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(String(t.v))) {
+        throw new Error("Unsupported formula token: " + t.v);
+      }
+    });
     const js = tokens.map(t => {
       if (t.t === "var" && t.v === REMAINING) {
         return "(" + remainingProduct(tokens, vars).value + ")";
@@ -1551,9 +1569,9 @@ const ENGINE = (() => {
   function customFactorTableInfo(f) {
     if (!f || f.kind !== "Lookup" || typeof f.tableId !== "string" || f.tableId.slice(0, 3) !== "lt:") return null;
     if (typeof VX === "undefined") return null;
-    const table = (VX.lookupTables || []).find(t => t.id === +f.tableId.slice(3));
+    const table = (VX.lookupTables || []).filter(ofTenant).find(t => t.id === +f.tableId.slice(3));
     if (!table || !table.columns || !table.columns.length) return null;
-    const rawRows = typeof VX.lookupRowsAsOf === "function" ? VX.lookupRowsAsOf(table, VX.referenceDate) : (table.data || []);
+    const rawRows = typeof VX.lookupRowsAsOf === "function" ? VX.lookupRowsAsOf(table, resolveRatingAsOf(ratingInput || {}).asOf) : (table.data || []);
     const valueCol = table.columns[table.columns.length - 1].name;
     const keyCols = table.columns.slice(0, -1).map(c => c.name);
     const rows = rawRows.map(r => ({ l: keyCols.map(k => `${k}: ${r[k]}`).join(", ") || table.name, v: +r[valueCol] }))
@@ -1586,7 +1604,7 @@ const ENGINE = (() => {
     const coverage = cobKey === "__ACCOUNT__" || cobKey === "__ACCOUNT_PD__" ? "Account Level" : cobKey;
     const asArr = v => Array.isArray(v) ? v : (v ? [v] : []);
     const out = {};
-    VX.ratingFactors.forEach(f => {
+    VX.ratingFactors.filter(ofTenant).forEach(f => {
       if (!(f.custom || f.verified === undefined) || !f.approvedForFormulas || !f.code) return;
       if (!asArr(f.lob).includes(lobName) || !asArr(f.coverage).includes(coverage)) return;
       let v = null;
@@ -1599,10 +1617,28 @@ const ENGINE = (() => {
   }
 
   function applySavedFormula(lobName, cobKey, varMap, defaultValue, context) {
-    const tid = (typeof VX !== "undefined") ? VX.activeTenantId : null;
-    const f = (typeof VX !== "undefined" && VX.savedFormulas || [])
-      .find(x => x.status === "Active" && x.lob === lobName && x.cob === cobKey
-        && (x.tenantId == null || tid == null || x.tenantId === tid));
+    const tid = (typeof VX !== "undefined") ? ratingTenant() : null;
+    const input = ratingInput || {};
+    const asOf = resolveRatingAsOf(input).asOf;
+    const selection = input.product
+      ? resolveRatingVersion(lobName, asOf, input.product, input.policyType) : null;
+    const candidates = (VX.savedFormulas || []).filter(x =>
+      x.status === "Active" && x.lob === lobName && x.cob === cobKey
+      && (x.tenantId == null || x.tenantId === tid)
+      && (!x.states || !x.states.length || x.states.includes(input.state))
+      && (!x.effectiveStart || x.effectiveStart <= asOf)
+      && (!x.effectiveEnd || x.effectiveEnd >= asOf)
+      // No-product calls retain the existing sandbox route. With a product,
+      // attachments must match the actual selected version, never array order.
+      && (!input.product || !(x.attachments || []).length ||
+        (selection.rec && !selection.ambiguous && x.attachments.some(a =>
+          a.product === input.product && a.ratingVersion === selection.rec.version))));
+    // Tenant-owned formulas take precedence over explicitly shared defaults.
+    const owned = candidates.filter(x => x.tenantId === tid);
+    const applicable = owned.length ? owned : candidates;
+    const f = applicable.length === 1 ? applicable[0] : null;
+    const conflict = applicable.length > 1
+      ? "Multiple active formulas match this coverage and rating context." : null;
     // Approved custom factors fill gaps only — never override a value the
     // engine itself explicitly computed and passed in as varMap.
     varMap = Object.assign({}, approvedCustomFactorVars(lobName, cobKey), varMap || {});
@@ -1615,23 +1651,23 @@ const ENGINE = (() => {
     if (!f) {
       calcLogPush({ lob: lobName, coverage: cobKey, context: context || null,
         mode: "default", formulaName: null, expression: null, substituted: null,
-        vars, result: defaultValue });
-      return { value: defaultValue, ratedBy: { mode: "default" } };
+        failed: !!conflict, error: conflict, vars, result: defaultValue });
+      return { value: defaultValue, ratedBy: { mode: "default", error: conflict } };
     }
     try {
       const value = evalTokens(f.tokens, varMap);
       calcLogPush({ lob: lobName, coverage: cobKey, context: context || null,
-        mode: "formula", formulaName: f.name,
+        mode: "formula", formulaId: f.id, formulaName: f.name,
         expression: f.tokens.map(t => t.v).join(" "),
         substituted: substituteTokens(f.tokens, varMap),
         vars, result: value });
       return { value, ratedBy: { mode: "formula", name: f.name, updated: f.updated,
-        version: (f.attachments && f.attachments[0] && f.attachments[0].ratingVersion) || null } };
+        version: selection && selection.rec ? selection.rec.version : null } };
     } catch (e) {
       // Never let a bad saved formula break a quote — fall back and say why.
       calcLogPush({ lob: lobName, coverage: cobKey, context: context || null,
         mode: "default", formulaName: f.name, failed: true, error: e.message,
-        expression: f.tokens.map(t => t.v).join(" "), substituted: null,
+        expression: Array.isArray(f.tokens) ? f.tokens.map(t => t.v).join(" ") : null, substituted: null,
         vars, result: defaultValue });
       return { value: defaultValue, ratedBy: { mode: "default", error: e.message } };
     }
@@ -1644,8 +1680,8 @@ const ENGINE = (() => {
      Rows without a tenantId are treated as shared, which keeps this safe for
      any collection that hasn't been partitioned. */
   function ofTenant(row) {
-    const tid = (typeof VX !== "undefined") ? VX.activeTenantId : null;
-    return row.tenantId == null || tid == null || row.tenantId === tid;
+    const tid = (typeof VX !== "undefined") ? ratingTenant() : null;
+    return row.tenantId == null || row.tenantId === tid;
   }
 
   /* ==========================================================================
@@ -1893,7 +1929,7 @@ const ENGINE = (() => {
       /* Every version on file for this line, so a caller with no active one
          can see what it could rate on instead. */
       available: (VX.versions || [])
-        .filter(v => v.lob === lob && v.effectiveStart)
+        .filter(ofTenant).filter(v => v.lob === lob && v.effectiveStart)
         .map(v => ({ version: v.version, product: v.product, status: v.status,
                      effectiveStart: v.effectiveStart, effectiveEnd: v.effectiveEnd || null })),
     };
@@ -1967,8 +2003,33 @@ const ENGINE = (() => {
       if (!fn) throw new Error("No rating calculator registered for LOB " + lobCode);
       /* One log per quote — reset here, at the single entry point, so steps
          from a previous quote can never leak into this one's walkthrough. */
+      if (!input || typeof input !== "object" || Array.isArray(input))
+        throw new Error("Rating input must be an object");
+      const previous = ratingInput;
+      ratingInput = input;
       calcLogReset();
-      return fn(input);
+      try {
+        const eligibility = typeof evaluateEligibility === "function"
+          ? evaluateEligibility(lobCode, input) : null;
+        const result = fn(input);
+        result.eligibility = eligibility;
+        result.underwriting = {
+          decision: eligibility && eligibility.declines.length ? "decline"
+            : !eligibility ? "not_evaluated"
+            : eligibility.refers.length || eligibility.notEvaluable.length || result.formulaFailures.length
+              ? "refer" : "approve",
+          complete: !!eligibility && !eligibility.notEvaluable.length && !result.formulaFailures.length,
+          premiumIsIndicative: true,
+        };
+        result.ratingBasis = {
+          tenantId: ratingTenant(), product: input.product || null,
+          execution: result.usedSavedFormula ? "saved-formula-and-built-in" : "built-in",
+          versionSelection: "metadata-and-formula-attachments",
+          rateData: lobCode === "TRUCK" ? "shared-tables-with-partial-effective-dating" : "shared-reference-tables",
+          immutableSnapshot: false,
+        };
+        return result;
+      } finally { ratingInput = previous; }
     },
     /* The formula builder's "Evaluate Formula" button used to run its own,
        simpler evaluator: it substituted variables and handed the string to
@@ -1986,7 +2047,7 @@ const ENGINE = (() => {
       const all = ENGINE_TRACE(r).filter(t => t.kind === "x");
       const top = all.slice().sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact)).slice(0, 3);
       return {
-        summary: `The ${r.lob} premium of ${vxMoney(r.finalPremium)} was produced by rating version ${r.version} for ${r.state}.`,
+        summary: `The ${r.lob} indicative premium is ${vxMoney(r.finalPremium)} for ${r.state}, labelled version ${r.version}. Shared tables and the recorded formula steps produced this calculation; the label is not an immutable rate snapshot.`,
         formula: r.formula,
         drivers: top.map(t => `${t.label} (${t.value.toFixed(3)}×) in the ${t.group} chain ${t.value > 1 ? "added" : "saved"} about ${vxMoney(Math.abs(t.impact))}` +
           (t.driver ? ` — driven by ${t.driver} = "${t.input}"` : "")),
@@ -1998,6 +2059,7 @@ const ENGINE = (() => {
         version: (() => {
           const rv = r.ratingVersion;
           if (!rv) return `Labelled rating version ${r.version}.`;
+          if (rv.pinnedTo) return `${rv.pinnedTo} is pinned to ${rv.version}. ${rv.pinnedWarning || "The product transaction setting selected this version."}`;
           if (rv.resolved) {
             return `Rating version ${rv.version} (${rv.status}, effective ${rv.effectiveStart}${rv.effectiveEnd ? " to " + rv.effectiveEnd : " onward"}) was selected because the rating date ${rv.asOf} falls inside its effective window. That date is the ${rv.asOfBasis}.`;
           }

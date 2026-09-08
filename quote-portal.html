@@ -1804,7 +1804,7 @@ async function calc() {
        tells it which county, the same way it is told which state. */
     S.v.county = S.county || null;
     S.res = ENGINE.rate(S.lob, S.v);
-    S.elig = evaluateEligibility(S.lob, S.v);
+    S.elig = S.res.eligibility;
     vxToast("Premium calculated", LOBS.find(l => l.k === S.lob).n + " — " + vxMoney(S.res.finalPremium), "ok");
   } catch (e) { vxToast("Rating error", e.message, "err"); }
   if (b) { b.disabled = false; b.innerHTML = '<i class="fa-solid fa-bolt me-1"></i>Recalculate Premium'; }

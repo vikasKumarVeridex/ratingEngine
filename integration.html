@@ -231,13 +231,13 @@ document.getElementById("vxBody").innerHTML = `
     <pre class="ig-code">// UNDERWRITING SERVICE ONLY \u2014 internal segment, service credential.
 // A call from a browser, CRM or portal is a defect, not an integration.
 
-// 1. Screen the risk before pricing it  (assets/js/eligibility.js)
-const elig = evaluateEligibility(lobCode, input);
-//    -> { declines[], refers[], notEvaluable[] }
-//    A decline must block the bind. A refer routes to an underwriter.
-
-// 2. Price it
+// 1. Calculate with shared eligibility evaluation (load eligibility.js).
 const result = ENGINE.rate(lobCode, input);
+const elig = result.eligibility;
+// result.underwriting: decision, complete, premiumIsIndicative
+// Decline blocks issuance. Refer or not_evaluated requires review.
+// This browser prototype returns an indicative premium even on decline.
+// result.ratingBasis states table/version limits; no immutable snapshot yet.
 
 // 3. Authority gate \u2014 UW's own step, not the engine's
 if (result.finalPremium > underwriter.authorityLimit) route.toReferral();
