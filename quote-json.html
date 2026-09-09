@@ -25,6 +25,9 @@
 .unmapped span{background:var(--surface-3);padding:1px 6px;border-radius:4px;margin-right:4px;
   display:inline-block;white-space:nowrap}
 </style>
+<link href="assets/css/workspace.css" rel="stylesheet">
+<script src="assets/js/tooltip-dictionary.js" defer></script>
+<script src="assets/js/ui-ux.js" defer></script>
 </head>
 <body><div id="vxApp"></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -489,7 +492,7 @@ document.getElementById("vxBody").innerHTML = `
     </div>
   </div>
 
-  <div class="row g-3" id="mapCards" style="display:none">
+  <div class="row g-3" id="mapCards" data-ux-section="Mapping and derived factors" style="display:none">
     <div class="col-lg-7">
       <div class="vx-card vx-anim">
         <h2>Field mapping</h2>
@@ -1199,7 +1202,5 @@ function downloadOut() {
 
 loadSample();
 </script>
-<script src="assets/js/tooltip-dictionary.js"></script>
-<script src="assets/js/column-tooltips.js"></script>
 </body>
 </html>

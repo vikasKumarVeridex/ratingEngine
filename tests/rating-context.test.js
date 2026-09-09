@@ -105,6 +105,7 @@ test('Failed request restores tenant context for next quote', () => {
 test('Formula evaluation accepts arithmetic and rejects executable text', () => {
   const sb = setup(); const evaluate = vm.runInContext('ENGINE.evalFormula', sb);
   assert.equal(evaluate([{ t: 'op', v: 'MAX' }, { t: 'op', v: '(' }, { t: 'num', v: '2' }, { t: 'op', v: ',' }, { t: 'num', v: '3' }, { t: 'op', v: ')' }], {}), 3);
+  assert.equal(evaluate([{ t: 'fn', v: 'MAX' }, { t: 'op', v: '(' }, { t: 'num', v: '2' }, { t: 'op', v: ',' }, { t: 'num', v: '3' }, { t: 'op', v: ')' }], {}), 3);
   assert.throws(() => evaluate([{ t: 'num', v: '(globalThis.__injected = 1)' }], {}), /Unsupported/);
   assert.equal(sb.__injected, undefined);
   assert.throws(() => evaluate([{ t: 'var', v: 'constructor' }], {}), /non-numeric/);

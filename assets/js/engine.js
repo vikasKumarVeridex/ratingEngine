@@ -1473,7 +1473,7 @@ const ENGINE = (() => {
     if (!Array.isArray(tokens) || !tokens.length) throw new Error("Formula needs tokens");
     const operators = new Set(["+", "-", "*", "/", "×", "÷", "−", "^", "(", ")", ",", "MIN", "MAX", "ROUND", "ABS"]);
     tokens.forEach(t => {
-      if (!t || !["var", "op", "num"].includes(t.t)) throw new Error("Invalid formula token");
+      if (!t || !["var", "op", "num", "fn"].includes(t.t)) throw new Error("Invalid formula token");
       if (t.t === "var") {
         if (t.v !== REMAINING && (!Object.prototype.hasOwnProperty.call(vars, t.v)
           || typeof vars[t.v] !== "number" || !Number.isFinite(vars[t.v])))
