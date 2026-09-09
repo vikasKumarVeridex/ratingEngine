@@ -43,6 +43,9 @@
 .fbar{height:5px;border-radius:3px;background:var(--surface-3);overflow:hidden;min-width:52px}
 .fbar i{display:block;height:100%;border-radius:3px}
 </style>
+<link href="assets/css/workspace.css" rel="stylesheet">
+<script src="assets/js/tooltip-dictionary.js" defer></script>
+<script src="assets/js/ui-ux.js" defer></script>
 </head>
 <body><div id="vxApp"></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -306,7 +309,7 @@ function newVehicle(n) {
 function vehicleDetail(x, i) {
   const inherit = `<option value="">Use account value</option>`;
   const f = (lbl, name, inner, hint) => `<div class="col-md-3 mb-2"><label style="font-size:10.5px">${lbl}</label>${inner}
-    ${hint ? `<small class="d-block" style="font-size:9.8px;color:var(--text-mute);line-height:1.3">${hint}</small>` : ""}</div>`;
+    ${hint ? `<small data-field-help class="d-block" style="font-size:9.8px;color:var(--text-mute);line-height:1.3">${hint}</small>` : ""}</div>`;
   const selV = (name, opts, cur, withInherit) => `<select class="form-select form-select-sm V" data-i="${i}" data-f="${name}">
     ${withInherit ? inherit : ""}${opts.map(([v, l]) => `<option value="${v}" ${String(v) === String(cur) ? "selected" : ""}>${l}</option>`).join("")}</select>`;
   const numV = (name, cur, w) => `<input type="number" class="form-control form-control-sm V" data-i="${i}" data-f="${name}" value="${cur}" style="${w || ""}">`;
@@ -1015,7 +1018,7 @@ function questions(mode) {
 
 function questionsInner() {
   const v = S.v;
-  const hintHtml = hint => hint ? `<small class="d-block" style="font-size:10.5px;color:var(--text-mute);margin-top:2px;line-height:1.35">${hint}</small>` : "";
+  const hintHtml = hint => hint ? `<small data-field-help class="d-block" style="font-size:10.5px;color:var(--text-mute);margin-top:2px;line-height:1.35">${hint}</small>` : "";
   const sel = (k, label, arr, def, hint) => {
     if (v[k] === undefined) v[k] = def;
     return `<div class="col-md-4"><label>${label}</label>
@@ -1122,7 +1125,7 @@ function questionsInner() {
         <div class="col-md-4" id="renewalEligWrap" style="${(v.policyType||"New Business")==="Renewal"?"":"display:none"}">
           <label>Eligible for Renewal Discount?</label>
           <select class="form-select form-select-sm F" data-k="renewalEligible">${opt([["no","No"],["yes","Yes"]], v.renewalEligible || "no")}</select>
-          <small class="d-block" style="font-size:10.5px;color:var(--text-mute);margin-top:2px;line-height:1.35">Requires prior-term loss ratio under 50%, no more than 2 cancellations, and no unreported units or drivers.</small></div>
+          <small data-field-help class="d-block" style="font-size:10.5px;color:var(--text-mute);margin-top:2px;line-height:1.35">Requires prior-term loss ratio under 50%, no more than 2 cancellations, and no unreported units or drivers.</small></div>
       </div></div></div>
       <div class="grp"><h3><i class="fa-solid fa-clipboard-check" style="color:var(--cat-1)"></i>Account-Level Credits / Debits</h3>
         <div class="bd"><div class="sub" style="margin-top:-6px">Auto Liability and Physical Damage each compute their own Account-Level Factor from these answers, clamped 0.85×&ndash;1.50× — separately, not one shared value. <span class="hintdot" title="Each is a banded selection in the source rater, not a free number. &quot;No Inspections&quot; and &quot;No Loss Data&quot; are real answers, not zero.">Banded, not free-form.</span></div>
@@ -1467,7 +1470,7 @@ function render() {
             <datalist id="uwNames">${(VX.users || []).filter(u => u.role === "Underwriter").map(u => `<option value="${u.name}">`).join("")}</datalist></div>
           <div class="col-md-5"><label>Underwriter Manager</label><input class="form-control form-control-sm" id="underwriterManager" list="uwmNames" value="${S.underwriterManager || ""}" placeholder="Who reviews this account if it's referred">
             <datalist id="uwmNames">${(VX.users || []).filter(u => u.role === "Underwriter Manager").map(u => `<option value="${u.name}">`).join("")}</datalist>
-            <small class="d-block" style="font-size:10.5px;color:var(--text-mute);margin-top:2px">Clears any quote an eligibility rule has referred (see Roles) — distinct from the day-to-day Underwriter above.</small></div>
+            <small data-field-help class="d-block" style="font-size:10.5px;color:var(--text-mute);margin-top:2px">Clears any quote an eligibility rule has referred (see Roles) — distinct from the day-to-day Underwriter above.</small></div>
         </div></div>
       </div>
       <div class="grp"><h3><i class="fa-solid fa-user-tie" style="color:var(--primary)"></i>Broker Info</h3>
@@ -1804,7 +1807,7 @@ async function calc() {
        tells it which county, the same way it is told which state. */
     S.v.county = S.county || null;
     S.res = ENGINE.rate(S.lob, S.v);
-    S.elig = evaluateEligibility(S.lob, S.v);
+    S.elig = S.res.eligibility;
     vxToast("Premium calculated", LOBS.find(l => l.k === S.lob).n + " — " + vxMoney(S.res.finalPremium), "ok");
   } catch (e) { vxToast("Rating error", e.message, "err"); }
   if (b) { b.disabled = false; b.innerHTML = '<i class="fa-solid fa-bolt me-1"></i>Recalculate Premium'; }

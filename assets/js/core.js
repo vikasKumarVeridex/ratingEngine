@@ -10,7 +10,9 @@ const NAV = [
   { g: "Main", items: [
     { h: "dashboard.html", i: "fa-gauge-high", l: "Dashboard" },
     { h: "loss-runs.html", i: "fa-triangle-exclamation", l: "Loss Run Analytics" },
-    { h: "quote-portal.html", i: "fa-flask", l: "Sandbox Quote Generation" },
+    { h: "quote-portal.html", i: "fa-flask", l: "Quote Sandbox" },
+    { h: "quotes.html", i: "fa-file-lines", l: "Quotes" },
+    { h: "analytics.html", i: "fa-chart-simple", l: "Analytics" },
   ]},
   /* Configuration sits above Rating: you define the line of business, the
      coverages under it and the product that sells them BEFORE the factors and
@@ -19,6 +21,10 @@ const NAV = [
   { g: "Configuration", items: [
     { h: "products.html", i: "fa-cubes", l: "Products" },
     { h: "versions.html", i: "fa-code-branch", l: "Versions" },
+    { h: "lob.html", i: "fa-layer-group", l: "Lines of Business" },
+    { h: "coverages.html", i: "fa-shield", l: "Coverages" },
+    { h: "units.html", i: "fa-ruler", l: "Rating Units" },
+    { h: "industry-classes.html", i: "fa-industry", l: "Industry Classes" },
   ]},
   { g: "Rating", items: [
     /* Lines of Business moved up to Configuration — an LOB is something you
@@ -54,7 +60,15 @@ const NAV = [
     { h: "roles.html", i: "fa-user-shield", l: "Roles" },
     { h: "audit.html", i: "fa-clock-rotate-left", l: "Audit History" },
     { h: "settings.html", i: "fa-gear", l: "Settings" },
+    { h: "export.html", i: "fa-file-export", l: "Export Configuration" },
+  ]},
+  { g: "Reference & Tools", items: [
+    { h: "engine-flow.html", i: "fa-sitemap", l: "Engine Flow" },
+    { h: "quote-json.html", i: "fa-code", l: "Quote JSON" },
     { h: "integration.html", i: "fa-plug", l: "Integration Guide" },
+    { h: "api.html", i: "fa-terminal", l: "API Reference" },
+    { h: "db-schema.html", i: "fa-database", l: "Data Model" },
+    { h: "ai-assistant.html", i: "fa-wand-magic-sparkles", l: "AI Assistant" },
   ]},
 ];
 
@@ -225,11 +239,7 @@ function vxCatAlpha(n, a) {
 }
 function vxSubtitle(sub) {
   if (!sub) return "";
-  const i = sub.indexOf("||");
-  if (i < 0) return `<p>${sub}</p>`;
-  const head = sub.slice(0, i).trim();
-  const more = sub.slice(i + 2).trim().replace(/"/g, "&quot;");
-  return `<p>${head} <span class="hintdot" title="${more}">More</span></p>`;
+  return `<p data-page-help>${sub.split("||").map(s => s.trim()).join(" ")}</p>`;
 }
 /* For pages that re-title themselves at runtime, so they get the same
    "short line + tooltip" treatment as a subtitle passed to vxShell. */
@@ -261,7 +271,7 @@ function vxShell(title, subtitle, crumbs) {
        page you're on — a stored preference from an earlier visit still
        wins over both defaults once it exists. */
     const explicit = navCollapsed[g.g];
-    const collapsed = !isCurGroup && (explicit !== undefined ? !!explicit : g.g !== "Rating");
+    const collapsed = !isCurGroup && (explicit !== undefined ? !!explicit : true);
     return `<button type="button" class="vx-nav-grp" id="vxNavG${gi}" data-navgrp="${g.g}" aria-expanded="${!collapsed}" aria-controls="vxNavL${gi}">` +
       `<span>${g.g}</span><i class="fa-solid fa-chevron-down chev" aria-hidden="true"></i></button>` +
       `<ul class="vx-nav-list" id="vxNavL${gi}" aria-labelledby="vxNavG${gi}"${collapsed ? " hidden" : ""}>` +
@@ -372,8 +382,8 @@ function vxShell(title, subtitle, crumbs) {
     </main>
 
     <footer class="vx-foot">
-      <span>© 2026 Veridex Rating Platform — ${VX.meta.tenant} · ${VX.meta.env} · Build ${VX.meta.build}</span>
-      <span>${VX.meta.engine} · <a href="#" onclick="vxShortcuts();return false">Keyboard shortcuts</a></span>
+      <span>VeriDex · <span class="hintdot" title="${VX.meta.engine} · Build ${VX.meta.build}">${VX.meta.env}</span></span>
+      <span><a href="#" onclick="vxShortcuts();return false">Keyboard shortcuts</a></span>
     </footer>
   </div>
   <div class="vx-ov" id="vxOv" aria-hidden="true"></div>

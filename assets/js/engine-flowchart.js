@@ -33,18 +33,18 @@ function ratingFlowchart(rec, pipeline) {
   const FLOW = [
     { t: "start", s: 1, label: "Submission", sub: "Vehicles, drivers, limits, state, coverages selected" },
     { t: "proc", s: 1, label: "Evaluate eligibility rules", sub: "Run before anything is priced" },
-    { t: "dec", s: 1, label: "Any decline?", stop: true,
-      out: "Quote stops — no premium is produced",
+    { t: "dec", s: 1, label: "Any decline?",
+      out: "Flag decline; any premium is indicative",
       down: "no — referrals are flagged, rating continues" },
     { t: "proc", s: 2, label: "Resolve the rating date",
       sub: "Effective date · rate lock if struck earlier · endorsement uses the original inception" },
     { t: "dec", s: 2, label: "Does the product pin this transaction type?",
       out: "Use that version, reported as pinned",
       down: "no — resolve by date" },
-    { t: "proc", s: 2, label: "Read the effective-dated rate tables",
-      sub: "All read through one date, resolved once — never two filings in one premium" },
-    { t: "dec", s: 3, label: "Is a saved formula Active for the coverage?",
-      out: "Evaluate it — a throw falls back and says so",
+    { t: "proc", s: 2, label: "Read configured rate tables",
+      sub: "Partial effective dating; shared tables are not filing snapshots" },
+    { t: "dec", s: 3, label: "One active formula matches scope?",
+      out: "Evaluate matched formula; errors are reported",
       down: "no — use the built-in chain" },
     { t: "proc", s: 3, label: lob + " factor chain",
       sub: steps.length ? steps.length + " step" + (steps.length === 1 ? "" : "s") + " — listed below the diagram"
@@ -169,6 +169,6 @@ function ratingFlowchart(rec, pipeline) {
         steps.map(s => "<li>" + s + "</li>").join("") + "</ol></div>"
       : "") +
     '<div style="font-size:10.8px;color:var(--text-mute);margin-top:12px;line-height:1.55">' +
-    "Stages 1, 2, 4, 5 and 6 are <code>assemble()</code> in engine.js — shared by every line. Only stage 3 differs." +
+    "Eligibility and result assembly are shared. Coverage calculations vary by line. Rate-table dating remains partial." +
     "</div></div>";
 }

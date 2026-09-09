@@ -80,6 +80,9 @@
    place instead. */
 #canvas{max-height:340px;overflow-y:auto}
 </style>
+<link href="assets/css/workspace.css" rel="stylesheet">
+<script src="assets/js/tooltip-dictionary.js" defer></script>
+<script src="assets/js/ui-ux.js" defer></script>
 </head>
 <body><div id="vxApp"></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -717,7 +720,7 @@ function bindTip(selector, nameFn) {
 
 document.getElementById("vxBody").innerHTML = `
 <div id="fbList">
-  <div id="fbDiag"></div>
+  
   <div class="vx-card vx-anim"><div id="fbGrid"></div></div>
 </div>
 
@@ -1374,8 +1377,10 @@ function saveF() {
           savedBy: vxCurrentUser(), savedOn: vxNowStamp(), note: reason || (prevTokens ? "Formula edited" : "Initial version") });
       }
       const rec = {
+        ...src,
         id: currentFormula ? currentFormula.id : Date.now(),
         name, lob, scope, cob, attachments, status: "Draft",
+        tenantId: src.tenantId != null ? src.tenantId : VX.activeTenantId,
         tested: canvasTested, lastTestedAt: canvasTested ? (src.lastTestedAt || new Date().toISOString().slice(0, 10)) : null,
         createdBy: (src.createdBy || "vikas.kumar@veridex.io"), updated: new Date().toISOString().slice(0, 10),
         tokens: newTokens, tokenHistory,
@@ -1456,26 +1461,6 @@ function bulkAttach(recs) {
       } else doAssign();
     }}]);
 }
-
-/* Temporary, plainly visible diagnostic — no DevTools needed to read it —
-   for tracking down reports of Commercial Trucking formulas missing from
-   this list. Shows what actually loaded vs. what data.js's self-heal
-   (D._formulaRepair) found and did. Safe to remove once that's resolved. */
-(() => {
-  const el = document.getElementById("fbDiag");
-  if (!el) return;
-  const truckCount = (VX.savedFormulas || []).filter(f => f.lob === "Commercial Trucking").length;
-  const rep = VX._formulaRepair || {};
-  let raw = null;
-  try { raw = JSON.parse(localStorage.getItem("vxSavedFormulas")); } catch (e) {}
-  el.innerHTML = `<div class="mb-3" style="border:1px solid var(--border);border-left:3px solid var(--primary);
-      background:var(--primary-soft);border-radius:0 10px 10px 0;padding:10px 14px;font-size:11.8px;
-      font-family:monospace;line-height:1.7">
-    <b>Diagnostic</b> — total formulas loaded: ${(VX.savedFormulas || []).length} · Trucking formulas: ${truckCount} ·
-    tenant: ${VX.activeTenantId} · self-heal before/added: ${rep.beforeCount ?? "n/a"}/${rep.addedCount ?? "n/a"} ·
-    localStorage vxSavedFormulas entries right now: ${raw ? raw.length : "(none stored)"}
-  </div>`;
-})();
 
 /* Real version history for a formula's expression — replaces the grid
    adapter's generic default (four hardcoded demo rows every record used to
@@ -1563,7 +1548,5 @@ renderLobPicker(); renderCobPicker(); palVars(""); draw(); drawRules();
   fbShowList();
 })();
 </script>
-<script src="assets/js/tooltip-dictionary.js"></script>
-<script src="assets/js/column-tooltips.js"></script>
 </body>
 </html>

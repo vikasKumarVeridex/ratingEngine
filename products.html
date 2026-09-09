@@ -8,6 +8,9 @@
 <link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-grid.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-theme-quartz.css" rel="stylesheet">
 <link href="assets/css/app.css" rel="stylesheet">
+<link href="assets/css/workspace.css" rel="stylesheet">
+<script src="assets/js/tooltip-dictionary.js" defer></script>
+<script src="assets/js/ui-ux.js" defer></script>
 </head>
 <body><div id="vxApp"></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -23,11 +26,12 @@
 vxShell("Product Management", "Create and publish products. || Each product owns rating versions, coverages and rule sets.", [{l:"Configuration"},{l:"Product Management"}]);
 document.getElementById("vxBody").innerHTML = `
   <div class="vx-exp2 vx-anim" id="expProd" style="border-left-color:var(--primary)">
-    <div class="hd"><i class="fa-solid fa-route" style="color:var(--primary);font-size:11.5px"></i><b>Rater</b><span>Every product uses the <span class="vx-b blue">Custom</span> engine. Surplus lines only.</span><button type="button" class="tog" onclick="vxExpToggle('expProd')">Why?</button></div>
+    <div class="hd"><i class="fa-solid fa-route" style="color:var(--primary);font-size:11.5px"></i><b>Rater</b><span>Every product uses the <span class="vx-b blue">Custom</span> engine. Paper varies by program.</span><button type="button" class="tog" onclick="vxExpToggle('expProd')">Why?</button></div>
     <div class="bd"><p>There is no shared generic form-rater on this platform: a product either has a rater built for it in
     <code>engine.js</code> or it isn't offered. <b>App Type</b> keeps the mapping back to
     <code>ams_service.ins_application_type</code> traceable.</p>
-    <p>This is a <b>non-admitted (surplus lines / E&amp;S)</b> platform — every carrier is surplus-lines licensed.</p></div>
+    <p><b>Custom</b> describes the calculator implementation, not its rate source. ISO-based programs use loss costs and carrier LCMs; proprietary programs use their own rate models. Both can use a custom calculator.</p>
+    <p>Paper is resolved from the line, product and carrier. Admitted programs carry no surplus-lines tax or filing fee.</p></div>
   </div>
   <div class="vx-card vx-anim"><div id="grid"></div></div>`;
 

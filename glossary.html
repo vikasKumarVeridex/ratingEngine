@@ -16,6 +16,9 @@
 .gnav a{display:block;padding:5px 8px;border-radius:6px;font-size:12.3px;color:var(--text-dim)}
 .gnav a:hover{background:var(--surface-2);color:var(--text)}
 </style>
+<link href="assets/css/workspace.css" rel="stylesheet">
+<script src="assets/js/tooltip-dictionary.js" defer></script>
+<script src="assets/js/ui-ux.js" defer></script>
 </head>
 <body><div id="vxApp"></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -209,7 +212,5 @@ function render(filter) {
 document.getElementById("gq").oninput = e => render(e.target.value);
 render("");
 </script>
-<script src="assets/js/tooltip-dictionary.js"></script>
-<script src="assets/js/column-tooltips.js"></script>
 </body>
 </html>

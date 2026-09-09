@@ -14,7 +14,7 @@ const fs = require("fs");
 const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..");
-const css = fs.readFileSync(path.join(ROOT, "assets/css/app.css"), "utf8");
+const css = ["app.css", "workspace.css"].map(file => fs.readFileSync(path.join(ROOT, "assets/css", file), "utf8")).join("\n");
 const pages = fs.readdirSync(ROOT).filter(f => f.endsWith(".html"));
 const jsFiles = fs.readdirSync(path.join(ROOT, "assets/js")).filter(f => f.endsWith(".js"));
 const read = p => fs.readFileSync(path.join(ROOT, p), "utf8");
