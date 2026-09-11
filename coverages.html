@@ -24,20 +24,46 @@
 <script src="assets/js/core.js"></script>
 <script src="assets/js/grid.js"></script>
 <script>
-vxShell("Coverages (Class of Business)", "A coverage IS a class of business. || Read-only: the coverage tree is shared filed reference data. Choose which coverages a product writes on the Products screen.",
+vxShell("Coverages (Class of Business)", "A coverage IS a class of business. || Add your own coverages alongside the seeded tree. Choose which coverages a product writes on the Products screen.",
   [{ l: "Products & Rating" }, { l: "Coverages" }]);
 
+/* visibleCob now lives in core.js as vxVisibleCob() -- formula-builder.html
+   needs the identical tenant-scoped coverage list for its LOB/coverage picker,
+   and a second hand-copy is exactly how these two drifted before. Aliased
+   here, ahead of every call site: a `const` is hoisted but stays in the
+   temporal dead zone until this line runs, and the very first use below (the
+   OPEN-state seed on the next line) ran before the old declaration further
+   down the script -- a ReferenceError on every load that never printed the
+   rest of the page, just the shell's own dark background. */
+const visibleCob = vxVisibleCob;
+
 let LOB = "All", Q = "", OPEN = {};
-VX.cobParents.forEach(p => OPEN[p.id] = true);
+visibleCob().filter(c=>!c.parentCobId).forEach(p => OPEN[p.id] = true);
 
 document.getElementById("vxPageActions").innerHTML =
   `<button class="btn btn-outline-secondary btn-sm" onclick="toggleAll(true)">Expand All</button>
    <button class="btn btn-outline-secondary btn-sm" onclick="toggleAll(false)">Collapse All</button>
-   <a class="btn btn-outline-secondary btn-sm" href="products.html"><i class="fa-solid fa-cubes me-1"></i>Products</a>`;
+   <a class="btn btn-outline-secondary btn-sm" href="products.html"><i class="fa-solid fa-cubes me-1"></i>Products</a>
+   <button class="btn btn-primary btn-sm" onclick="addCov()"><i class="fa-solid fa-plus me-1"></i>Add Coverage</button>`;
+
+/* The seeded tree is rebuilt from data.js's TREE on every load, so only the
+   delta survives (see the D.cobDelta note there). Written at the moment a
+   change is made rather than re-derived by diffing later: after a reload the
+   restored rows are indistinguishable from seeded ones by inspection, so a
+   diff-based approach would quietly drop everything saved in an earlier
+   session. `userAdded` is what marks a row as the user's own. */
+function persistCob() {
+  try { localStorage.setItem("vxCobDelta", JSON.stringify(VX.cobDelta)); } catch (e) {}
+}
+
+/* Snapshot for the header counts and the LOB filter below, which are built
+   once at page load. draw() re-reads visibleCob() on every render, so an
+   added or deleted coverage still updates the table without a reload. */
+const VIS = visibleCob();
 
 document.getElementById("vxBody").innerHTML = `
   <div class="vx-exp2 vx-anim" id="expCov" style="border-left-color:var(--primary)">
-    <div class="hd"><i class="fa-solid fa-sitemap" style="color:var(--primary);font-size:11.5px"></i><b>Hierarchy</b><span><b>${VX.cobParents.length}</b> primary coverages · <b>${VX.cob.length - VX.cobParents.length}</b> child.</span><button type="button" class="tog" onclick="vxExpToggle(&#39;expCov&#39;)">Why?</button></div>
+    <div class="hd"><i class="fa-solid fa-sitemap" style="color:var(--primary);font-size:11.5px"></i><b>Hierarchy</b><span><b>${VIS.filter(c=>!c.parentCobId).length}</b> primary coverages · <b>${VIS.filter(c=>c.parentCobId).length}</b> child.</span><button type="button" class="tog" onclick="vxExpToggle(&#39;expCov&#39;)">Why?</button></div>
     <div class="bd"><p>Every premium row carries a <code>class_of_business_id</code> and a <code>parent_cob_id</code>. Rows with no parent are <b>Primary</b> coverages — what the agent picks. Rows pointing at a parent are <b>Child</b> coverages, which appear once the primary is selected.</p></div>
   </div>
 
@@ -47,7 +73,7 @@ document.getElementById("vxBody").innerHTML = `
         <div class="vx-search" style="max-width:250px"><i class="fa-solid fa-magnifying-glass"></i>
           <input class="form-control form-control-sm" id="q" placeholder="Search coverages..." style="padding-left:32px"></div>
         <select class="form-select form-select-sm" style="width:auto" id="lob">
-          <option>All</option>${vxLobNames().filter(n=>VX.cob.some(c=>c.lob===n)).map(n=>`<option>${n}</option>`).join("")}</select>
+          <option>All</option>${vxLobNames().filter(n=>VIS.some(c=>c.lob===n)).map(n=>`<option>${n}</option>`).join("")}</select>
       </div>
       <div class="r"><button class="btn btn-outline-secondary btn-sm" onclick="exp()"><i class="fa-solid fa-file-export me-1"></i>Export</button></div>
     </div>
@@ -59,10 +85,32 @@ document.getElementById("vxBody").innerHTML = `
     <div class="vx-tfoot"><span id="cnt"></span></div>
   </div>`;
 
+/* Which coverages belong to the tenant being looked at.
+
+   The seeded tree carries no tenantId — cosmos-model.js deliberately treats
+   it as shared reference data, which is right for the tenants that rate on
+   the platform's own filed lines. But a tenant onboarded from its own
+   product configuration brings its OWN coverage rows (stamped with its
+   tenantId by vxImportProductStudioExport), and it was still being shown
+   all ~78 shared rows alongside its 5 — so a customer that uploaded three
+   primary coverages saw every coverage on the platform.
+
+   Two rules, in order:
+     1. Only the LINES this tenant actually has, read from the partitioned
+        VX.lobs the rest of the platform already scopes by. A tenant that
+        writes Workers' Compensation alone has no business being shown
+        Cyber and Trucking coverages — Ironclad was seeing all 78 too, so
+        this was never only an onboarding problem.
+     2. Within a line, a tenant that owns coverage rows sees only its own;
+        one that owns none falls back to the shared tree. Per line rather
+        than globally, so a tenant with its own Trucking tree still sees
+        the shared tree for a line it has not customised.
+   VeriDex holds every seeded line, so its view is unchanged. */
 function rows() {
   const out = [];
-  VX.cobParents.forEach(p => {
-    const kids = VX.cob.filter(c => c.parentCobId === p.id);
+  const vis = visibleCob();
+  vis.filter(c => !c.parentCobId).forEach(p => {
+    const kids = vis.filter(c => c.parentCobId === p.id);
     const hit = x => !Q || x.name.toLowerCase().includes(Q) || x.code.toLowerCase().includes(Q);
     const lobOk = LOB === "All" || p.lob === LOB;
     if (!lobOk) return;
@@ -109,13 +157,16 @@ function draw() {
       <td>${vxNum(r.quotes)}</td>
       <td><div class="vx-ra">
         <button title="View" onclick="view(${r.id})"><i class="fa-solid fa-eye"></i></button>
+        <button title="Edit coverage" onclick="edit(${r.id})"><i class="fa-solid fa-pen-to-square"></i></button>
+        ${isP ? `<button title="Add child coverage under ${r.name}" onclick="addChild(${r.id})"><i class="fa-solid fa-plus"></i></button>` : ""}
+        <button title="Delete coverage" onclick="del(${r.id})"><i class="fa-solid fa-trash"></i></button>
       </div></td></tr>`;
   }).join("") : `<tr><td colspan="13"><div class="vx-empty"><i class="fa-solid fa-inbox"></i>No coverages match.</div></td></tr>`;
   document.getElementById("cnt").textContent =
-    `${list.filter(r=>!r.parentCobId).length} primary · ${list.filter(r=>r.parentCobId).length} child shown of ${VX.cob.length} total`;
+    `${list.filter(r=>!r.parentCobId).length} primary · ${list.filter(r=>r.parentCobId).length} child shown of ${visibleCob().length} total`;
 }
 
-function toggleAll(v) { VX.cobParents.forEach(p => OPEN[p.id] = v); draw(); }
+function toggleAll(v) { visibleCob().filter(c=>!c.parentCobId).forEach(p => OPEN[p.id] = v); draw(); }
 function view(id) {
   const r = VX.cob.find(c => c.id == id);
   const kids = VX.cob.filter(c => c.parentCobId == id);
@@ -187,11 +238,37 @@ function form(rec, parentId) {
       });
       r.level = r.parentCobId ? "Child" : "Primary";
       if (r.parentCobId) { const p = VX.cob.find(c => c.id === r.parentCobId); r.parentName = p ? p.name : ""; r.lob = p ? p.lob : r.lob; }
-      if (isNew) { r.id = r.cobId = Date.now(); VX.cob.push(r); }
-      else { const i = VX.cob.findIndex(c => c.id === rec.id); VX.cob[i] = r; }
+      if (isNew) {
+        r.id = r.cobId = Date.now();
+        r.userAdded = true;
+        /* Owned by the tenant that created it, the same way an imported
+           coverage is — otherwise a coverage added inside one tenant would
+           show up as shared reference data in every other tenant. */
+        r.tenantId = VX.activeTenantId;
+        VX.cob.push(r);
+        VX.cobDelta.added.push(r);           // same object — later edits to it need no extra bookkeeping
+      } else {
+        const i = VX.cob.findIndex(c => c.id === rec.id);
+        VX.cob[i] = r;
+        if (r.userAdded) {
+          // A row the user added: replace it in `added` so the saved copy matches.
+          const ai = VX.cobDelta.added.findIndex(a => a.id === r.id);
+          if (ai >= 0) VX.cobDelta.added[ai] = r; else VX.cobDelta.added.push(r);
+        } else {
+          /* A SEEDED row: persist only the fields the form can change, keyed
+             by id, so data.js can re-apply them over a freshly-rebuilt tree
+             without carrying a stale copy of everything else on the row. */
+          const patch = {};
+          ["name","code","lob","parentCobId","parentName","level","ratingBasis","defaultLimit",
+           "unit","deductible","status","effectiveStart","effectiveEnd","mandatory","active"]
+            .forEach(k => { patch[k] = r[k]; });
+          VX.cobDelta.edited[r.id] = patch;
+        }
+      }
       VX.cobParents = VX.cob.filter(c => !c.parentCobId);
       VX.cobParents.forEach(p => p.childCount = VX.cob.filter(c => c.parentCobId === p.id).length);
       if (r.parentCobId) OPEN[r.parentCobId] = true;
+      persistCob();
       vxToast("Coverage saved", r.name, "ok"); vxAutoSave(); draw();
     }}]);
 }
@@ -201,10 +278,29 @@ function addChild(pid) { form(null, pid); }
 function del(id) {
   const r = VX.cob.find(c => c.id == id);
   const kids = VX.cob.filter(c => c.parentCobId == id).length;
-  vxConfirm("Delete coverage?", `Remove <b>${r.name}</b>?${kids ? ` This will also remove its <b>${kids} child coverage${kids>1?"s":""}</b>.` : ""}`,
-    () => { VX.cob = VX.cob.filter(c => c.id != id && c.parentCobId != id);
+  const used = (VX.products || []).filter(p => (p.cob || []).includes(r.name));
+  vxConfirm("Delete coverage?",
+    `Remove <b>${r.name}</b>?${kids ? ` This will also remove its <b>${kids} child coverage${kids>1?"s":""}</b>.` : ""}
+     ${used.length ? `<div style="margin-top:8px;color:var(--warn)"><i class="fa-solid fa-triangle-exclamation me-1"></i>
+       <b>${used.length} product${used.length>1?"s":""}</b> currently write${used.length>1?"":"s"} this coverage
+       (${used.map(p=>p.code).join(", ")}) — they will keep the name on file but it will no longer resolve to a coverage record.</div>` : ""}`,
+    () => {
+      const goneIds = [id, ...VX.cob.filter(c => c.parentCobId == id).map(c => c.id)];
+      VX.cob = VX.cob.filter(c => c.id != id && c.parentCobId != id);
+      /* Record the deletion so it survives a reload — a seeded row would
+         otherwise be rebuilt from TREE on the next load and reappear. A row
+         the user added is simply dropped from `added` instead. */
+      goneIds.forEach(gid => {
+        const ai = VX.cobDelta.added.findIndex(a => a.id === gid);
+        if (ai >= 0) VX.cobDelta.added.splice(ai, 1);
+        else if (!VX.cobDelta.deleted.includes(gid)) VX.cobDelta.deleted.push(gid);
+        delete VX.cobDelta.edited[gid];
+      });
       VX.cobParents = VX.cob.filter(c => !c.parentCobId);
-      vxToast("Coverage deleted", r.name, "err"); vxAutoSave(); draw(); }, true);
+      VX.cobParents.forEach(p => p.childCount = VX.cob.filter(c => c.parentCobId === p.id).length);
+      persistCob();
+      vxToast("Coverage deleted", r.name, "err"); vxAutoSave(); draw();
+    }, true);
 }
 function exp() {
   const cols = [{k:"level",l:"Level"},{k:"name",l:"Coverage"},{k:"code",l:"Code"},{k:"lob",l:"LOB"},

@@ -87,8 +87,49 @@ vxAgGrid({ el:"#grid", key:"fees", name:"Fee", size:12,
   filters:[{k:"valueType",l:"Type",opts:["Fixed","Percent"]},
            {k:"lob",l:"LOB",opts:["All"].concat(vxLobNames())},
            {k:"chargeType",l:"Charged",opts:CHARGE}],
-  extraView:[{k:"basis",l:"Description"}]
+  extraView:[{k:"basis",l:"Description"}],
+  /* Without this, an added or edited fee existed only in memory — correct
+     on screen right up until the next navigation, then gone, because the
+     tenant-partitioning pass in data.js rebuilds D.fees from the original
+     seed on every load and nothing here ever told it about a change. Same
+     delta shape coverages.html already persists for its own tenant-owned
+     collection. */
+  onAfterSave:(rec,isNew)=>{
+    let d;
+    try { d = JSON.parse(localStorage.getItem("vxFeesDelta") || "null"); } catch (e) {}
+    d = d || { added: [], edited: {}, deleted: [] };
+    d.added = d.added || []; d.edited = d.edited || {}; d.deleted = d.deleted || [];
+    if (isNew) {
+      if (!rec.tenantId) rec.tenantId = VX.activeTenantId;
+      d.added.push({ ...rec });
+    } else {
+      d.edited[rec.id] = { ...(d.edited[rec.id] || {}), ...rec };
+    }
+    localStorage.setItem("vxFeesDelta", JSON.stringify(d));
+  }
 });
+
+/* Deletion isn't a vxAgGrid onAfterSave hook — it's a generic row action
+   the grid engine handles itself via API.remove, same reason tenants.html
+   wraps it for its own tenant-owned collection: without this, a deleted
+   fee "worked" for the rest of the session and reappeared on the next
+   reload, the seed clone winning back over a delete that only ever
+   happened in memory. */
+(() => {
+  const orig = API.remove.bind(API);
+  API.remove = (key, id, ...rest) => orig(key, id, ...rest).then(res => {
+    if (key === "fees") {
+      let d;
+      try { d = JSON.parse(localStorage.getItem("vxFeesDelta") || "null"); } catch (e) {}
+      d = d || { added: [], edited: {}, deleted: [] };
+      d.added = (d.added || []).filter(r => String(r.id) !== String(id));
+      delete (d.edited || {})[id];
+      d.deleted = [...new Set([...(d.deleted || []), id])];
+      localStorage.setItem("vxFeesDelta", JSON.stringify(d));
+    }
+    return res;
+  });
+})();
 </script>
 </body>
 </html>

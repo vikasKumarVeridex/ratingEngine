@@ -198,8 +198,21 @@ function adaptTruck(p) {
       garageZip: v.zip,
       units: +v.no_of_units || 1,
       trailer: "None", trailerValue: 0,
-      covLiab: v.Liability === "Yes",
-      covApd: v.pd_opted === "Yes",
+      /* engine.js already has the right fallback for a vehicle that does not
+         say which lines it individually carries: it defaults to the
+         ACCOUNT's own selection (cob.includes("Auto Liability"/"Physical
+         Damage")) — but only when covLiab/covApd is literally undefined
+         (engine.js:612-613). `v.Liability === "Yes"` doesn't return
+         undefined for a payload that never had a Liability field at all; it
+         returns false, a real answer, which overrides that fallback and
+         silently zeroed BOTH coverages for every vehicle on a payload that
+         (correctly) marks AL and PD as written at the account level but
+         doesn't repeat that per vehicle — the exact shape of the failing
+         payload that found this. Passing the field through undefined
+         instead lets the engine's own default govern; a payload that DOES
+         say Yes/No per vehicle is honoured exactly as before. */
+      covLiab: v.Liability != null ? v.Liability === "Yes" : undefined,
+      covApd: v.pd_opted != null ? v.pd_opted === "Yes" : undefined,
       ownership: v.ownership || undefined,
       useType: pick(p, "vehicleInfo.usetype") || undefined,
     })),
@@ -327,9 +340,39 @@ const ADAPTERS = { TRUCK: adaptTruck, GL: adaptGL, PROP: adaptProp, MPL: adaptMP
 function amsToEngine(p) {
   MAPPED.length = 0; WARN.length = 0;
 
-  const appType = pick(p, "genInfo.application_type_id");
+  /* Some submissions carry every field one level deeper, under a
+     `ratingInputs` wrapper, instead of at the payload's own top level.
+     Unwrapped transparently so either shape reads identically — every field
+     name this adapter looks for is unambiguous regardless of which level it
+     sits at, so there's nothing to lose by accepting both. Guarded so a
+     payload that is already flat, but happens to also carry an unrelated
+     `ratingInputs` key, is left alone. */
+  if (p && p.ratingInputs && typeof p.ratingInputs === "object" && !p.coveragesInfo && !p.vehicles) {
+    p = Object.assign({}, p.ratingInputs, {
+      genInfo: p.genInfo || p.ratingInputs.genInfo,
+      insuredInfo: p.insuredInfo || p.ratingInputs.insuredInfo,
+    });
+    MAPPED.push(["ratingInputs.*", "(unwrapped)", "payload was nested under ratingInputs"]);
+  }
+
+  let appType = pick(p, "genInfo.application_type_id");
   if (appType == null) {
-    throw new Error("genInfo.application_type_id is missing — rating cannot route a submission without it.");
+    /* application_type_id is how ams-service normally routes a submission,
+       but not every real submission is guaranteed to carry it, and refusing
+       outright on that one missing field turned away a payload the adapter
+       could otherwise map cleanly. A vehicles[] array together with a
+       drivers[] array is exclusive to Commercial Trucking among the lines
+       this adapter supports — none of adaptGL/adaptProp/adaptMPL/
+       adaptCyber/adaptWC reads either one — so a payload carrying both is a
+       real signal, not a guess, and is routed there. Anything else still
+       has no honest way to pick a line and is still refused. */
+    if (Array.isArray(p.vehicles) && Array.isArray(p.drivers)) {
+      appType = 483;
+      MAPPED.push(["(inferred)", "genInfo.application_type_id", "483 — vehicles[] + drivers[] present; no other supported line reads either"]);
+      WARN.push("genInfo.application_type_id was not on the payload — inferred as Commercial Trucking (483) from its vehicles[]/drivers[] shape.");
+    } else {
+      throw new Error("genInfo.application_type_id is missing, and the payload has neither vehicles[] nor drivers[] to infer Commercial Trucking from — rating cannot route a submission without one or the other.");
+    }
   }
   if (!(appType in APPTYPE_LOB)) {
     throw new Error(`Application type ${appType} is not recognised. Known: ${Object.keys(APPTYPE_LOB).join(", ")}.`);
@@ -781,6 +824,74 @@ function generate() {
   let adapted;
   try { adapted = amsToEngine(payload); }
   catch (e) { setStatus("Adapter failed: " + e.message, "err"); return; }
+
+  /* Rate under the active tenant's own product for this line, the same way
+     the sandbox screen does. An ams payload names an app type, not one of
+     this platform's products, so without this the two screens disagreed:
+     the sandbox rated a tenant's uploaded configuration while this page ran
+     the platform's filed chain for the same line.
+
+     Measured, not assumed: switching the active tenant to one whose own
+     product is on an unrelated line (an uploaded "Commercial Auto" product,
+     no "Commercial Trucking" product at all) and loading the TRUCK sample
+     still produced a full $36,141 premium off VeriDex's own Digital Trucking
+     Program — silently rating a stranger's submission against a book of
+     business that tenant has no relationship to, with nothing on screen
+     saying so. Zero matches and more than one match are both cases this
+     page cannot honestly guess through, so both refuse now, the same way an
+     unrecognised application type already does a few lines up — a refusal
+     with a next step beats a number nobody can trust. */
+  if (adapted.input && adapted.input.product == null) {
+    const lobName = (VX.lobs.find(l => l.code === adapted.lob) || {}).name;
+    /* A trimmed, case-insensitive match — the strict === before this let a
+       real product go unmatched over nothing more than casing or trailing
+       whitespace in how its line got recorded, which is not a distinction
+       anyone typing "Commercial Trucking" into a form actually intends. */
+    const norm = s => String(s || "").trim().toLowerCase();
+    /* An uploaded product's line is whatever string the export itself used —
+       "Transportation", "Commercial Auto" and "Commercial Trucking" are all
+       real labels different sources gave the SAME underlying business (a
+       fleet of commercial vehicles), not three different lines. Matching
+       only the platform's own canonical name meant a TRUCK-coded submission
+       (appType 483) could never find a tenant's own trucking product unless
+       it happened to be filed under that exact string — a tenant's own
+       product still rates on ITS OWN factors either way (configuredRate()
+       reads the product's own .lob, not this list), so widening what counts
+       as "the same line" for ROUTING purposes doesn't change what actually
+       prices the quote once matched. Kept narrow to TRUCK, the case this was
+       found on — the other five lines don't have real synonyms on this
+       platform to reconcile the same way. */
+    const LOB_SYNONYMS = { TRUCK: ["Commercial Trucking", "Commercial Auto", "Transportation", "Trucking", "Motor Fleet"] };
+    const acceptableLobs = (LOB_SYNONYMS[adapted.lob] || [lobName]).map(norm);
+    const own = VX.products.filter(p => p.tenantId === VX.activeTenantId && acceptableLobs.includes(norm(p.lob)));
+    const tenant = vxTenant();
+    /* Tenant NAME is not a unique key on this platform — only its code is
+       (see vxTenantCode() in tenants.html). Two tenants can share a name, so
+       a refusal naming only "abc" could describe either one and look like a
+       false alarm to someone who just built a trucking product under a
+       tenant they also call "abc". The code disambiguates which one is
+       actually active. */
+    const who = `${tenant.name} (${tenant.code})`;
+    if (own.length === 0) {
+      /* Self-diagnosing: list what this tenant DOES carry, so a mismatch is
+         visible on screen immediately — "I built a trucking product" is
+         only true of the tenant that's actually active right now, and this
+         is the fastest way to see if it landed somewhere else, or under a
+         line name that doesn't quite match "Commercial Trucking". */
+      const mine = VX.products.filter(p => p.tenantId === VX.activeTenantId);
+      const theirLines = mine.length
+        ? ` ${who} carries: ${mine.map(p => `${p.name} (${p.lob || "no line set"})`).join(", ")}.`
+        : ` ${who} carries no products at all yet.`;
+      setStatus(`${who} has no ${lobName || adapted.lob} product — this submission cannot be rated against a book of business this tenant does not carry.${theirLines} Switch to a tenant that has one, or add it on Products.`, "err");
+      return;
+    }
+    if (own.length > 1) {
+      setStatus(`${who} carries ${own.length} products on ${lobName} (${own.map(p => p.name).join(", ")}) — naming one is required to rate unambiguously. Use the Quote Sandbox, which lets you pick.`, "err");
+      return;
+    }
+    adapted.input.product = own[0].name;
+    adapted.input.tenantId = VX.activeTenantId;
+  }
 
   let result, elig = null;
   try {

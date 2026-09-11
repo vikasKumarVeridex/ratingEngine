@@ -1806,6 +1806,14 @@ async function calc() {
        total with no local tax in it. The engine charges it now; this just
        tells it which county, the same way it is told which state. */
     S.v.county = S.county || null;
+    /* The product and tenant this quote is being written on. The context bar
+       has always let a user pick a product, but the engine was never told
+       which one, so everything the engine keys off the product was dead from
+       this screen: rating-version resolution, admitted-vs-surplus-lines
+       basis, and — the reason this was found — whether the product rates on
+       its own uploaded configuration or on the platform's filed chain. */
+    S.v.product = S.product || null;
+    S.v.tenantId = VX.activeTenantId;
     S.res = ENGINE.rate(S.lob, S.v);
     S.elig = S.res.eligibility;
     vxToast("Premium calculated", LOBS.find(l => l.k === S.lob).n + " — " + vxMoney(S.res.finalPremium), "ok");

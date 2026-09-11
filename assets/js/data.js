@@ -1160,7 +1160,31 @@
       cid++;
     });
   });
+  /* Coverages added, edited or deleted through coverages.html — restored the
+     same way vxCustomFactors / vxLookupTables / vxTenantsState already
+     survive a reload. The seeded tree above is rebuilt from TREE on every
+     load, so only the DELTA is persisted, never a copy of the whole tree:
+     changing TREE here still reaches an existing browser instead of being
+     masked by a stale saved snapshot. D.cobDelta stays exposed so the page
+     can amend and re-save it rather than trying to re-derive what changed
+     by diffing against a seed it can no longer see. */
+  D.cobDelta = loadPersisted("vxCobDelta", { added: [], edited: {}, deleted: [] });
+  D.cobDelta.added = D.cobDelta.added || [];
+  D.cobDelta.edited = D.cobDelta.edited || {};
+  D.cobDelta.deleted = D.cobDelta.deleted || [];
+  Object.entries(D.cobDelta.edited).forEach(([id, patch]) => {
+    const row = D.cob.find(c => String(c.id) === String(id));
+    if (row) Object.assign(row, patch);
+  });
+  D.cobDelta.added.forEach(r => {
+    if (!D.cob.some(c => c.id === r.id)) D.cob.push({ ...r, userAdded: true });
+  });
+  if (D.cobDelta.deleted.length) {
+    const gone = new Set(D.cobDelta.deleted.map(String));
+    D.cob = D.cob.filter(c => !gone.has(String(c.id)) && !gone.has(String(c.parentCobId)));
+  }
   D.cobParents = D.cob.filter(c => !c.parentCobId);
+  D.cobParents.forEach(p => p.childCount = D.cob.filter(c => c.parentCobId === p.id).length);
   D.cobChildren = pid => D.cob.filter(c => c.parentCobId === pid);
 
   /* ---- Reconcile each product's coverage + state selections to real records ----
@@ -1935,6 +1959,11 @@
   D.versions = [];
   let vid = 1;
   D.products.forEach(p => {
+    /* An uploaded product has only the history it actually has. Its version
+       record is created by vxImportProductStudioExport from the export's own
+       version label; inventing Expired/Archived 2025 rows for it would show
+       a tenant onboarded today a rate history that never happened. */
+    if (p.imported) return;
     /* Version lifecycle, in the order a version actually moves through it:
          Draft      — being edited, not yet live
          Scheduled  — approved, with a future effective date
@@ -2742,8 +2771,74 @@
     D.versions.forEach((v, i) => {
       if (v.tenantId == null) v.tenantId = ownerOfProduct(v.product, v.lob, i);
     });
+
+    /* Self-healing: at most one version per (tenant, product) may be
+       Published at a time — that invariant is enforced by versions.html's
+       own Publish button (applyPublish retires every other Published row
+       for the product) but NOT by the config-upload importer, which just
+       pushes a new Published row (see step 4b below) without touching any
+       earlier one. Re-uploading the same product's configuration several
+       times across a session — routine while iterating on an import —
+       therefore left more than one Published row on file, and
+       resolveRatingVersion() picks whichever covers the rating date with
+       the latest Effective Start, which is not reliably the most recently
+       uploaded one. Runs on every load so it heals data already on disk
+       from before this fix, not just future imports. */
+    const publishedGroups = {};
+    D.versions.forEach(v => {
+      if (v.status !== "Published") return;
+      const key = v.tenantId + "|" + v.product;
+      (publishedGroups[key] = publishedGroups[key] || []).push(v);
+    });
+    let healedVersions = false;
+    const healToday = new Date().toISOString().slice(0, 10);
+    Object.values(publishedGroups).forEach(rows => {
+      if (rows.length < 2) return;
+      const keep = rows.slice().sort((a, b) => ((a.effectiveStart || "") < (b.effectiveStart || "") ? 1 : -1))[0];
+      rows.forEach(v => { if (v !== keep) { v.status = "Expired"; v.effectiveEnd = v.effectiveEnd || healToday; healedVersions = true; } });
+    });
+    if (healedVersions) { try { localStorage.setItem("vxVersionsState", JSON.stringify(D.versions)); } catch (e) {} }
+
+    /* Self-healing: a product whose own version is genuinely Published (and
+       thus actively rating quotes) must itself read Active on products.html
+       — versions.html's Publish button keeps the two in sync (applyPublish),
+       but only when it can FIND the product by an exact, case-sensitive name
+       match against the version's own `product` string. A product renamed,
+       or a version created from an import that spelled the product's name
+       with different casing than the product record itself carries, broke
+       that lookup silently: the version went live, the product record never
+       heard about it, and products.html kept showing "Draft" for a product
+       that was, in fact, already rating real quotes — a screen contradicting
+       the engine it describes. Matches case-insensitively, trimmed, same as
+       versions.html's own (now-fixed) lookup. */
+    const normProd = s => String(s || "").trim().toLowerCase();
+    let healedProductStatus = false;
+    D.products.forEach(p => {
+      if (p.status === "Active") return;
+      const live = D.versions.some(v => v.tenantId === p.tenantId && v.status === "Published" && normProd(v.product) === normProd(p.name));
+      if (live) { p.status = "Active"; healedProductStatus = true; }
+    });
+    if (healedProductStatus) { try { localStorage.setItem("vxProductsState", JSON.stringify(D.products)); } catch (e) {} }
+
     D.quotes.forEach((q, i) => { q.tenantId = ownerOfProduct(q.product, q.lob, i); });
+    /* Same guard D.versions gets three lines up, missing here. This pass
+       runs on EVERY load, and without the guard it unconditionally
+       recomputed and overwrote tenantId on every saved formula — including
+       ones a tenant had already imported or authored this session, with a
+       real, correct tenantId of their own. A newly onboarded tenant's own
+       product is never in seedProducts (it did not exist when this
+       platform's seed data was written), so ownerOfProduct() fell through
+       to ownerFor(), which — for any line not in SEEDED_TENANT_ORIGINAL_LOBS
+       — resolves to a single fixed owner (VeriDex, tenantId 1). Every
+       imported tenant's own formula was therefore silently reassigned to
+       VeriDex on the very next page load: gone from the tenant that built
+       it, and appearing as an unexplained extra in VeriDex's own list — and
+       two different tenants' formulas for the same (lob, cob) landing on the
+       same owner this way is exactly what reads as "multiple formulas" on
+       one rating version. Guarded the same way D.versions already is: only
+       assign an owner to a formula that does not already have one. */
     (D.savedFormulas || []).forEach((f, i) => {
+      if (f.tenantId != null) return;
       const att = (f.attachments || [])[0];
       f.tenantId = att ? ownerOfProduct(att.product, f.lob, i) : ownerFor(f.lob, i);
     });
@@ -2761,6 +2856,27 @@
       }));
       D[key] = out;
     });
+
+    /* This rebuild replaces D.fees wholesale from the ORIGINAL seed on every
+       load — a fee a tenant added through the plain Add Fee form (fees.html
+       has no persistence of its own at all) existed only in that page's
+       in-memory array and was gone the moment anyone navigated away to
+       actually rate a quote with it. Same delta pattern D.cobDelta already
+       uses for coverages: restored here, after the rebuild, so an added fee
+       survives it instead of being silently discarded. */
+    D.feesDelta = loadPersisted("vxFeesDelta", { added: [], edited: {}, deleted: [] });
+    D.feesDelta.added = D.feesDelta.added || [];
+    D.feesDelta.edited = D.feesDelta.edited || {};
+    D.feesDelta.deleted = D.feesDelta.deleted || [];
+    Object.entries(D.feesDelta.edited).forEach(([id, patch]) => {
+      const row = D.fees.find(f => String(f.id) === String(id));
+      if (row) Object.assign(row, patch);
+    });
+    D.feesDelta.added.forEach(r => { if (!D.fees.some(f => f.id === r.id)) D.fees.push({ ...r, userAdded: true }); });
+    if (D.feesDelta.deleted.length) {
+      const gone = new Set(D.feesDelta.deleted.map(String));
+      D.fees = D.fees.filter(f => !gone.has(String(f.id)));
+    }
 
     // Units aren't LOB-gated (a tenant configures its own unit list once,
     // used across every line) — only the pre-baked demo tenants get a
@@ -2959,7 +3075,33 @@ function vxImportProductStudioExport(raw, tenantId) {
   const tid = tenantId != null ? tenantId : V.activeTenantId;
   const nextId = arr => Math.max(0, ...arr.map(x => +x.id || 0)) + 1;
 
+  /* Product Studio writes effective dates for DISPLAY ("10-Sept-2026"), but
+     every date this platform compares — formula effectiveStart/End, version
+     resolution, factor effective dating — is an ISO string compared as a
+     string. Feeding a display date into those comparisons silently gets the
+     wrong answer ("10-Sept-2026" sorts before "2026-01-01"), so a version
+     could rate as in-force years early. Normalized once, here, so nothing
+     downstream has to know the export's display format. */
+  const MONTHS = { jan:"01", feb:"02", mar:"03", apr:"04", may:"05", jun:"06",
+                   jul:"07", aug:"08", sep:"09", oct:"10", nov:"11", dec:"12" };
+  function isoDate(v) {
+    if (!v) return "";
+    const s = String(v).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);      // already ISO
+    const m = s.match(/^(\d{1,2})[-\s/]+([A-Za-z]+)[-\s/]+(\d{4})$/); // 10-Sept-2026
+    if (m) {
+      const mm = MONTHS[m[2].slice(0, 3).toLowerCase()];
+      if (mm) return `${m[3]}-${mm}-${String(m[1]).padStart(2, "0")}`;
+    }
+    const d = new Date(s);
+    // An unparseable date is left empty rather than guessed at — an empty
+    // effective date reads as "no bound", which is safe; a wrong one is not.
+    return isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
+  }
+
   const P = raw.product;
+  const effFrom = isoDate(P.effectiveFrom);
+  const effTo = isoDate(P.effectiveTo);
   const collKey = raw.collectionsByVersion && Object.keys(raw.collectionsByVersion)[0];
   const coll = collKey ? raw.collectionsByVersion[collKey] : {};
   const covers = (raw.studios && raw.studios.coverage) || coll.covers || [];
@@ -3022,7 +3164,7 @@ function vxImportProductStudioExport(raw, tenantId) {
       mandatory: c.availability === "mandatory", childCount: 0,
       ratingBasis: "Not yet rated (imported)", defaultLimit: null, factor: 1,
       unit: ensureUnit(c.unit || defaultUnitName), deductible: null, status: "Draft",
-      effectiveStart: P.effectiveFrom || "", effectiveEnd: P.effectiveTo || "",
+      effectiveStart: effFrom, effectiveEnd: effTo,
       version: P.version || "v1", active: true, quotes: 0, tenantId: tid,
     };
     row.cobId = row.id;
@@ -3037,7 +3179,7 @@ function vxImportProductStudioExport(raw, tenantId) {
       mandatory: c.availability === "mandatory", childCount: 0,
       ratingBasis: "Not yet rated (imported)", defaultLimit: null, factor: 1,
       unit: ensureUnit(c.unit || defaultUnitName), deductible: null, status: "Draft",
-      effectiveStart: P.effectiveFrom || "", effectiveEnd: P.effectiveTo || "",
+      effectiveStart: effFrom, effectiveEnd: effTo,
       version: P.version || "v1", active: true, quotes: 0, tenantId: tid,
     });
     parent.childCount++;
@@ -3056,6 +3198,11 @@ function vxImportProductStudioExport(raw, tenantId) {
       owner: "Uploaded Configuration",
       updated: (P.lastModifiedAt ? P.lastModifiedAt.slice(0, 10) : P.lastModified) || null,
       quotes: 0, gwp: 0, appTypeId: null, raterType: "Custom", tenantId: tid,
+      // Marks this product as coming from an upload rather than the seed
+      // data. D.products is restored from localStorage before the version
+      // history is generated, so without this flag the seeder would invent
+      // a 2025 Expired/Archived rate history for a product uploaded today.
+      imported: true,
     };
     V.products.push(product);
   }
@@ -3070,21 +3217,37 @@ function vxImportProductStudioExport(raw, tenantId) {
       if (V.customFactors.some(f => f.code === code && f.tenantId === tid)) return;
       const kind = item.type === "base" ? "Constant" : item.type === "factor" ? "Lookup" : "Judgment";
       const hasTable = item.table && item.table.data != null;
+      /* An item states its own coverage when it has one; the group name is
+         only a fallback. Reading the group blindly made "RISK FACTORS" and
+         "BASE PREMIUM" — the export's own section headings — look like
+         coverages the tenant had bought, and the rater then priced groups
+         for them. An item with neither is genuinely unattached and says so,
+         rather than being filed under a heading as though it were a cover. */
+      const cover = item.coverage || (nameToRow[g.group] ? g.group : null);
       const row = {
-        code, name: item.name, lob: lobName, coverage: g.group, kind,
+        code, name: item.name, lob: lobName, coverage: cover, kind,
         driver: g.group, sourceSheet: "Uploaded Configuration",
         tableId: hasTable ? (item.table.id || code) : null,
         defaultValue: item.amount != null ? +item.amount : null, tenantId: tid,
       };
-      V.customFactors.push(row);
       const n = hasTable ? (Array.isArray(item.table.data) ? item.table.data.length : Object.keys(item.table.data).length) : null;
-      V.ratingFactors.push({
+      /* One record, pushed to both registries. These used to diverge — the
+         bare `row` went to customFactors and an enriched copy to
+         ratingFactors — and since customFactors is what survives a reload
+         (D.customFactors is restored and re-pushed into D.ratingFactors),
+         every field only the enriched copy carried was silently dropped on
+         refresh. `assignedTo` is one of them, and the rater reads it to
+         decide which coverage a factor prices, so after a reload a base
+         premium stopped being recognised as the base. */
+      const full = {
         ...row, id: nextId(V.ratingFactors), verified: false, wired: false, custom: true,
-        scope: "Coverage", assignedTo: g.group,
+        scope: cover ? "Coverage" : "Unattached", assignedTo: cover || g.group,
         attachments: [{ product: product.name, ratingVersion: product.version }],
         rowCount: n, range: n != null ? n + " rows (uploaded)" : (row.defaultValue != null ? String(row.defaultValue) : "—"),
-        effectiveDate: P.effectiveFrom || "", version: product.version, active: true,
-      });
+        effectiveDate: effFrom, version: product.version, active: true,
+      };
+      V.customFactors.push(full);
+      V.ratingFactors.push(full);
       factorCount++;
       // The actual table data behind this Lookup factor, if the export
       // carried one (see products.html's Export JSON — it attaches the
@@ -3121,6 +3284,134 @@ function vxImportProductStudioExport(raw, tenantId) {
     eligCount++;
   });
 
+  /* ---- 4b. Rating version ----
+     A product with no version record is not a complete product on this
+     platform: Versions shows nothing for it, and — measured, not assumed —
+     applySavedFormula() cannot honour a formula's attachments without one,
+     so a named product silently rated on the engine's built-in chain
+     instead of its own imported formula. Created from the export's own
+     version label and effective date; Published only when the export says
+     the product is active, so an uploaded draft does not start rating
+     live quotes on arrival. */
+  let versionRec = V.versions.find(v => v.product === product.name && v.version === product.version && v.tenantId === tid);
+  if (!versionRec) {
+    versionRec = {
+      id: nextId(V.versions), product: product.name, lob: lobName, version: product.version,
+      status: product.status === "Active" ? "Published" : "Draft",
+      effectiveStart: effFrom, effectiveEnd: effTo,
+      rateLockDate: "", rateLockDays: 30,
+      createdBy: "Uploaded Configuration", createdOn: (P.lastModifiedAt || "").slice(0, 10) || null,
+      factorCount: 0, quotesRated: 0, added: 0, changed: 0, removed: 0, changes: [],
+      rateImpact: 0, notes: "Created by product configuration upload.", tenantId: tid,
+    };
+    V.versions.push(versionRec);
+    /* Only one version of a product may be Published at once — the manual
+       Publish button on versions.html enforces this by retiring every other
+       Published row for the product (applyPublish, versions.html), but an
+       upload creating a brand-new Published row bypassed that entirely.
+       Re-uploading the same product's configuration more than once in a
+       session (routine while iterating) left several Published rows on
+       file, and the rating-date resolver picks whichever of them covers the
+       quote's date with the latest Effective Start — not reliably the one
+       just uploaded. Retire the others here the same way Publish does. */
+    if (versionRec.status === "Published") {
+      V.versions.filter(v => v !== versionRec && v.tenantId === tid && v.product === product.name && v.status === "Published")
+        .forEach(v => { v.status = "Expired"; v.effectiveEnd = v.effectiveEnd || (new Date().toISOString().slice(0, 10)); });
+    }
+  }
+
+  /* ---- 5b. Rating formulas ----
+     Without this, an import into a BRAND-NEW tenant produced factors that
+     could never reach a premium: applySavedFormula() only evaluates a
+     formula belonging to the rating tenant, a new tenant has none, so it
+     fell back to the engine's built-in chain and RemainingFactors — the
+     catch-all that folds approved custom factors in — never ran at all.
+     Confirmed by measurement, not assumed: the same import rated
+     identically before and after approving its own factors on a new
+     tenant, while moving 2,164 -> 2,203 on a tenant that already had a
+     formula. An export may therefore carry its own expression per coverage.
+
+     Tokens are taken verbatim; nothing is invented. A formula naming a
+     variable the engine does not supply for that coverage throws at
+     evaluation and the engine falls back to its default chain (that is
+     applySavedFormula's existing guard, not a new behaviour) — so an
+     export with a bad expression degrades to the built-in rate rather
+     than producing a wrong premium. Left as Draft unless the export says
+     otherwise: an uploaded file should not silently start rating live
+     quotes, matching how every other import here lands as Draft. */
+  /* Two export shapes reach this field. The earlier ones (and this
+     platform's own Export JSON) carry real {t,v} token objects — "t" says
+     whether each one is a variable, an operator or a number, which is the
+     one thing evalTokens (engine.js) actually needs to run a formula.
+     Rating Studio's export instead lists bare strings, "BasePremium" and
+     "RemainingFactors", with no type and — measured against this exact
+     file — no operator between them at all: the expression string reads
+     "BasePremium × RemainingFactors" for a human, but the tokens array a
+     formula is actually evaluated from never says × happened. Mapping each
+     string straight through as {t: t.t, v: t.v} produced {t: undefined,
+     v: undefined} for every one of them — nothing evalTokens could run —
+     which is exactly how a real, correctly-labelled BasePremium ends up
+     evaluating as an unrelated 1: the malformed formula throws, and the
+     coverage silently falls back to its bare default chain instead.
+     Classified from the string itself instead, and — since two variables in
+     a row with nothing between them is not evaluable syntax — an implicit ×
+     is inserted between them, the same "each factor multiplies the next"
+     convention every other formula on this platform already follows. */
+  const FORMULA_OPS = new Set(["×", "÷", "(", ")", "+", "−", "-", "^", ",", "x", "*", "/",
+    "IF", "ELSE", "MIN", "MAX", "ROUND", "LOOKUP", "AND", "OR", ">", "<", "="]);
+  function classifyRawFormulaToken(v) {
+    if (FORMULA_OPS.has(v)) return "op";
+    if (/^-?\d+(\.\d+)?$/.test(String(v))) return "num";
+    return "var";
+  }
+  function normalizeFormulaTokens(rawTokens) {
+    if (rawTokens.length && rawTokens[0] && typeof rawTokens[0] === "object" && "t" in rawTokens[0]) {
+      return rawTokens.map(t => ({ t: t.t, v: t.v }));
+    }
+    const out = [];
+    rawTokens.forEach(raw => {
+      const kind = classifyRawFormulaToken(raw);
+      const prev = out.length ? out[out.length - 1] : null;
+      if (prev && (kind === "var" || kind === "num") && (prev.t === "var" || prev.t === "num")) {
+        out.push({ t: "op", v: "×" });
+      }
+      out.push({ t: kind, v: raw });
+    });
+    return out;
+  }
+
+  const formulaDefs = (raw.studios && raw.studios.formulas) || coll.formulas || [];
+  let formulaCount = 0;
+  formulaDefs.forEach(fd => {
+    if (!fd || !fd.cob || !Array.isArray(fd.tokens) || !fd.tokens.length) return;
+    if (V.savedFormulas.some(f => f.name === fd.name && f.tenantId === tid)) return;
+    V.savedFormulas.push({
+      id: nextId(V.savedFormulas),
+      name: fd.name || `${lobName} — ${fd.cob} (imported)`,
+      lob: lobName, scope: fd.scope || "Class of Business", cob: fd.cob,
+      tokens: normalizeFormulaTokens(fd.tokens),
+      status: fd.status === "Active" ? "Active" : "Draft",
+      tested: false, lastTestedAt: null,
+      attachments: [{ product: product.name, ratingVersion: product.version }],
+      createdBy: "Uploaded Configuration", updated: (P.lastModifiedAt || "").slice(0, 10) || null,
+      /* Only when the export explicitly gives THIS formula its own
+         effective date — falling back to the product's own effectiveFrom
+         fabricated a restriction the export never actually stated, and a
+         quote rated as of any earlier date (a rate-lock date honouring
+         older rates, most obviously) then excluded the tenant's only real
+         formula for the coverage: correctly Active, correctly attached,
+         silently unused, with the quote reverting to the plain default
+         chain and no visible reason why. applySavedFormula() (engine.js)
+         already treats an empty effectiveStart as "no restriction, always
+         applies" — the honest default for a formula whose export never
+         said otherwise. */
+      effectiveStart: isoDate(fd.effectiveFrom), effectiveEnd: isoDate(fd.effectiveTo),
+      tenantId: tid,
+    });
+    formulaCount++;
+  });
+  if (formulaCount) { try { localStorage.setItem("vxSavedFormulas", JSON.stringify(V.savedFormulas)); } catch (e) {} }
+
   const baseGroup = ratingGroups.find(g => /base premium/i.test(g.group || ""));
   const baseItem = baseGroup && (baseGroup.items || [])[0];
   if (baseItem && baseItem.amount != null && !V.programParams.some(pp => pp.lob === lobName && pp.param === "Base Premium (Uploaded)")) {
@@ -3130,7 +3421,7 @@ function vxImportProductStudioExport(raw, tenantId) {
 
   return {
     ok: true, product, lobName, lobIsNew,
-    coverCount: Object.keys(nameToRow).length, factorCount, eligCount, tableCount,
+    coverCount: Object.keys(nameToRow).length, factorCount, eligCount, tableCount, formulaCount,
     basePremium: baseItem ? +baseItem.amount : null,
   };
 }

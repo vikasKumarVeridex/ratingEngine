@@ -12,7 +12,6 @@ const NAV = [
     { h: "loss-runs.html", i: "fa-triangle-exclamation", l: "Loss Run Analytics" },
     { h: "quote-portal.html", i: "fa-flask", l: "Quote Sandbox" },
     { h: "quotes.html", i: "fa-file-lines", l: "Quotes" },
-    { h: "analytics.html", i: "fa-chart-simple", l: "Analytics" },
   ]},
   /* Configuration sits above Rating: you define the line of business, the
      coverages under it and the product that sells them BEFORE the factors and
@@ -58,6 +57,15 @@ const NAV = [
   { g: "Administration", items: [
     { h: "users.html", i: "fa-users", l: "Users" },
     { h: "roles.html", i: "fa-user-shield", l: "Roles" },
+    /* Back in the sidebar. It was removed on the reasoning that switching
+       tenant is a top-bar action and the picker's "Manage tenants" item
+       still reached this page — which held while Tenants was only a list
+       you rarely touched. It now owns onboarding: creating a tenant AND
+       importing its product configuration in one action lives here, and a
+       destination you can only reach by opening a dropdown and looking for
+       a secondary link is not where you put the entry point for standing a
+       new customer up. */
+    { h: "tenants.html", i: "fa-building", l: "Tenants" },
     { h: "audit.html", i: "fa-clock-rotate-left", l: "Audit History" },
     { h: "settings.html", i: "fa-gear", l: "Settings" },
     { h: "export.html", i: "fa-file-export", l: "Export Configuration" },
@@ -66,8 +74,6 @@ const NAV = [
     { h: "engine-flow.html", i: "fa-sitemap", l: "Engine Flow" },
     { h: "quote-json.html", i: "fa-code", l: "Quote JSON" },
     { h: "integration.html", i: "fa-plug", l: "Integration Guide" },
-    { h: "api.html", i: "fa-terminal", l: "API Reference" },
-    { h: "db-schema.html", i: "fa-database", l: "Data Model" },
     { h: "ai-assistant.html", i: "fa-wand-magic-sparkles", l: "AI Assistant" },
   ]},
 ];
@@ -337,7 +343,7 @@ function vxShell(title, subtitle, crumbs) {
             ${VX.tenants.map(t => `<a class="it" href="#" data-tenant="${t.id}" style="text-decoration:none;color:inherit">
               <div class="ic" style="background:${t.accent}"><i class="fa-solid fa-building"></i></div>
               <div style="flex:1"><b style="font-size:12.5px">${t.name}</b>
-                <small>${t.plan} · ${t.seats} seats · ${t.lobs.length} LOB${t.lobs.length === 1 ? "" : "s"}</small></div>
+                <small><code style="font-size:10px">${t.code}</code> · ${t.plan} · ${t.seats} seats · ${t.lobs.length} LOB${t.lobs.length === 1 ? "" : "s"}</small></div>
               ${t.id === VX.activeTenantId ? '<i class="fa-solid fa-check" style="color:var(--good);align-self:center"></i>' : ""}
             </a>`).join("")}
             <a class="it" href="tenants.html" style="text-decoration:none;color:inherit">
@@ -1188,8 +1194,20 @@ function vxRejectFactorTableChange(reqId, note) {
    Always requires someone other than whoever created the factor — including
    when that creator is a Rating Administrator. Use Switch User (account
    menu) to approve as a genuinely different person. */
+/* Factor codes are only unique WITHIN a tenant — two carriers onboarded from
+   the same Product Studio export both carry RAT-FACTOR-001. Matching on code
+   alone approved whichever row happened to come first in the array, so the
+   reviewer approved another tenant's factor and their own stayed pending:
+   "I approved it and it still shows as awaiting approval". Scope every
+   lookup to the acting tenant. Rows with no tenantId are shared platform
+   factors and stay reachable. */
+function vxFactorByCode(code) {
+  const tid = VX.activeTenantId;
+  const rows = (VX.ratingFactors || []).filter(x => x.code === code);
+  return rows.find(x => x.tenantId === tid) || rows.find(x => x.tenantId == null) || null;
+}
 function vxApproveFactorForFormulas(code) {
-  const f = (VX.ratingFactors || []).find(x => x.code === code);
+  const f = vxFactorByCode(code);
   if (!f) return null;
   if (f.createdBy && f.createdBy === vxCurrentUser()) {
     vxToast("Can't approve your own factor", "A second person has to sign this off — that is what the step is for. Use Switch User (account menu) to approve as someone else.", "err");
@@ -1211,7 +1229,7 @@ function vxApproveFactorForFormulas(code) {
    rejection recorded, rather than disappearing as if nothing happened —
    the factor can still be edited and re-submitted for approval later. */
 function vxRejectFactorForFormulas(code, note) {
-  const f = (VX.ratingFactors || []).find(x => x.code === code);
+  const f = vxFactorByCode(code);   // tenant-scoped, same reason as approve
   if (!f) return null;
   f.approvedForFormulas = false;
   f.formulaRejected = true;
@@ -1268,3 +1286,51 @@ function vxCell(row, col, raw) {
   if (raw || !col.r) return Array.isArray(v) ? v.join(" | ") : v;
   return col.r(row);
 }
+
+/* Reads a Product Studio export and reports what importing it would create.
+   Shared by tenants.html (onboard a new tenant) and products.html (import
+   into the active tenant) so the two previews cannot disagree about the same
+   file — they did: a second copy looked for `studios.covers` and
+   `studios.rating.groups`, neither of which exists, and silently previewed
+   "0 coverages · 0 factors" for a file that imports five of each. */
+function vxPreviewStudioExport(raw) {
+  const P = raw.product || {};
+  const collKey = raw.collectionsByVersion && Object.keys(raw.collectionsByVersion)[0];
+  const coll = collKey ? raw.collectionsByVersion[collKey] : {};
+  const covers = (raw.studios && raw.studios.coverage) || coll.covers || [];
+  const rating = (raw.studios && raw.studios.rating) || coll.ratingComponents || [];
+  const elig = (raw.studios && raw.studios.eligibility) || coll.eligibilityRules || [];
+  const formulas = (raw.studios && raw.studios.formulas) || coll.formulas || [];
+  const KNOWN = ["Commercial Trucking", "General Liability", "Commercial Property",
+    "Professional Liability (MPL)", "Cyber", "Workers' Compensation"];
+  const want = P.family || P.lineOfBusiness || "";
+  const matched = KNOWN.find(n => n.toLowerCase() === String(want).toLowerCase())
+    || KNOWN.find(n => n.toLowerCase() === String(P.lineOfBusiness || "").toLowerCase());
+  const byName = {}; covers.forEach(c => { if (c.name) byName[c.name] = c; });
+  const parents = covers.filter(c => c.name && !(c.conditionalOn && byName[c.conditionalOn]));
+  const children = covers.filter(c => c.name && c.conditionalOn && byName[c.conditionalOn]);
+  let factors = 0, tables = 0;
+  rating.forEach(g => (g.items || []).forEach(i => {
+    factors++;
+    if (i.table && i.table.data != null) tables++;
+  }));
+  return { P, matched, lobName: matched || want || "Imported Line", lobIsNew: !matched,
+    parents, children, factors, tables, elig: elig.length,
+    formulas: formulas.filter(f => f && f.cob && Array.isArray(f.tokens) && f.tokens.length).length };
+}
+
+/* A tenant sees its OWN coverage tree for a line it has customised or
+   uploaded (own rows only), and falls back to the shared/seed tree for a
+   line it has not touched — per line, not globally, so customising one
+   line does not hide the shared tree for every other line. Shared by
+   coverages.html (the grid) and formula-builder.html (the LOB/coverage
+   picker); a second copy of this exact logic is what let "New Formula"
+   default to VeriDex's own line instead of the active tenant's. */
+function vxVisibleCob() {
+  const tid = VX.activeTenantId;
+  const myLobs = new Set((VX.lobs || []).filter(l => l.tenantId === tid).map(l => l.name));
+  const ownedLobs = new Set(VX.cob.filter(c => c.tenantId === tid).map(c => c.lob));
+  return VX.cob.filter(c => myLobs.has(c.lob)
+    && (ownedLobs.has(c.lob) ? c.tenantId === tid : c.tenantId == null));
+}
+

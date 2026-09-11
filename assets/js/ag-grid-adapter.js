@@ -114,6 +114,12 @@ function vxAgGrid(opt) {
     const def = {
       field: c.k, headerName: c.l, sortable: c.sort !== false, resizable: true, filter: false,
       hide: st.hidden.includes(c.k),
+      // Every column below supplies its own renderer, and editable columns
+      // name their editor explicitly, so AG Grid's type inference has no job
+      // here. Left on, it inspects the raw value and warns on any array or
+      // object field (a product's `cob`/`states`, a tenant's `lobs`) that it
+      // cannot format — a warning about display it is not doing.
+      cellDataType: false,
       // Contextual help is rendered beside the heading by ui-ux.js.
       cellRenderer: c.r ? (p => c.r(p.data) ?? '<span style="color:var(--text-mute)">—</span>') : (p => p.value ?? '<span style="color:var(--text-mute)">—</span>'),
     };

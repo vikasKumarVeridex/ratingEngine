@@ -1,0 +1,276 @@
+{
+  "schema": "insurance-product-studio-product-v1",
+  "exportedAt": "2026-09-10T09:54:58.765Z",
+  "productId": "PRD-021",
+  "version": "2026.10",
+  "status": "draft",
+  "_readme": "Fixed copy of PRD-021-commercial-auto-2026.10.json. The only problem with the original was in studios.rating: 5 of its 8 factor items (the whole 'RISK FACTORS' group, plus the base premium) carried no `coverage` field. The importer (vxImportProductStudioExport in assets/js/data.js) only attaches a rating item to a coverage's premium group when that item's OWN `coverage` field names one of the entries in studios.coverage -- the group heading ('RISK FACTORS', 'BASE PREMIUM') is not read as a coverage. Those 5 items imported fine and showed up on Rating Factors, but priced nothing: the base premium is correctly unattached by design (the engine recognises it by name), but the other 4 need a real `coverage` value. This copy adds one to each ('Auto Liability' or 'Physical Damage', by which risk it actually prices), gives each a real rate table, and adds studios.formulas so every coverage rates through a formula rather than just its default chain -- both patterns already used correctly by RAT-FACTOR-001/002/003 in the original file.",
+
+  "product": {
+    "id": "PRD-021",
+    "name": "new commercial truck",
+    "family": "Commercial Auto",
+    "lineOfBusiness": "Commercial Auto",
+    "productType": "Commercial Auto",
+    "segment": "Commercial Lines",
+    "version": "2026.10",
+    "status": "draft",
+    "effectiveFrom": "2026-08-01",
+    "effectiveTo": null,
+    "owner": "Anika Sharma",
+    "carrier": "Veridex Insurance",
+    "code": "TRA-2026-001",
+    "description": "New product configuration.",
+    "jurisdictions": ["CA", "TX"],
+    "lastModified": "10-Sept-2026",
+    "lastModifiedAt": "2026-09-10T09:26:01.914Z"
+  },
+
+  "studios": {
+    "coverage": [
+      {
+        "id": "COV-mtvboqbk-0664",
+        "name": "Auto Liability",
+        "code": "COV-AL",
+        "type": "Commercial Auto Liability",
+        "availability": "mandatory",
+        "conditionalOn": "",
+        "basisOfCoverage": "Agreed Value",
+        "sumInsured": "50,000",
+        "deductibleType": "fixed",
+        "deductibleAmount": "5600"
+      },
+      {
+        "id": "COV-mtvboqbm-0233",
+        "name": "Physical Damage",
+        "code": "COV-PD",
+        "type": "First Party — Property Damage",
+        "availability": "optional",
+        "conditionalOn": "",
+        "basisOfCoverage": "Agreed Value",
+        "sumInsured": "50,000",
+        "deductibleType": "none"
+      }
+    ],
+
+    "rating": [
+      {
+        "group": "BASE PREMIUM",
+        "items": [
+          {
+            "id": "RAT-BR-GUI",
+            "name": "Starting price",
+            "type": "base",
+            "status": "done",
+            "value": "$5000/yr",
+            "amount": "5000",
+            "configured": true
+          }
+        ]
+      },
+      {
+        "group": "Auto Liability",
+        "items": [
+          {
+            "id": "RAT-FACTOR-002",
+            "name": "fleet",
+            "type": "factor",
+            "status": "done",
+            "coverage": "Auto Liability",
+            "coverageId": "COV-mtvboqbk-0664",
+            "riskAttribute": "Fleet Size",
+            "riskAttributeId": "RSK-FLT-001",
+            "ratingMethod": "table",
+            "amount": 1,
+            "table": {
+              "id": "fleet",
+              "sourceSheet": "fleet",
+              "data": [
+                { "value": "0-5", "factor": 1.2 },
+                { "value": "6-10", "factor": 1.5 }
+              ]
+            },
+            "configured": true
+          },
+          {
+            "id": "RAT-FACTOR-003",
+            "name": "radius",
+            "type": "factor",
+            "status": "done",
+            "coverage": "Auto Liability",
+            "coverageId": "COV-mtvboqbk-0664",
+            "riskAttribute": "Operating Radius",
+            "riskAttributeId": "RSK-VEH-014",
+            "ratingMethod": "table",
+            "amount": 1,
+            "table": {
+              "id": "radius",
+              "sourceSheet": "rad",
+              "data": [
+                { "value": "max 5000km", "factor": 1.5 }
+              ]
+            },
+            "configured": true
+          },
+          {
+            "id": "RAT-FAC-DRIVER",
+            "name": "Driver age choices",
+            "type": "factor",
+            "status": "done",
+            "coverage": "Auto Liability",
+            "riskAttribute": "Driver Age Band",
+            "ratingMethod": "table",
+            "amount": 1,
+            "table": {
+              "id": "driverage",
+              "sourceSheet": "driver age",
+              "data": [
+                { "value": "18-24", "factor": 1.35 },
+                { "value": "25-49", "factor": 1.0 },
+                { "value": "50-65", "factor": 0.9 },
+                { "value": "65+", "factor": 1.1 }
+              ]
+            },
+            "configured": true
+          },
+          {
+            "id": "RAT-FAC-LOCATION",
+            "name": "Location choices",
+            "type": "factor",
+            "status": "done",
+            "coverage": "Auto Liability",
+            "riskAttribute": "Garaging Territory",
+            "ratingMethod": "table",
+            "amount": 1,
+            "table": {
+              "id": "location",
+              "sourceSheet": "territory",
+              "data": [
+                { "value": "Urban", "factor": 1.2 },
+                { "value": "Suburban", "factor": 1.0 },
+                { "value": "Rural", "factor": 0.85 }
+              ]
+            },
+            "configured": true
+          }
+        ]
+      },
+      {
+        "group": "Physical Damage",
+        "items": [
+          {
+            "id": "RAT-FACTOR-001",
+            "name": "driver",
+            "type": "factor",
+            "status": "done",
+            "coverage": "Physical Damage",
+            "coverageId": "COV-mtvboqbm-0233",
+            "riskAttribute": "Years in Business",
+            "riskAttributeId": "RSK-OPS-002",
+            "ratingMethod": "table",
+            "amount": 1,
+            "table": {
+              "id": "tab1",
+              "sourceSheet": "years in business",
+              "data": [
+                { "value": "minimum 5 years", "factor": 1.5 }
+              ]
+            },
+            "configured": true
+          },
+          {
+            "id": "RAT-FAC-VEHICLE",
+            "name": "Vehicle age choices",
+            "type": "factor",
+            "status": "done",
+            "coverage": "Physical Damage",
+            "riskAttribute": "Vehicle Model Year",
+            "ratingMethod": "table",
+            "amount": 1,
+            "table": {
+              "id": "vehicleage",
+              "sourceSheet": "vehicle age",
+              "data": [
+                { "value": "0-2 years", "factor": 1.15 },
+                { "value": "3-7 years", "factor": 1.0 },
+                { "value": "8+ years", "factor": 0.8 }
+              ]
+            },
+            "configured": true
+          },
+          {
+            "id": "RAT-FAC-USE",
+            "name": "Vehicle use choices",
+            "type": "factor",
+            "status": "done",
+            "coverage": "Physical Damage",
+            "riskAttribute": "Primary Use",
+            "ratingMethod": "table",
+            "amount": 1,
+            "table": {
+              "id": "vehicleuse",
+              "sourceSheet": "vehicle use",
+              "data": [
+                { "value": "General Freight", "factor": 1.0 },
+                { "value": "Hazmat", "factor": 1.4 },
+                { "value": "Livestock", "factor": 1.2 }
+              ]
+            },
+            "configured": true
+          }
+        ]
+      }
+    ],
+
+    "formulas": [
+      {
+        "name": "Commercial Auto — Auto Liability",
+        "cob": "Auto Liability",
+        "status": "Active",
+        "tokens": [
+          { "t": "var", "v": "BasePremium" },
+          { "t": "op", "v": "×" },
+          { "t": "var", "v": "RemainingFactors" }
+        ],
+        "expression": "BasePremium × RemainingFactors"
+      },
+      {
+        "name": "Commercial Auto — Physical Damage",
+        "cob": "Physical Damage",
+        "status": "Active",
+        "tokens": [
+          { "t": "var", "v": "BasePremium" },
+          { "t": "op", "v": "×" },
+          { "t": "var", "v": "RemainingFactors" }
+        ],
+        "expression": "BasePremium × RemainingFactors"
+      }
+    ],
+
+    "eligibility": [
+      {
+        "id": "ELG-001",
+        "name": "Years in Business Eligibility",
+        "status": "active",
+        "outcomeType": "refer",
+        "description": "Refers new ventures under 5 years old for underwriting review."
+      },
+      {
+        "id": "ELG-002",
+        "name": "Fleet Size Eligibility",
+        "status": "active",
+        "outcomeType": "refer",
+        "description": "Refers fleets of 5 or more power units for underwriting review."
+      },
+      {
+        "id": "ELG-003",
+        "name": "Operating Radius Eligibility",
+        "status": "active",
+        "outcomeType": "refer",
+        "description": "Refers long-haul operations (5000km+ radius) for underwriting review."
+      }
+    ]
+  },
+
+  "pricing": { "basePremium": 5000 }
+}

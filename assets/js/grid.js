@@ -325,7 +325,12 @@ function vxGrid(opt) {
         ${f.opts.map((o, i) => `<div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" data-fm="${f.k}" value="${o}" id="${id}m${f.k}${i}" ${(Array.isArray(v) ? v : []).includes(o) ? "checked" : ""}><label class="form-check-label" for="${id}m${f.k}${i}">${o}</label></div>`).join("")}
       </div></div>`;
       if (f.t === "textarea") return `<div class="col-md-12"><label>${f.l}</label><textarea class="form-control form-control-sm" rows="2" data-f="${f.k}">${v}</textarea></div>`;
-      return `<div class="col-md-6"><label>${f.l}</label><input type="${f.t || "text"}" ${f.step ? `step="${f.step}"` : ""} class="form-control form-control-sm" data-f="${f.k}" value="${v}"></div>`;
+      /* `readonly` marks a value the system owns rather than the user — an
+         auto-assigned key, a derived code. Shown so the form still states the
+         record in full, but not editable: a hand-typed value for one of those
+         is a collision waiting to happen. Same field flag ag-grid-adapter.js
+         honours, so a form definition behaves the same on either engine. */
+      return `<div class="col-md-6"><label>${f.l}</label><input type="${f.t || "text"}" ${f.step ? `step="${f.step}"` : ""} class="form-control form-control-sm" data-f="${f.k}" value="${v}"${f.readonly ? " readonly" : ""}></div>`;
     }).join("");
 
     vxModal(`${isNew ? "Add" : "Edit"} ${name}`,

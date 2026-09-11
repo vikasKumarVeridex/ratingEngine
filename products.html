@@ -116,6 +116,21 @@ document.getElementById("prodCfgUpload").onchange = async e => {
   try { raw = await vxParseJsonUpload(file); }
   catch (err) { vxToast("Upload failed", err.message, "err"); return; }
 
+  /* Two upload shapes reach this control, and only one of them was ever
+     handled here. vxMapUploadedConfig() reads a FLAT payload keyed on
+     `product_lob` / `coverage_class`. A Product Studio export — the file
+     this page's own "Export Product JSON" button produces, and the file
+     tenants.html onboards from — nests everything under `product` and
+     `collectionsByVersion`, so it carries no top-level product_lob and was
+     rejected outright with "Missing required field: product_lob" before
+     anything was read. Route it to the full importer instead: same file,
+     same tenant partition, but coverages, factors, rate tables, formulas
+     and eligibility rules all come across rather than LOB alone. */
+  if (raw && raw.product && (raw.collectionsByVersion || raw.studios)) {
+    importStudioExport(raw);
+    return;
+  }
+
   const mapped = vxMapUploadedConfig(raw);
   if (!mapped.ok) { vxToast("Configuration not applied", mapped.reason, "err"); return; }
 
@@ -143,6 +158,9 @@ document.getElementById("prodCfgUpload").onchange = async e => {
             owner: "Uploaded Configuration", updated: new Date().toISOString().slice(0, 10),
             quotes: 0, gwp: 0, appTypeId: null, raterType: "Custom",
             configClass: mapped.coverageClass || null,
+            // Without this the uploaded product carries no tenant at all and
+            // shows up in every tenant's product list, not just this one's.
+            tenantId: VX.activeTenantId,
           });
         }
         try { localStorage.setItem("vxProductsState", JSON.stringify(VX.products)); } catch (err) {}
@@ -150,6 +168,51 @@ document.getElementById("prodCfgUpload").onchange = async e => {
         location.reload();
      }}], "modal-md");
 };
+
+/* Full Product Studio export, imported into the ACTIVE tenant.
+
+   tenants.html creates a tenant and imports in one action precisely so a
+   configuration cannot land in the wrong partition. Here the tenant already
+   exists and is whatever the user last switched to, so the preview names it
+   in the heading rather than leaving it implied — landing one carrier's
+   programme in another carrier's partition is the expensive mistake, and
+   the only defence on this page is showing the destination before writing. */
+function importStudioExport(raw) {
+  const tid = VX.activeTenantId;
+  const tenant = (VX.tenants || []).find(t => t.id === tid) || {};
+  // Same reader tenants.html's onboarding preview uses, so both pages
+  // describe an identical file identically.
+  const pv = vxPreviewStudioExport(raw);
+  const P = pv.P;
+
+  vxModal(`Import configuration into ${tenant.name || "this tenant"}`, `
+    <div class="vx-note vx-note-warn" style="margin-bottom:12px">
+      <i class="fa-solid fa-triangle-exclamation me-1"></i>
+      This writes into <b>${tenant.name || "the active tenant"}</b>'s partition.
+      To set up a <i>new</i> carrier instead, use <b>Tenants → Onboard Tenant from Configuration</b>.
+    </div>
+    <div class="vx-tw"><table class="vx-t"><tbody>
+      <tr><td style="width:190px">Product</td><td><b>${P.name || "—"}</b> · ${P.code || "—"}</td></tr>
+      <tr><td>Line of Business</td><td>${pv.lobName}${pv.lobIsNew ? ' <span class="vx-b vx-b-warn">new line</span>' : ""}</td></tr>
+      <tr><td>Coverages</td><td>${pv.parents.length} primary · ${pv.children.length} child<div class="vx-mute" style="font-size:11.5px">${pv.parents.map(c => c.name).join(", ") || "—"}</div></td></tr>
+      <tr><td>Rating factors</td><td>${pv.factors}${pv.tables ? ` · ${pv.tables} with rate tables` : ""}</td></tr>
+      <tr><td>Rating formulas</td><td>${pv.formulas}</td></tr>
+      <tr><td>Eligibility rules</td><td>${pv.elig}</td></tr>
+    </tbody></table></div>`,
+    [{ t: "Cancel", c: "secondary" },
+     { t: "Import into " + (tenant.name || "tenant"), c: "primary", fn: () => {
+        let res;
+        // A failed import must say so. The reload below would otherwise
+        // repaint a page that looks fine and silently lost the upload.
+        try { res = vxImportProductStudioExport(raw, tid); }
+        catch (err) { vxToast("Import failed", String(err && err.message || err), "err"); return; }
+        if (!res || !res.ok) { vxToast("Import failed", (res && res.reason) || "Configuration could not be applied.", "err"); return; }
+        vxSaveProductStudioImport(raw, tid);
+        vxToast("Configuration imported",
+          `${res.product.name} — ${res.coverCount} coverages, ${res.factorCount} factors, ${res.formulaCount} formulas`, "ok");
+        setTimeout(() => location.reload(), 600);
+     }}], "modal-md");
+}
 
 /* ============================================================
    Export Product JSON — the inverse of Upload Configuration /

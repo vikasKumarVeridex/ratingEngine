@@ -87,6 +87,252 @@ document.getElementById("vxBody").innerHTML = `
 
   <div class="vx-card vx-anim"><div id="grid"></div></div>`;
 
+/* ============================================================
+   Onboard a tenant FROM a product configuration file.
+
+   Until now the rich importer (vxImportProductStudioExport in data.js —
+   coverage tree, product, rating factors with their tables, formulas,
+   eligibility rules and a rating version) had no entry point anywhere in
+   the UI: products.html's "Upload Product Configuration" calls the much
+   thinner vxMapUploadedConfig instead, which only creates a shell product
+   carrying a line of business and a class code.
+
+   Onboarding also had a real footgun. The importer always writes into the
+   ACTIVE tenant, so bringing a new customer live meant: add tenant, switch
+   to it, navigate to Products, upload — and uploading one customer's
+   configuration into another customer's partition is exactly the mistake
+   that is expensive to unpick. Creating the tenant and importing into it
+   are one action here, so the file cannot land in the wrong partition.
+
+   Nothing is written until the preview below is confirmed, and the preview
+   is computed from the real file rather than described in the abstract. */
+document.getElementById("vxPageActions").innerHTML =
+  `<label class="btn btn-primary btn-sm" for="tenantCfgUpload" style="margin-bottom:0;cursor:pointer">
+     <i class="fa-solid fa-cloud-arrow-up me-1"></i>Onboard Tenant from Configuration</label>
+   <input type="file" id="tenantCfgUpload" accept=".json" class="vx-sr">`;
+
+/* What the file will actually produce, read from the file itself — the same
+   fields vxImportProductStudioExport reads, so the preview cannot claim
+   something the import will not do. */
+/* previewImport now lives in core.js as vxPreviewStudioExport() — products.html
+   reads the same file and drifted on two key paths when it had its own copy. */
+const previewImport = vxPreviewStudioExport;
+
+/* The carrier entities a tenant can be written on, and the licence basis each
+   one carries. Licence basis is a property of the PAPER, not a free choice per
+   tenant: the same programme written on Vikram & Sons is surplus lines and on
+   Rupesh & Co is admitted, and that difference decides surplus-lines tax and
+   the SL filing fee (see isAdmitted() in engine.js). Picking the carrier
+   therefore sets the basis, rather than leaving two fields that can be set to
+   contradict each other. */
+const VX_CARRIER_ENTITIES = [
+  { name: "Vikram & Sons", licence: "Surplus Lines" },
+  { name: "Rupesh & Co", licence: "Admitted" },
+];
+/* The entities above plus any carrier a tenant is already written on. Without
+   the second half, opening Edit on an existing tenant would show a list its
+   own carrier is not in, and saving would silently move it onto a different
+   entity — changing its licence basis as a side effect of an unrelated edit. */
+function vxCarrierOptions() {
+  const names = VX_CARRIER_ENTITIES.map(c => c.name);
+  (VX.tenants || []).forEach(t => { if (t.carrier && !names.includes(t.carrier)) names.push(t.carrier); });
+  return names;
+}
+
+/* A tenant code is the partition key every imported row is filed under, so it
+   has to be unique and stable. It is a sequence — TENANT-1001, TENANT-1002 —
+   not a word derived from the tenant's name: two carriers can be renamed into
+   the same stem, and a code that moves when someone edits a name is not an
+   identifier at all. Continues from the highest sequence code already issued,
+   so it never reissues one a deleted tenant used. */
+const VX_TENANT_CODE_SEQ_START = 1001;
+function vxTenantCode() {
+  const used = (VX.tenants || [])
+    .map(t => /^TENANT-(\d+)$/i.exec(String(t.code || "")))
+    .filter(Boolean).map(m => +m[1]);
+  const next = Math.max(VX_TENANT_CODE_SEQ_START - 1, ...used) + 1;
+  return "TENANT-" + next;
+}
+
+document.getElementById("tenantCfgUpload").onchange = async e => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  let raw;
+  try { raw = await vxParseJsonUpload(file); }
+  catch (err) { vxToast("Upload failed", err.message, "err"); return; }
+  if (!raw || !raw.product || !raw.product.name) {
+    vxToast("Not a product configuration", "The file has no product.name — nothing to onboard from.", "err");
+    return;
+  }
+  const pv = previewImport(raw);
+  const suggestCode = vxTenantCode();
+
+  vxModal("Onboard a tenant from this configuration", `
+    <div class="sub mb-3">Creates the tenant first, then imports this file straight into its own partition — so the configuration cannot land in another tenant by accident.</div>
+
+    <h6 style="font-size:12px;font-weight:700;margin:0 0 8px">1 · The new tenant</h6>
+    <div class="row g-3">
+      <div class="col-md-6"><label>Tenant Name</label>
+        <input class="form-control form-control-sm T" data-k="name" value="${pv.P.carrier || pv.P.name}"></div>
+      <div class="col-md-3"><label>Code <span style="font-weight:400;color:var(--text-mute)">· auto</span></label>
+        <input class="form-control form-control-sm T" data-k="code" id="tcCode" value="${suggestCode}" readonly
+               title="Issued in sequence and never reused — this is the tenant's partition key, so it is not hand-edited."
+               style="background:var(--surface-2);cursor:not-allowed"></div>
+      <div class="col-md-3"><label>Plan</label>
+        <select class="form-select form-select-sm T" data-k="plan">
+          ${["Growth", "Enterprise", "Trial"].map(p => `<option>${p}</option>`).join("")}</select></div>
+      <div class="col-md-6"><label>Carrier Entity</label>
+        <select class="form-select form-select-sm T" data-k="carrier" id="tcCarrier">
+          ${VX_CARRIER_ENTITIES.map(c => `<option value="${c.name}" data-licence="${c.licence}"
+             ${c.name === (pv.P.carrier || "") ? "selected" : ""}>${c.name} — ${c.licence}</option>`).join("")}
+          ${VX_CARRIER_ENTITIES.some(c => c.name === pv.P.carrier) || !pv.P.carrier ? ""
+            : `<option value="${pv.P.carrier}" data-licence="Surplus Lines" selected>${pv.P.carrier} — from this file</option>`}
+        </select></div>
+      <div class="col-md-3"><label>Licence Basis</label>
+        <select class="form-select form-select-sm T" data-k="licence" id="tcLicence">
+          <option>Surplus Lines</option><option>Admitted</option></select></div>
+      <div class="col-md-3"><label>Licensed Seats</label>
+        <input type="number" class="form-control form-control-sm T" data-k="seats" value="10"></div>
+    </div>
+
+    <h6 style="font-size:12px;font-weight:700;margin:18px 0 8px">2 · What this file will create</h6>
+    <div class="vx-tw"><table class="vx-t"><tbody>
+      <tr><td style="width:190px">Product</td><td><b>${pv.P.name}</b> <code style="font-size:11px">${pv.P.code || "—"}</code> · ${pv.P.status === "draft" ? "Draft" : "Active"}</td></tr>
+      <tr><td>Line of Business</td><td>${pv.lobIsNew
+        ? `<span class="vx-b amber">${pv.lobName}</span> <span style="color:var(--warn);font-size:11.5px">— new line, no calculation engine behind it. A quote on it cannot be rated.</span>`
+        : `<span class="vx-b green">${pv.lobName}</span> <span style="font-size:11.5px;color:var(--text-mute)">— binds to this platform's existing engine</span>`}</td></tr>
+      <tr><td>Coverages</td><td>${pv.parents.length} primary${pv.children.length ? ` · ${pv.children.length} child` : ""}
+        ${pv.parents.length ? `<div style="font-size:11.3px;color:var(--text-mute);margin-top:3px">${pv.parents.map(c => c.name).join(", ")}</div>` : ""}</td></tr>
+      <tr><td>Rating factors</td><td>${pv.factors}${pv.tables ? ` · ${pv.tables} with rate tables` : ' <span style="color:var(--warn)">· no rate tables</span>'}</td></tr>
+      <tr><td>Rating formulas</td><td>${pv.formulas
+        ? `${pv.formulas}`
+        : '<span class="vx-b amber">none</span> <span style="font-size:11.5px;color:var(--warn)">— a new tenant has no formula of its own, so imported factors will not reach a premium until one is authored in Formula Builder.</span>'}</td></tr>
+      <tr><td>Eligibility rules</td><td>${pv.elig || "—"}</td></tr>
+      <tr><td>States</td><td>${(pv.P.jurisdictions || []).join(", ") || "—"}</td></tr>
+    </tbody></table></div>
+
+    <h6 style="font-size:12px;font-weight:700;margin:18px 0 8px">3 · Go-live</h6>
+    <div style="border:1px solid var(--border);border-radius:var(--radius);padding:11px 14px">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="tcPublish">
+        <label class="form-check-label" for="tcPublish" style="font-size:12.5px">
+          Publish the rating version on import
+          <div style="font-size:11.5px;color:var(--text-dim);margin-top:2px">
+            The file marks this product <b>${pv.P.status === "draft" ? "Draft" : "Active"}</b>, so its version is created as Draft — and a Draft version rates nothing.
+            Leave this unticked and the tenant will read <b>not ready to quote</b> on Tenant Setup until someone publishes it deliberately.
+          </div></label>
+      </div>
+    </div>
+
+    <div class="vx-ai mt-3" style="font-size:12px"><span class="tag"><i class="fa-solid fa-circle-info"></i>After onboarding</span>
+      Imported factors land <b>Not wired</b> and awaiting approval — approve them on Rating Factors (someone other than their creator) before they affect a premium.</div>`,
+    [{ t: "Cancel", c: "secondary" },
+     { t: "Create Tenant & Import", c: "primary", fn: () => {
+        const t = {};
+        document.querySelectorAll(".T").forEach(i => { t[i.dataset.k] = i.value; });
+        if (!t.name) { vxToast("Tenant name required", "Give the tenant a name before onboarding.", "err"); return; }
+        // Same collision as the plain Add Tenant form — see the matching
+        // comment in the vxAgGrid onAfterSave block below for why this
+        // is surfaced rather than blocked.
+        const dupeOnboard = VX.tenants.find(x => String(x.name || "").trim().toLowerCase() === t.name.trim().toLowerCase());
+        if (dupeOnboard) vxToast("Tenant name already in use", `${dupeOnboard.name} (${dupeOnboard.code}) already exists — this onboards a second, separate tenant with the same name. Any screen that reports back by name alone can't tell them apart; use the code to know which is active.`, "info");
+        const publishNow = !!(document.getElementById("tcPublish") || {}).checked;
+
+        const id = Math.max(0, ...VX.tenants.map(x => +x.id || 0)) + 1;
+        const tenant = {
+          id, code: (t.code || "T" + id).toUpperCase(), name: t.name,
+          carrier: t.carrier || t.name, plan: t.plan || "Growth",
+          licence: t.licence || "Surplus Lines",
+          nonAdmitted: (t.licence || "Surplus Lines") !== "Admitted",
+          seats: +t.seats || 10, lobs: [], status: "Active",
+          since: new Date().toISOString().slice(0, 10),
+          accent: "#7c3aed",
+          states: pv.P.jurisdictions || [],
+          /* Taken from the covers the file actually declares. Left empty,
+             Tenant Setup's "Coverage classes" step reads as outstanding and
+             the tenant reports not-ready — while the coverage tree it was
+             asking about had in fact just been imported. */
+          coverageClasses: pv.parents.map(c => c.name),
+          childClasses: pv.children.map(c => c.name),
+        };
+        VX.tenants.push(tenant);
+
+        const res = vxImportProductStudioExport(raw, id);
+        if (!res.ok) {
+          VX.tenants = VX.tenants.filter(x => x.id !== id);   // don't leave a half-made tenant behind
+          vxToast("Import failed", res.reason || "The file could not be imported.", "err");
+          return;
+        }
+        /* The tenant now genuinely owns this line — record it so its own
+           screens and the tenant switcher agree with what was imported. */
+        if (res.lobName && !tenant.lobs.includes(res.lobName)) tenant.lobs.push(res.lobName);
+
+        /* Publishing is the one step that decides whether this tenant can
+           actually quote, so it is an explicit choice rather than something
+           the import does quietly on the strength of a status string in a
+           file. Unticked, the version stays Draft and Tenant Setup says so. */
+        if (publishNow) {
+          const v = VX.versions.find(x => x.tenantId === id && x.product === res.product.name);
+          if (v) {
+            v.status = "Published";
+            // The importer already normalised the export's display date to
+            // ISO; falling back to the raw field here would put "10-Sept-2026"
+            // back into a field every comparison treats as ISO.
+            if (!v.effectiveStart) v.effectiveStart = VX.referenceDate || "";
+            res.product.status = "Active";
+            try { localStorage.setItem("vxProductsState", JSON.stringify(VX.products)); } catch (err) {}
+          }
+        }
+        persistTenants();
+        /* Replayed on every future load, so the onboarding survives a
+           refresh the same way the built-in tenants' own data does. */
+        if (typeof vxSaveProductStudioImport === "function") vxSaveProductStudioImport(raw, id);
+
+        /* Report the tenant's REAL readiness, measured with the same
+           function Tenant Setup uses — so this modal and that screen can
+           never disagree about whether the tenant can quote. */
+        const setup = (typeof tenantSetupSteps === "function") ? tenantSetupSteps(id) : null;
+        const outstanding = setup ? setup.required.filter(s => !s.done) : [];
+
+        vxModal("Tenant onboarded", `
+          <div style="font-size:13.5px;line-height:1.7">
+            <b>${tenant.name}</b> created and configured from <code style="font-size:11.5px">${pv.P.code || pv.P.name}</code>.
+            <div class="vx-tw mt-3"><table class="vx-t"><tbody>
+              <tr><td style="width:180px">Line of Business</td><td>${res.lobName}${res.lobIsNew ? ' <span class="vx-b amber">new line — not rateable</span>' : ""}</td></tr>
+              <tr><td>Coverages</td><td>${res.coverCount}</td></tr>
+              <tr><td>Rating factors</td><td>${res.factorCount}${res.tableCount ? ` · ${res.tableCount} rate tables` : ""}</td></tr>
+              <tr><td>Rating formulas</td><td>${res.formulaCount || 0}</td></tr>
+              <tr><td>Eligibility rules</td><td>${res.eligCount}</td></tr>
+              ${res.basePremium != null ? `<tr><td>Base premium</td><td>${vxMoney(res.basePremium)}</td></tr>` : ""}
+            </tbody></table></div>
+            ${setup ? (setup.ready
+              ? `<div class="mt-3" style="border:1px solid rgba(52,195,143,.4);background:rgba(52,195,143,.07);border-radius:var(--radius);padding:11px 15px;font-size:12.6px">
+                   <i class="fa-solid fa-circle-check me-1" style="color:var(--good)"></i>
+                   <b>Ready to quote.</b> All ${setup.required.length} required setup steps are satisfied.</div>`
+              : `<div class="mt-3" style="border:1px solid rgba(241,180,76,.45);background:rgba(241,180,76,.07);border-radius:var(--radius);padding:11px 15px;font-size:12.6px">
+                   <i class="fa-solid fa-triangle-exclamation me-1" style="color:var(--warn)"></i>
+                   <b>Not ready to quote yet</b> — ${setup.doneRequired.length} of ${setup.required.length} required steps done.
+                   Outstanding: ${outstanding.map(s => s.label).join(", ")}.
+                   <div style="margin-top:5px"><a href="tenant-setup.html">Open Tenant Setup →</a></div></div>`) : ""}
+          </div>`,
+          [{ t: "Stay here", c: "secondary", fn: () => location.reload() },
+           { t: "Switch to " + tenant.name, c: "primary", fn: () => vxSetTenant(tenant.id) }], "modal-md");
+     }}], "modal-lg");
+
+  /* Keep the three identity fields consistent with each other. The carrier
+     carries the licence basis, and the code is derived from the name — none
+     of that should be able to drift into a contradiction while the form is
+     open, which is why the basis follows the carrier rather than sitting
+     beside it as an independent choice. */
+  const carrierSel = document.getElementById("tcCarrier");
+  const licenceSel = document.getElementById("tcLicence");
+  const syncLicence = () => {
+    const opt = carrierSel && carrierSel.selectedOptions[0];
+    if (opt && opt.dataset.licence && licenceSel) licenceSel.value = opt.dataset.licence;
+  };
+  if (carrierSel) { carrierSel.onchange = syncLicence; syncLicence(); }
+};
+
 /* Provision a newly-created tenant.
    Adding a tenant row on its own produced a dead end: the tenant appeared in
    the switcher, but every screen inside it was empty, because products,
@@ -149,7 +395,22 @@ vxAgGrid({ el:"#grid", key:"tenants", name:"Tenant", size:12,
     {k:"childClasses",l:"Child Coverage Classes",r:r=>(r.childClasses||[]).map(x=>'<span class="vx-b cyan me-1 mb-1 d-inline-block">'+x+'</span>').join("")||"—"},
     {k:"_statesFull",l:"Licensed States (all)",r:r=>(r.states||[]).map(x=>'<span class="vx-b gray me-1 mb-1 d-inline-block">'+x+'</span>').join("")||"—"}],
   form:[
-    {k:"name",l:"Tenant Name"},{k:"code",l:"Tenant Code"},{k:"carrier",l:"Carrier Entity"},
+    {k:"name",l:"Tenant Name"},
+    /* Issued in sequence, never typed — see vxTenantCode(). Shown so the form
+       still states the record in full, read-only so it cannot be edited into
+       a collision with the partition key another tenant already owns. */
+    /* `val` is a function, not a fixed `def`: a default is evaluated once when
+       this grid is configured, so adding two tenants without reloading would
+       offer the same code twice. Issued when the form opens instead, and an
+       existing tenant keeps the code it already has. */
+    {k:"code",l:"Tenant Code",readonly:true,
+      val:(cur,isNew)=>isNew ? vxTenantCode() : (cur.code || ""),
+      hint:"Issued in sequence (TENANT-1001, TENANT-1002, …) and never reused — this is the tenant's partition key."},
+    /* Carrier is a choice from the entities this platform writes on, not free
+       text — the paper decides the licence basis, and a typo'd carrier name
+       silently detaches a tenant from the basis it should have inherited. */
+    {k:"carrier",l:"Carrier Entity",t:"select",opts:vxCarrierOptions()},
+    {k:"licence",l:"Licence Basis",t:"select",opts:["Surplus Lines","Admitted"]},
     {k:"plan",l:"Plan",t:"select",opts:["Enterprise","Growth","Trial"]},
     {k:"seats",l:"Licensed Seats",t:"number"},
     {k:"status",l:"Status",t:"select",opts:["Active","Trial","Suspended"]},
@@ -174,6 +435,32 @@ vxAgGrid({ el:"#grid", key:"tenants", name:"Tenant", size:12,
   /* A tenant is only real once its partition has configuration in it. */
   onAfterSave:(rec,isNew)=>{
     splitCoverageSelection(rec);
+    /* The carrier carries the licence basis, so the chosen carrier wins over
+       whatever the basis field happens to read — otherwise the two can be
+       saved contradicting each other, and isAdmitted() would resolve a
+       tenant's paper differently from the carrier named on it. */
+    const ent = VX_CARRIER_ENTITIES.find(c=>c.name===rec.carrier);
+    if(ent) rec.licence = ent.licence;
+    rec.nonAdmitted = (rec.licence || "Surplus Lines") !== "Admitted";
+    /* Last line of defence on the code. Checked for an actual collision
+       rather than for the right shape: a correctly-shaped code can still be
+       one another tenant already owns, and two tenants sharing a partition
+       key is the failure this whole scheme exists to prevent. */
+    /* Tenant NAME carries no uniqueness guarantee — only the code does
+       (checked below). Nothing stops "abc" from being created twice, and a
+       second "abc" is a real, quiet trap: any screen that reports back by
+       name alone (a refusal message, a toast) reads as correct for BOTH of
+       them, so a product built under the first "abc" looks — to a person
+       working in the second — like it should be there and inexplicably
+       isn't. Not blocked, since a genuine reason to reuse a display name can
+       exist (a re-onboarded relationship, a sandbox copy) — surfaced
+       instead, with the code that actually disambiguates them. */
+    if(isNew){
+      const dupe = VX.tenants.find(t=>t.id!==rec.id && String(t.name||"").trim().toLowerCase()===String(rec.name||"").trim().toLowerCase());
+      if(dupe) vxToast("Tenant name already in use", `${dupe.name} (${dupe.code}) already exists — this is a second, separate tenant with the same name (${rec.code || "code pending"}). Any screen that reports back by name alone can't tell them apart; use the code.`, "info");
+      const clash = VX.tenants.some(t=>t.id!==rec.id && String(t.code||"")===String(rec.code||""));
+      if(!rec.code || clash) rec.code = vxTenantCode();
+    }
     if(isNew){ provisionTenant(rec);
     vxToast("Tenant provisioned", `${(rec.lobs||[]).length} line(s) of business configured — switch to ${rec.name} to work in it`, "ok"); }
     persistTenants(); },

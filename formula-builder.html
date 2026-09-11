@@ -253,8 +253,15 @@ const FNS = ["IF", "ELSE", "MIN", "MAX", "ROUND", "LOOKUP", "AND", "OR", ">", "<
    same honesty rule as everywhere else: the engine does not execute
    configured factors yet, so a formula built with one of these documents
    intent, it does not compute anything real. */
+/* Resolve a token name back to the factor behind it — THIS tenant's factor.
+   Factor codes are only unique within a tenant: two carriers onboarded from
+   the same Product Studio export both hold RAT-FACTOR-001. Matching on code
+   alone returned whichever row sat earliest in the array, so the builder
+   showed the other carrier's name, value and wiring state for a token that
+   belonged to this one. Shared platform factors (no tenantId) still resolve. */
 function customFactorForVar(n) {
-  return (VX.ratingFactors || []).find(f => f.code === n && (f.custom || f.verified === undefined));
+  const rows = (VX.ratingFactors || []).filter(f => f.code === n && (f.custom || f.verified === undefined));
+  return rows.find(f => f.tenantId === VX.activeTenantId) || rows.find(f => f.tenantId == null) || null;
 }
 function customVarsForCob(cobKey) {
   const coverage = cobKey === ACCOUNT_KEY ? "Account Level" : cobKey;
@@ -266,7 +273,26 @@ function customVarsForCob(cobKey) {
      stays tolerant of the old single-string shape too. */
   return (VX.ratingFactors || [])
     .filter(f => (f.custom || f.verified === undefined) && f.approvedForFormulas && vxAsFieldArr(f.coverage).includes(coverage) && f.code)
-    .map(f => ({ n: f.code, v: f.defaultValue != null ? +f.defaultValue : 1 }));
+    .filter(ofActiveTenant)
+    .map(f => ({ n: f.code, v: customFactorValue(f) }));
+}
+/* A factor built here must belong to the tenant building it. Custom factors
+   are not partitioned in VX.ratingFactors — every tenant's rows sit in one
+   array — so without this the palette offered another carrier's factors as
+   variables, and a formula saved against one would price this tenant's
+   quotes off a factor it does not own. Rows with no tenantId are shared
+   platform factors and stay available to everyone. */
+function ofActiveTenant(f) {
+  return f.tenantId == null || f.tenantId === VX.activeTenantId;
+}
+/* An uploaded factor's real value usually lives in the rate table that came
+   with it (`amount` is just a placeholder 1 alongside it), so read the table
+   first and fall back to the flat default. */
+function customFactorValue(f) {
+  const t = (typeof ENGINE !== "undefined" && ENGINE.customFactorTableInfo)
+    ? ENGINE.customFactorTableInfo(f) : null;
+  if (t && isFinite(t.base)) return t.base;
+  return f.defaultValue != null ? +f.defaultValue : 1;
 }
 /* Same lookup, but the ones still AWAITING approval — a factor invisible
    here gave no signal it existed at all, which read as "the platform lost
@@ -274,16 +300,66 @@ function customVarsForCob(cobKey) {
    Shown in the palette as a locked tile instead: visible, explains why it
    can't be used yet, but not draggable — customVarsForCob above stays the
    only source of tokens Evaluate/Save actually accept. */
+/* This tenant's own factors that are attached to NO coverage at all. An
+   uploaded configuration files some items under its own section headings
+   ("BASE PREMIUM", "RISK FACTORS") rather than under a cover, so they can
+   never appear in any coverage's palette — which made the builder show three
+   factors where Rating Factors showed eight, and read as the builder having
+   lost them. Shown here as locked tiles saying exactly why instead. */
+function unattachedCustomVarsForCob() {
+  return (VX.ratingFactors || [])
+    .filter(f => (f.custom || f.verified === undefined) && f.code && !vxAsFieldArr(f.coverage).length)
+    // The base premium is deliberately coverage-less — the engine recognises
+    // it by name (see /base premium/i in configuredRate(), engine.js) and
+    // applies it to every coverage group, not to one in particular. Flagging
+    // it "not attached to a coverage" reads as something to go fix, when
+    // attaching it to one would be the actual mistake.
+    .filter(f => !/base premium/i.test(f.assignedTo || ""))
+    .filter(ofActiveTenant)
+    .map(f => ({ n: f.code, v: customFactorValue(f) }));
+}
 function pendingCustomVarsForCob(cobKey) {
   const coverage = cobKey === ACCOUNT_KEY ? "Account Level" : cobKey;
   return (VX.ratingFactors || [])
     .filter(f => (f.custom || f.verified === undefined) && !f.approvedForFormulas && vxAsFieldArr(f.coverage).includes(coverage) && f.code)
-    .map(f => ({ n: f.code, v: f.defaultValue != null ? +f.defaultValue : 1 }));
+    .filter(ofActiveTenant)
+    .map(f => ({ n: f.code, v: customFactorValue(f) }));
+}
+/* COB_VARS names the variables the platform's OWN built-in calculator
+   supplies for a coverage — BaseLossCost, ILF, LCM and the rest of
+   truckingReal()'s ~27 terms for "Auto Liability". Offering that list
+   unconditionally meant a tenant whose product rates on its own uploaded
+   configuration (engine.js's configuredRate(), which supplies none of
+   those — only its own factor codes) saw all 27 anyway, purely because its
+   coverage happened to share a name with VeriDex's. A formula built from
+   one would throw "missing or non-numeric value" at evaluation — the exact
+   failure the sample import hit before its formulas were rewritten. Suppress
+   the built-in set for a line the active tenant rates via an uploaded
+   product; this tenant's own factor codes (from customVarsForCob) still
+   show either way. */
+function activeLobIsConfigured(lob) {
+  const tid = VX.activeTenantId;
+  return (VX.products || []).some(p => p.tenantId === tid && p.lob === lob && p.imported);
+}
+/* BasePremium is not one of this tenant's own uploaded factors — it never
+   carries a `coverage`, so it can never match customVarsForCob's per-coverage
+   filter — but it is a real, always-available token: configuredRate()
+   (engine.js) seeds it into every configured formula's variable map before
+   evaluation, for every coverage. Leaving it out of the palette meant a
+   formula author for a configured tenant had to already know "BasePremium"
+   exists and type it in blind — the one variable every one of their
+   formulas is built on was the one thing the palette never showed them. */
+function activeLobBasePremiumVar(cobKey) {
+  if (!activeLobIsConfigured(currentLob)) return [];
+  const info = ENGINE.configuredBasePremium(VX.activeTenantId, currentLob);
+  return info.value != null ? [{ n: "BasePremium", v: info.value }] : [];
 }
 function varsForCob(cobKey) {
-  const base = COB_VARS[cobKey] || [];
+  const base = activeLobIsConfigured(currentLob) ? [] : (COB_VARS[cobKey] || []);
   const known = new Set(base.map(v => v.n));
-  return base.concat(customVarsForCob(cobKey).filter(v => !known.has(v.n)));
+  return base
+    .concat(activeLobBasePremiumVar(cobKey).filter(v => !known.has(v.n)))
+    .concat(customVarsForCob(cobKey).filter(v => !known.has(v.n) && v.n !== "BasePremium"));
 }
 function toTokens(arr, cobKey) {
   const varNames = new Set(varsForCob(cobKey).map(v => v.n));
@@ -294,9 +370,34 @@ function toTokens(arr, cobKey) {
     t: (OPS.includes(v) || FNS.includes(v)) ? "op" : (varNames.has(v) ? "var" : "num"), v }));
 }
 function findVarDefault(name) {
+  /* Same gap as varSource() above, hit from a different door: BasePremium is
+     the tenant's own factor row, but that row's code is whatever the import
+     assigned it ("RAT-BR-GUI"), never literally the string "BasePremium" —
+     so customFactorForVar(name), which matches on f.code === name, can never
+     find it. Every path here fell through to the hardcoded `return 1`, so
+     the Test & Preview panel evaluated every configured formula with
+     BasePremium pinned at $1 regardless of the tenant's real base — the
+     same wrong number for a reason that had nothing to do with the formula
+     itself. */
+  if (name === "BasePremium" && typeof activeLobIsConfigured === "function" && activeLobIsConfigured(currentLob)) {
+    const info = typeof ENGINE !== "undefined" && ENGINE.configuredBasePremium
+      ? ENGINE.configuredBasePremium(VX.activeTenantId, currentLob) : { value: null };
+    if (info.value != null) return info.value;
+  }
   for (const key in COB_VARS) { const hit = COB_VARS[key].find(x => x.n === name); if (hit) return hit.v; }
   const f = customFactorForVar(name);
-  if (f) return f.defaultValue != null ? +f.defaultValue : 1;
+  /* customFactorValue(f) — not f.defaultValue directly. Every import writes
+     a placeholder defaultValue of 1 alongside a factor's real rate table
+     (the table holds the actual number); reading defaultValue straight
+     here meant the Test & Preview panel seeded every table-backed factor
+     at its placeholder 1 instead of its real, table-driven value — visible
+     in the screenshot that found this: Operating Radius Factor seeded at 1
+     instead of its real 1.5, Years in Business Factor at 1 instead of 1.4.
+     customFactorValue() is the one place that already resolves this
+     correctly (table first, defaultValue only as true fallback) — the
+     palette tile uses it; this now does too, so the two can't disagree
+     about the same factor's value again. */
+  if (f) return customFactorValue(f);
   return 1;
 }
 function currentVars() { return varsForCob(currentCob || ACCOUNT_KEY); }
@@ -321,6 +422,7 @@ const VAR_META = {
   AccountFactorMin: { l: "Account Factor Min", d: "Lower bound of the filed program band.", u: "x" },
   AccountFactorMax: { l: "Account Factor Max", d: "Upper bound of the filed program band.", u: "x" },
   RemainingFactors: { l: "Remaining Factors (catch-all)", d: "The product of every factor the engine supplies that this formula does not name explicitly. Put it last so factors added to the engine later are picked up without editing the formula.", u: "x" },
+  BasePremium: { l: "Program Base Premium", d: "This tenant's own configured starting premium for the line — read from the uploaded configuration, applied once per coverage before its factors.", u: "money" },
   VehicleOwnedFactor: { l: "Vehicle Ownership Factor", d: "Adjustment for whether the unit is owned, leased, owner-operator or non-owned.", u: "x" },
   PollutionFactor: { l: "Pollution Factor", d: "Auto liability pollution grade. The scale is not centred on 1.00 — a Low grade is still a debit.", u: "x" },
   DriverCriteriaFactor: { l: "Driver Criteria Factor", d: "Applies when the rated driver schedule breaches the filed age or CDL-experience thresholds.", u: "x" },
@@ -510,6 +612,29 @@ const KIND_META = {
     d: "Added on Rating Factors and approved — this coverage's Active formula automatically folds its value into every quote." },
 };
 function varSource(n) {
+  /* BasePremium is not an amount someone types on a quote — it's this
+     tenant's own Rating Factor row (the "Starting price" / BASE PREMIUM item
+     the export carried), the same as every other configured factor. It was
+     first classified as a generic "Input" with one fixed description for
+     every tenant; resolved against the real row instead, so its badge and
+     detail match whichever factor this tenant's own configuration actually
+     uses — its real name, kind and source, not an invented one. Unlike a
+     coverage factor, it has no coverage to route through (configuredRate()
+     applies it to every coverage by name, not by the routing
+     factorIsLive() checks), so it's live whenever a real value was found —
+     that IS how it's live. */
+  if (n === "BasePremium" && typeof activeLobIsConfigured === "function" && activeLobIsConfigured(currentLob)) {
+    const info = typeof ENGINE !== "undefined" && ENGINE.configuredBasePremium
+      ? ENGINE.configuredBasePremium(VX.activeTenantId, currentLob) : { value: null, factor: null };
+    const bf = info.factor;
+    if (info.value != null) {
+      return { kind: "custom-live", driver: null, base: info.value,
+        note: bf
+          ? `This tenant's own "${bf.name}" row on Rating Factors${info.source ? ` (${info.source})` : ""} — applied once per coverage before that coverage's own factors.`
+          : `This tenant's own configured base premium${info.source ? ` (${info.source})` : ""} — applied once per coverage before that coverage's own factors.` };
+    }
+    return { kind: "constant", driver: null, note: "No base premium is configured for this tenant's line yet." };
+  }
   if (VAR_SOURCE[n]) return VAR_SOURCE[n];
   const f = customFactorForVar(n);
   /* ENGINE.factorIsLive is the same check Rating Factors' own status badges
@@ -557,8 +682,15 @@ function fmtVarValue(n, v) {
   if (u === "x") return Number(v).toFixed(3).replace(/0+$/, "").replace(/\.$/, "") + "×";
   return String(v);
 }
-function lobsWithCob() { return [...new Set(VX.cobParents.map(c => c.lob))]; }
-function cobsForLob(lob) { return VX.cobParents.filter(c => c.lob === lob).map(c => c.name); }
+/* VX.cobParents mixes every tenant's coverage tree in one array, so reading
+   it directly meant "New Formula" always landed on whichever line sorted
+   first across ALL tenants (VeriDex's "Commercial Trucking"), never the
+   active tenant's own line — even for a tenant with no Trucking coverage at
+   all. vxVisibleCob() (core.js) is the same per-tenant, per-line visibility
+   coverages.html's own grid uses, so the picker here shows exactly what that
+   page shows. */
+function lobsWithCob() { return [...new Set(vxVisibleCob().filter(c => !c.parentCobId).map(c => c.lob))]; }
+function cobsForLob(lob) { return vxVisibleCob().filter(c => !c.parentCobId && c.lob === lob).map(c => c.name); }
 
 let currentLob = "Commercial Trucking";
 let currentCob = "Auto Liability";
@@ -573,7 +705,7 @@ let currentFormula = null;
    rather than decorative. */
 let canvasTested = false;
 
-function cobOptionsForLob(lob) { return VX.cobParents.filter(c => c.lob === lob).map(c => c.name); }
+function cobOptionsForLob(lob) { return cobsForLob(lob); }
 /* Products and versions are partitioned on /tenantId, so the raw arrays hold
    one copy per tenant that owns the line — reading them unscoped listed the
    same product and the same version several times over. The Formula Builder
@@ -837,14 +969,33 @@ function palVars(f) {
       </div>
       <div class="vx-vartile-meta"><code>${v.n}</code></div>
     </div>`).join("");
-  document.getElementById("palVar").innerHTML = usable + pending;
+  /* Same reasoning as the pending tiles above, for a different cause: these
+     belong to this tenant but to no coverage, so no formula can reach them
+     until the configuration attaches them to one. */
+  const unattached = unattachedCustomVarsForCob().filter(matches).map(v => `
+    <div class="vx-vartile" style="opacity:.55;cursor:not-allowed" title="Not attached to a coverage — click for details" onclick="unattachedVarClick('${v.n}')">
+      <div class="d-flex justify-content-between align-items-start gap-2">
+        <div class="vx-vartile-label">${varLabel(v.n)}</div>
+        <span class="vx-b gray" style="font-size:8.5px"><i class="fa-solid fa-link-slash me-1"></i>No coverage</span>
+      </div>
+      <div class="vx-vartile-meta"><code>${v.n}</code></div>
+    </div>`).join("");
+  document.getElementById("palVar").innerHTML = usable + pending + unattached;
   const sub = document.getElementById("palSub");
   const pendingCount = pendingCustomVarsForCob(currentCob || ACCOUNT_KEY).length;
+  const unattachedCount = unattachedCustomVarsForCob().length;
   if (sub) sub.textContent = `${currentVars().length} variables for ${currentCob || "Account Level"}`
     + (pendingCount ? ` · ${pendingCount} more awaiting approval` : "")
+    + (unattachedCount ? ` · ${unattachedCount} not attached to a coverage` : "")
     + ` — hover for the lookup table, click for full detail`;
   bindDrag();
   bindTip(".vx-vartile[draggable]", el => el.dataset.v);
+}
+function unattachedVarClick(n) {
+  const f = customFactorForVar(n);
+  vxToast("Not attached to a coverage",
+    `${varLabel(n)} came in under "${(f && f.assignedTo) || "a section heading"}", which is not a coverage — so no coverage formula can use it. Assign it a Coverage on Rating Factors to make it available here.`,
+    "info");
 }
 function pendingVarClick(n) {
   const f = customFactorForVar(n);
@@ -904,7 +1055,7 @@ function renderCobPicker() {
   const m = LOB_META[currentLob] || { icon: "fa-layer-group", color: "var(--cat-8)" };
   const cobs = cobsForLob(currentLob).map(name => ({
     key: name, label: name, icon: m.icon, color: m.color,
-    code: (VX.cobParents.find(c => c.name === name && c.lob === currentLob) || {}).sourceRef || "",
+    code: (vxVisibleCob().find(c => !c.parentCobId && c.name === name && c.lob === currentLob) || {}).sourceRef || "",
     warn: COB_WARN[name],
   }));
   cobs.push({ key: null, label: "Account-Level (this LOB)", icon: "fa-layer-group", color: "var(--cat-8)",
@@ -1026,7 +1177,12 @@ function renderCanvasContext() {
       <span>·</span><span>Scope: <b>${scopeLabel}</b></span>
       <span>·</span><span>Engine: <b>${engineLabel}</b></span>
       <span>·</span><span class="vx-b ${canvasTested ? "green" : "amber"}"><i class="fa-solid ${canvasTested ? "fa-circle-check" : "fa-triangle-exclamation"} me-1"></i>${canvasTested ? "Tested" : "Not tested since last change"}</span>
+      ${f ? `<span>·</span><span class="vx-b ${f.status === "Active" ? "green" : "amber"}">${f.status}</span>` : ""}
+      ${f && f.status !== "Active" ? `<button type="button" class="btn btn-outline-primary btn-sm" id="canvasPublishBtn" style="padding:1px 10px;font-size:11.5px">
+        <i class="fa-solid fa-circle-check me-1"></i>Publish</button>` : ""}
     </div>`;
+  const pubBtn = document.getElementById("canvasPublishBtn");
+  if (pubBtn) pubBtn.onclick = () => { publishFormula(f); renderCanvasContext(); };
 }
 const cv = () => document.getElementById("canvas");
 
@@ -1490,6 +1646,58 @@ function showFormulaHistory(rec) {
 }
 
 /* ---------- Formula grid (landing view) ---------- */
+/* Editing a formula always stages Draft (fbNewFormula's Save-as-Draft
+   handler) — the only way to go live was previously to attach it to a
+   rating version and republish the WHOLE version from versions.html, which
+   is real overhead for the common case of tuning a formula that is already
+   attached and simply needs its edit to take effect. This is the direct
+   path: flip straight to Active from here.
+
+   The "exactly one Active formula per (tenant, lob, coverage)" invariant
+   that applySavedFormula() (engine.js) relies on for an unambiguous match
+   is enforced the same way versions.html's own Publish already enforces
+   "exactly one Published version per product" — retiring every other
+   Active formula for the same lob/coverage/tenant, not just adding a
+   second Active one alongside it, which would make applySavedFormula
+   report a conflict and fall back to the default chain instead of running
+   either formula. */
+function publishFormula(rec) {
+  /* The canvas's own `currentFormula` is a shallow CLONE (loadFormula), kept
+     separate so editing tokens doesn't mutate the saved record until Save
+     is clicked — but that means it is not the object VX.savedFormulas
+     actually holds, and setting .status on it here would silently do
+     nothing to the real, persisted formula. Re-resolved to the canonical
+     array element by id so this works the same whether it was called from
+     the canvas (a clone) or the grid's own row action (VX.savedFormulas
+     itself, per vxAgGrid's rowActions). */
+  const r = VX.savedFormulas.find(x => x.id === rec.id) || rec;
+  const scopeLabel = r.scope === "Account" ? "Account level" : r.cob;
+  const doPublish = () => {
+    const superseded = VX.savedFormulas.filter(f => f.id !== r.id && f.status === "Active"
+      && f.lob === r.lob && f.cob === r.cob && f.tenantId === r.tenantId);
+    superseded.forEach(f => f.status = "Draft");
+    r.status = "Active";
+    localStorage.setItem("vxSavedFormulas", JSON.stringify(VX.savedFormulas));
+    vxToast("Formula published", `${r.name} is now Active on ${r.lob} — ${scopeLabel}`
+      + (superseded.length ? `; superseded ${superseded.map(f => f.name).join(", ")}` : ""), "ok");
+    vxAutoSave(); fbGrid.reload();
+  };
+  if (r.status === "Active") { vxToast("Already Active", `${r.name} is already live.`, "info"); return; }
+  const conflict = VX.savedFormulas.filter(f => f.id !== r.id && f.status === "Active"
+    && f.lob === r.lob && f.cob === r.cob && f.tenantId === r.tenantId);
+  if (!r.tested || conflict.length) {
+    vxConfirm("Publish this formula?", `
+      <div style="font-size:13px;line-height:1.6">
+        Makes <b>${r.name}</b> (${r.lob} — ${scopeLabel}) <span class="vx-b green">Active</span> immediately —
+        the next quote on this line and coverage runs it, with no separate rating-version republish needed.
+        ${!r.tested ? `<div class="mt-2"><span class="vx-b amber"><i class="fa-solid fa-triangle-exclamation me-1"></i>Not evaluated</span> — this formula hasn't been run through Evaluate Formula since it was last changed.</div>` : ""}
+        ${conflict.length ? `<div class="mt-2">Supersedes the currently Active <b>${conflict.map(f => f.name).join(", ")}</b> for this same line and coverage — only one may be Active at a time.</div>` : ""}
+      </div>`, doPublish, !!conflict.length);
+    return;
+  }
+  doPublish();
+}
+
 let fbGrid = null;
 fbGrid = vxAgGrid({ el: "#fbGrid", key: "savedFormulas", name: "Formula", size: 12, readOnly: true,
   onHist: r => showFormulaHistory(r),
@@ -1526,6 +1734,7 @@ fbGrid = vxAgGrid({ el: "#fbGrid", key: "savedFormulas", name: "Formula", size: 
   ],
   rowActions: [
     { i: "fa-pen-to-square", t: "Open in builder", fn: r => loadFormula(r.id) },
+    { i: "fa-circle-check", t: "Publish (make Active)", fn: publishFormula },
     { i: "fa-trash", t: "Delete formula", fn: r => vxConfirm("Delete formula?",
         `Remove <b>${r.name}</b>? Any rating version it is attached to will stop running it.`, () => {
           VX.savedFormulas = VX.savedFormulas.filter(x => x.id !== r.id);

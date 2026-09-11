@@ -1,0 +1,103 @@
+{
+  "_readme": "Fixed copy of gemini-code-1789042944332.json. quote-json.html's adapter (amsToEngine in quote-json.html) reads a FLAT ams-service-shaped payload: genInfo, insuredInfo, coveragesInfo, radiusOfOperationsInfo, serviceInspectionInfo, filingInfo, vehicles and drivers all sit directly on the top-level object. The uploaded file had two problems: (1) everything was nested one level deeper, under a `ratingInputs` wrapper the adapter never looks inside, and (2) there was no `genInfo.application_type_id` anywhere -- the very first thing the adapter checks, and the reason the upload failed immediately with 'genInfo.application_type_id is missing -- rating cannot route a submission without it.' This copy un-nests ratingInputs.* back to the top level and adds genInfo.application_type_id: 483 (TRUCK, per APPTYPE_LOB in quote-json.html) -- inferred from the data itself: al_check/pd_check/cargo_check are all true, NAICS 484110 is General Freight Trucking, and the payload carries vehicles and CDL-licensed drivers, which only the Trucking adapter reads. Nothing else in ratingInputs.* was changed.",
+
+  "genInfo": {
+    "application_type_id": 483,
+    "policytype": "New"
+  },
+
+  "insuredInfo": {
+    "insured_garaging_state": "TX"
+  },
+
+  "coveragesInfo": {
+    "rating_type": "Composite Rating Engine",
+    "liability": 500000,
+    "cargo_limit": 100000,
+    "pd_high_deductible": "5000",
+    "pd_deductible_amount": 2500,
+    "naics_code": 484110,
+    "rating_class": 5,
+    "dashcam": "No",
+    "al_check": true,
+    "pd_check": true,
+    "cargo_check": true,
+    "towing": "10000"
+  },
+  "filingInfo": {
+    "safer_factor": "1.0",
+    "FMCSA_alert": "0"
+  },
+  "radiusOfOperationsInfo": {
+    "radius": 450,
+    "Intrastate_interstate": "Interstate"
+  },
+  "serviceInspectionInfo": {
+    "number_of_inspection_si": 0,
+    "oos_violation_si": 0,
+    "account_percent_si": "-",
+    "account_percent_driver": "-"
+  },
+  "commoditiesInfo": {
+    "secondary_class": "Commercial Auto / Trucking"
+  },
+  "uwReviewFactors": {
+    "min_earn_factor": 25
+  },
+  "vehicles": [
+    {
+      "id": 903201,
+      "xid": 1,
+      "year": 2023,
+      "make": "Ford",
+      "model": "Transit 350 Cargo Van",
+      "model_number": "MOD-2023-FT350",
+      "weight": "Light Commercial",
+      "ownership": "Owned",
+      "primary_code": 332,
+      "rating_class": 5,
+      "stated_value": 250000,
+      "al_value": 170000,
+      "vehicle_type": "Cargo Van"
+    },
+    {
+      "id": 903202,
+      "xid": 2,
+      "year": 2022,
+      "make": "Freightliner",
+      "model": "M2 106 Box Truck",
+      "model_number": "MOD-2022-FLM2",
+      "weight": "Medium Commercial",
+      "ownership": "Owned",
+      "primary_code": 332,
+      "rating_class": 5,
+      "stated_value": 250000,
+      "al_value": 170000,
+      "vehicle_type": "Box Truck"
+    }
+  ],
+  "drivers": [
+    {
+      "id": "DRV-1",
+      "given_name": "Driver",
+      "last_name": "One",
+      "dob": "05/14/2002",
+      "licensestate": "TX",
+      "licenseclasstype": "Class A",
+      "experience": "3 Years",
+      "tenure": 1,
+      "status": "Pending Verification"
+    },
+    {
+      "id": "DRV-2",
+      "given_name": "Driver",
+      "last_name": "Two",
+      "dob": "03/10/2001",
+      "licensestate": "TX",
+      "licenseclasstype": "Class A",
+      "experience": "5 Years",
+      "tenure": 2,
+      "status": "Pending Verification"
+    }
+  ]
+}

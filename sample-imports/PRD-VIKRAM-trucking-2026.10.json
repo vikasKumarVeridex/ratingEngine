@@ -1,0 +1,409 @@
+{
+  "schema": "insurance-product-studio-product-v1",
+  "exportedAt": "2026-09-10T00:00:00.000Z",
+  "productId": "PRD-030",
+  "version": "2026.10",
+  "status": "draft",
+  "_readme": {
+    "purpose": "Product Studio export shaped for the VeriDex rating engine. Verified end to end: importing this creates the LOB binding, coverage tree, product, rating factors with real tables, and eligibility rules — and once the factors are approved on Rating Factors, they fold into a real Commercial Trucking premium.",
+    "whyFamilyMatters": "product.family MUST be one of the platform's known lines or the importer creates a brand-new line with no calculator behind it. 'Transportation' / 'Commercial Auto' do NOT match — 'Commercial Trucking' does.",
+    "whyGroupNamesMatter": "Each rating group's name becomes the imported factor's `coverage`. Naming a group after a real coverage ('Auto Liability') is what lets the engine fold that factor into that coverage's premium. A group called 'RISK FACTORS' imports fine but never reaches a premium.",
+    "amountVsTable": "`amount` becomes the factor's Default Value and is what actually rates (via the RemainingFactors catch-all). `table.data` imports alongside it as this tenant's own browsable rate table. Both are carried here deliberately.",
+    "afterUpload": "Factors land as Not wired and awaiting approval by design. Approve each on Rating Factors (a second user must approve — the creator cannot approve their own), then quote the product in Sandbox Quote Generation."
+  },
+  "product": {
+    "id": "PRD-030",
+    "name": "Vikram & Sons Trucking Program",
+    "family": "Commercial Trucking",
+    "lineOfBusiness": "Commercial Trucking",
+    "productType": "Commercial Auto",
+    "segment": "Commercial Lines",
+    "version": "2026.10",
+    "status": "draft",
+    "effectiveFrom": "2026-09-01",
+    "effectiveTo": null,
+    "owner": "Anika Sharma",
+    "carrier": "Vikram & Sons Insurance",
+    "code": "VIKTRK-2026-001",
+    "description": "Commercial trucking auto — Auto Liability, Physical Damage and Motor Truck Cargo.",
+    "jurisdictions": [
+      "TX",
+      "CA",
+      "OK",
+      "NM",
+      "LA"
+    ],
+    "lastModified": "10-Sept-2026",
+    "lastModifiedAt": "2026-09-10T00:00:00.000Z"
+  },
+  "studios": {
+    "coverage": [
+      {
+        "id": "COV-AL",
+        "code": "COV-AL",
+        "name": "Auto Liability",
+        "availability": "mandatory",
+        "type": "Third Party — Liability",
+        "unit": "Vehicle",
+        "deductibleType": "fixed",
+        "deductibleAmount": "5000",
+        "coverJurisdictionSetup": [
+          {
+            "state": "TX",
+            "available": true,
+            "admitted": "Surplus Lines"
+          },
+          {
+            "state": "CA",
+            "available": true,
+            "admitted": "Surplus Lines"
+          }
+        ]
+      },
+      {
+        "id": "COV-PD",
+        "code": "COV-PD",
+        "name": "Physical Damage",
+        "availability": "optional",
+        "type": "First Party — Property Damage",
+        "unit": "Vehicle",
+        "deductibleType": "fixed",
+        "deductibleAmount": "5000"
+      },
+      {
+        "id": "COV-MTC",
+        "code": "COV-MTC",
+        "name": "Motor Truck Cargo",
+        "availability": "optional",
+        "type": "First Party — Cargo",
+        "unit": "Vehicle",
+        "deductibleType": "fixed",
+        "deductibleAmount": "2500"
+      },
+      {
+        "id": "COV-BI",
+        "code": "COV-BI",
+        "name": "Bodily Injury",
+        "availability": "mandatory",
+        "type": "Third Party — Liability",
+        "conditionalOn": "Auto Liability"
+      },
+      {
+        "id": "COV-PDL",
+        "code": "COV-PDL",
+        "name": "Property Damage Liability",
+        "availability": "mandatory",
+        "type": "Third Party — Liability",
+        "conditionalOn": "Auto Liability"
+      }
+    ],
+    "rating": [
+      {
+        "group": "BASE PREMIUM",
+        "items": [
+          {
+            "id": "RAT-BASE-TRK",
+            "name": "Program base premium",
+            "type": "base",
+            "status": "done",
+            "value": "$4,800/yr",
+            "amount": "4800",
+            "configured": true
+          }
+        ]
+      },
+      {
+        "group": "Auto Liability",
+        "items": [
+          {
+            "id": "VIK_DRIVER_SCORE",
+            "name": "Driver Score Factor",
+            "type": "factor",
+            "status": "done",
+            "value": "table",
+            "amount": "1.04",
+            "table": {
+              "id": "vikDriverScore",
+              "sourceSheet": "Vikram Manual — Driver Score",
+              "data": [
+                {
+                  "violationPoints": "0",
+                  "factor": 0.92
+                },
+                {
+                  "violationPoints": "1-3",
+                  "factor": 1
+                },
+                {
+                  "violationPoints": "4-6",
+                  "factor": 1.12
+                },
+                {
+                  "violationPoints": "7-9",
+                  "factor": 1.28
+                },
+                {
+                  "violationPoints": "10+",
+                  "factor": 1.55
+                }
+              ]
+            }
+          },
+          {
+            "id": "VIK_SAFETY_EQUIP",
+            "name": "Safety Equipment Credit",
+            "type": "factor",
+            "status": "done",
+            "value": "table",
+            "amount": "0.96",
+            "table": {
+              "id": "vikSafetyEquip",
+              "sourceSheet": "Vikram Manual — Safety Equipment",
+              "data": [
+                {
+                  "equipment": "None",
+                  "factor": 1
+                },
+                {
+                  "equipment": "Dashcam",
+                  "factor": 0.97
+                },
+                {
+                  "equipment": "Dashcam + Telematics",
+                  "factor": 0.93
+                },
+                {
+                  "equipment": "Full ADAS + Telematics",
+                  "factor": 0.88
+                }
+              ]
+            }
+          },
+          {
+            "id": "VIK_RADIUS_BAND",
+            "name": "Operating Radius Factor",
+            "type": "factor",
+            "status": "done",
+            "value": "table",
+            "amount": "1.02",
+            "table": {
+              "id": "vikRadiusBand",
+              "sourceSheet": "Vikram Manual — Radius",
+              "data": [
+                {
+                  "radius": "Local (0-50 mi)",
+                  "factor": 0.9
+                },
+                {
+                  "radius": "Intermediate (51-200)",
+                  "factor": 1
+                },
+                {
+                  "radius": "Regional (201-500)",
+                  "factor": 1.1
+                },
+                {
+                  "radius": "Long Haul (500+)",
+                  "factor": 1.22
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "group": "Physical Damage",
+        "items": [
+          {
+            "id": "VIK_VEHICLE_AGE",
+            "name": "Vehicle Age Factor",
+            "type": "factor",
+            "status": "done",
+            "value": "table",
+            "amount": "1.03",
+            "table": {
+              "id": "vikVehicleAge",
+              "sourceSheet": "Vikram Manual — Vehicle Age",
+              "data": [
+                {
+                  "ageYears": "0-2",
+                  "factor": 0.95
+                },
+                {
+                  "ageYears": "3-5",
+                  "factor": 1
+                },
+                {
+                  "ageYears": "6-9",
+                  "factor": 1.08
+                },
+                {
+                  "ageYears": "10+",
+                  "factor": 1.18
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "formulas": [
+      {
+        "name": "Vikram & Sons — Auto Liability",
+        "cob": "Auto Liability",
+        "scope": "Class of Business",
+        "status": "Active",
+        "effectiveFrom": "2026-09-01",
+        "_note": "Mirrors the engine's own filed Auto Liability chain: Base LC x (ILF - Deductible) x LCM, then RemainingFactors, which multiplies in every other factor the engine supplies for this coverage AND every imported factor once approved. A new tenant has no formula of its own, so without this the imported factors can never reach a premium.",
+        "tokens": [
+          {
+            "t": "var",
+            "v": "BasePremium"
+          },
+          {
+            "t": "op",
+            "v": "×"
+          },
+          {
+            "t": "var",
+            "v": "RemainingFactors"
+          }
+        ],
+        "expression": "BasePremium × RemainingFactors"
+      },
+      {
+        "name": "Vikram & Sons — Physical Damage",
+        "cob": "Physical Damage",
+        "scope": "Class of Business",
+        "status": "Active",
+        "effectiveFrom": "2026-09-01",
+        "_note": "VehicleValue is pinned to 1 by the engine so this evaluates a per-$-of-value rate, not a dollar amount — the engine applies the vehicle value and its floor-rate safety net afterwards.",
+        "tokens": [
+          {
+            "t": "var",
+            "v": "BasePremium"
+          },
+          {
+            "t": "op",
+            "v": "×"
+          },
+          {
+            "t": "var",
+            "v": "RemainingFactors"
+          }
+        ],
+        "expression": "BasePremium × RemainingFactors"
+      }
+    ],
+    "eligibility": [
+      {
+        "id": "ELG-VIK-001",
+        "code": "ELG-VIK-001",
+        "name": "Minimum years in business",
+        "status": "active",
+        "outcomeType": "refer",
+        "description": "Refer any account with fewer than 3 years in business.",
+        "conditions": [
+          {
+            "field": "years_in_business",
+            "op": "<",
+            "value": "3"
+          }
+        ],
+        "effectiveFrom": "2026-09-01",
+        "effectiveTo": ""
+      },
+      {
+        "id": "ELG-VIK-002",
+        "code": "ELG-VIK-002",
+        "name": "Operating authority required",
+        "status": "active",
+        "outcomeType": "hard",
+        "description": "Decline if the carrier holds no active interstate operating authority.",
+        "conditions": [
+          {
+            "field": "operating_authority",
+            "op": "=",
+            "value": "None"
+          }
+        ],
+        "effectiveFrom": "2026-09-01",
+        "effectiveTo": ""
+      },
+      {
+        "id": "ELG-VIK-003",
+        "code": "ELG-VIK-003",
+        "name": "At-fault accident threshold",
+        "status": "active",
+        "outcomeType": "refer",
+        "description": "Refer any driver with 3 or more at-fault accidents in 36 months.",
+        "conditions": [
+          {
+            "field": "at_fault_accidents",
+            "op": ">=",
+            "value": "3"
+          }
+        ],
+        "effectiveFrom": "2026-09-01",
+        "effectiveTo": ""
+      },
+      {
+        "id": "ELG-VIK-004",
+        "code": "ELG-VIK-004",
+        "name": "Maximum operating radius",
+        "status": "active",
+        "outcomeType": "refer",
+        "description": "Refer accounts operating beyond a 1,000 mile radius.",
+        "conditions": [
+          {
+            "field": "operating_radius",
+            "op": ">",
+            "value": "1000"
+          }
+        ],
+        "effectiveFrom": "2026-09-01",
+        "effectiveTo": ""
+      }
+    ]
+  },
+  "pricing": {
+    "basePremium": 4800
+  },
+  "governance": [
+    {
+      "gate": "Product Owner",
+      "approver": "—",
+      "action": "Pending",
+      "date": "—",
+      "comment": "—"
+    },
+    {
+      "gate": "Actuarial",
+      "approver": "—",
+      "action": "Pending",
+      "date": "—",
+      "comment": "—"
+    },
+    {
+      "gate": "Underwriting",
+      "approver": "—",
+      "action": "Pending",
+      "date": "—",
+      "comment": "—"
+    },
+    {
+      "gate": "Compliance",
+      "approver": "—",
+      "action": "Pending",
+      "date": "—",
+      "comment": "—"
+    },
+    {
+      "gate": "Ops/Tech",
+      "approver": "—",
+      "action": "Pending",
+      "date": "—",
+      "comment": "—"
+    }
+  ]
+}

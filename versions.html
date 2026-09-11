@@ -230,7 +230,17 @@ document.getElementById("vxBody").innerHTML = `
   </div>
   <div class="vx-card vx-anim"><div id="grid"></div></div>`;
 
-function attachedFormulas(r) { return (VX.savedFormulas || []).filter(f => (f.attachments || []).some(a => a.product === r.product && a.ratingVersion === r.version)); }
+/* Matched on product name + version label alone, with no tenant check —
+   two tenants very often carry the SAME version label ("2026.10" is what
+   most Product Studio exports default to) and can also carry a
+   same-named product, so a version genuinely holding 2 formulas showed a
+   third or fourth that actually belonged to a different tenant entirely.
+   Rows with no tenantId are this platform's own shared, built-in formulas
+   and stay matchable by everyone, same convention used everywhere else a
+   tenant-owned collection is read. */
+function attachedFormulas(r) { return (VX.savedFormulas || []).filter(f =>
+  (f.tenantId == null || f.tenantId === r.tenantId)
+  && (f.attachments || []).some(a => a.product === r.product && a.ratingVersion === r.version)); }
 
 function formulasCell(r) {
   const n = attachedFormulas(r).length;
@@ -243,7 +253,10 @@ function formulasCell(r) {
    versions, and this attaches versions' formulas here. Same
    VX.savedFormulas[].attachments records either way; nothing new is stored. */
 function manageFormulas(r) {
-  const eligible = (VX.savedFormulas || []).filter(f => f.lob === r.lob);
+  // Same tenant scoping as attachedFormulas() above — offering another
+  // tenant's formula as something to attach would let a click here create
+  // exactly the cross-tenant attachment that caused the miscount.
+  const eligible = (VX.savedFormulas || []).filter(f => f.lob === r.lob && (f.tenantId == null || f.tenantId === r.tenantId));
   if (!eligible.length) {
     vxModal(`Formulas — ${r.version}`,
       `<div class="vx-empty" style="padding:18px"><i class="fa-solid fa-square-root-variable"></i>
@@ -293,7 +306,9 @@ function lobOfProduct(productName) {
 function formulaOpts(cur) {
   const lob = (cur && cur.lob) || lobOfProduct(cur && cur.product);
   if (!lob) return [];
-  return (VX.savedFormulas || []).filter(f => f.lob === lob).map(f => ({
+  // Same tenant scoping as attachedFormulas()/manageFormulas() above.
+  const tid = (cur && cur.tenantId != null) ? cur.tenantId : VX.activeTenantId;
+  return (VX.savedFormulas || []).filter(f => f.lob === lob && (f.tenantId == null || f.tenantId === tid)).map(f => ({
     value: f.id,
     label: `${f.name} — ${f.scope === "Account" ? "Account level" : f.cob}` +
            (f.tested ? " · tested" : " · untested"),
@@ -308,7 +323,11 @@ function formulaOpts(cur) {
 function saveFormulaAttachments(rec) {
   const chosen = (rec._formulas || []).map(String);
   const lob = rec.lob || lobOfProduct(rec.product);
-  (VX.savedFormulas || []).filter(f => f.lob === lob).forEach(f => {
+  // Same tenant scoping as the read sites above — without it, saving this
+  // form could add or remove an attachment on a formula that belongs to a
+  // different tenant entirely.
+  const tid = rec.tenantId != null ? rec.tenantId : VX.activeTenantId;
+  (VX.savedFormulas || []).filter(f => f.lob === lob && (f.tenantId == null || f.tenantId === tid)).forEach(f => {
     f.attachments = f.attachments || [];
     const at = a => a.product === rec.product && a.ratingVersion === rec.version;
     const want = chosen.includes(String(f.id));
@@ -459,7 +478,7 @@ function acctFactorSection(rec) {
 function viewEngine(rec) {
   const attached = attachedFormulas(rec);
   const pipeline = ENGINE_PIPELINES[rec.lob];
-  const prod = VX.products.find(p => p.name === rec.product);
+  const prod = VX.products.find(p => String(p.name || "").trim().toLowerCase() === String(rec.product || "").trim().toLowerCase());
   const fmtExpr = f => f.tokens && f.tokens.length ? f.tokens.map(t => t.v).join(" ") : "(empty)";
 
   vxModal(`Rating Engine — ${rec.product} · ${rec.version}`, `
@@ -639,7 +658,15 @@ function applyPublish(rec) {
   // matches savedFormulas on status === "Active", so this must stay "Active".
   const attached = attachedFormulas(rec);
   attached.forEach(f => f.status = "Active");
-  const prod = VX.products.find(p => p.name === rec.product);
+  // Trimmed, case-insensitive — a product's own name and the product string
+  // recorded on its version can drift in case (typed once by hand, imported
+  // once from an export) without being a different product. A strict ===
+  // here meant Publish silently never flipped the PRODUCT record to Active,
+  // so products.html kept showing "Draft" for a product whose version was,
+  // in fact, Published and actively rating quotes — the exact contradiction
+  // a reader has no way to resolve from the screen alone.
+  const normP = s => String(s || "").trim().toLowerCase();
+  const prod = VX.products.find(p => normP(p.name) === normP(rec.product));
   if (prod && !startsInFuture) { prod.version = rec.version; prod.status = "Active"; prod.updated = today; }
   return { startsInFuture, retired: retired.map(v => v.version), attachedCount: attached.length };
 }
