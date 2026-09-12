@@ -1355,13 +1355,29 @@
     // actual name isn't known without the filed workbook, so it is named for
     // what it IS (a factor) rather than guessed at.
     const columns = keyCols.length ? [...keyCols.map(name => ({ name, type: "Text" })), { name: "Factor", type: "Number" }] : [];
-    return { ...r, active: true, columns, data: columns.length ? seedLookupSampleRows(columns, 3) : [], sample: columns.length > 0 };
+    /* These 23 are VeriDex's OWN admin-built reference tables, not shared
+       reference data every tenant reads through equally (rate tables and
+       geography genuinely are that; these are not — see
+       COSMOS_TENANT_SCOPED, cosmos-model.js) — so they carry VeriDex's
+       tenantId like anything else it owns. Without this, "Vikas & Co" (or
+       any other onboarded tenant) opened Lookup Tables and saw VeriDex's
+       own 23 tables sitting there as if it had built them, with no way to
+       tell which were genuinely its own. */
+    // Tenant 1 (VeriDex, the platform's own enterprise tenant — PRIMARY
+    // further down this file) — a literal here rather than that constant,
+    // which isn't in scope yet this early in the seed.
+    return { ...r, active: true, columns, data: columns.length ? seedLookupSampleRows(columns, 3) : [], sample: columns.length > 0, tenantId: 1 };
   });
   // Admin-defined tables (new rows, new columns, whole new tables added via
   // the Lookup Tables screen) are real configuration, not demo data — restore
   // them the same way vxCustomFactors etc. survive a refresh (see API.create/
   // update's persistIfTracked in grid.js, which is what keeps this in sync).
   D.lookupTables = loadPersisted("vxLookupTables", D.lookupTables);
+  // A table saved before tenant-scoping existed has no tenantId at all —
+  // COSMOS_TENANT_SCOPED's strict match (never lenient toward null, unlike
+  // ofTenant() elsewhere) would otherwise make it vanish from every
+  // tenant's view, seed and previously-added rows alike.
+  D.lookupTables.forEach(t => { if (t.tenantId == null) t.tenantId = 1; });
 
   /* Every row needs a stable identity that survives an edit — its position
      in the array does not, once revisions of the same row can coexist (see
@@ -2075,7 +2091,49 @@
      and how a decision is reached. `perms` remains as the plain-language
      summary shown in lists — it describes the matrix, it no longer IS it. */
   D.roles = [
-    { id: 1, name: "Rating Administrator", users: 3, level: "Admin",
+    /* VeriDex itself — the company that SELLS this platform to the carriers
+       (tenants) who rate their own books on it — is not one more tenant's
+       rating team. Its own staff oversee every tenant (who exists, how
+       they're onboarded, how they're doing) and have no reason to be inside
+       any one tenant's own factors or formulas, which is exactly the
+       opposite of what "Rating Administrator" below is for: a tenant's OWN
+       admin, over their OWN book, a role each tenant assigns to its own
+       people the same way it assigns Actuarial Analyst or Product Manager.
+       This role is who a fresh session's Acting-As user defaults to
+       (vxActiveUser's fallback, core.js) — but WHICH WORKSPACE opens
+       (the admin console vs. a tenant's own) is its own separate, explicit
+       login/logout state (vxWorkspaceMode, core.js), not derived from this
+       role at all: the two used to be the same knob, which meant switching
+       Acting As to test an approval also silently changed your workspace. */
+    { id: 9, name: "VeriDex Admin", users: 1, level: "Platform",
+      perms: "Platform operator: onboard/manage every tenant, cross-tenant reporting — no access to any one tenant's own rating configuration",
+      permissions: {
+        users: ["view","create","edit","delete"], roles: ["view","create","edit","delete"], audit: ["view","export"], settings: ["view","edit"] },
+      constraints: [] },
+
+    /* A tenant's own top user — provisioned automatically the moment the
+       tenant is onboarded (tenants.html's provisionSuperAdmin), the same
+       bootstrap step a real SaaS signup grants. Has everything Rating
+       Administrator has (this tenant's own rating configuration) PLUS the
+       one thing that role doesn't: managing this tenant's OWN Users and
+       Roles — inviting its Rating Administrator, Actuarial Analyst and
+       Product Manager without ever needing VeriDex to do it for them. */
+    { id: 10, name: "Super Admin", users: 0, level: "Admin",
+      perms: "This tenant's own top user: full rating configuration, plus manage this tenant's own team (Users, Roles)",
+      permissions: {
+        lobs: ["view","create","edit","delete"], coverages: ["view","create","edit","delete"],
+        products: ["view","create","edit","delete","publish"], units: ["view","create","edit","delete"],
+        versions: ["view","create","edit","delete","publish","approve"],
+        factors: ["view","create","edit","delete","export"], formulas: ["view","create","edit","delete","publish"],
+        rateTables: ["view","edit","export"], industry: ["view","create","edit","delete"],
+        baseRates: ["view","create","edit","delete","export"], discounts: ["view","create","edit","delete"],
+        surcharges: ["view","create","edit","delete"], fees: ["view","create","edit","delete"], taxes: ["view","edit"],
+        states: ["view","edit"], counties: ["view","edit"], territories: ["view","create","edit","delete"],
+        quotes: ["view","create","export"], lossRuns: ["view","export"],
+        users: ["view","create","edit","delete"], roles: ["view"], audit: ["view","export"] },
+      constraints: [ { attr: "tenantId", op: "eqUser", resources: [] } ] },
+
+    { id: 1, name: "Rating Administrator", users: 2, level: "Admin",
       perms: "Full access: products, versions, all factor tables, publish to production",
       permissions: {
         lobs: ["view","create","edit","delete"], coverages: ["view","create","edit","delete"],
@@ -2186,12 +2244,30 @@
         { attr: "premium", op: "lte", value: "@authorityLimit", resources: ["quotes"] },
         { attr: "state", op: "inUser", resources: ["quotes"] } ] },
   ];
-  const UNAMES = [["Vikas Kumar","Rating Administrator"],["Tom Brennan","Actuarial Analyst"],["Priya Raman","Rating Administrator"],["Maria Alvarez","Product Manager"],["Neha Kapoor","Rating Administrator"]];
+  /* The 10 roles above are regenerated fresh every load, same as the other
+     fixed seed tables on this platform (FACTORS, D.customFactors's split
+     counterpart) — not loadPersisted. roles.html's editor (the RBAC matrix,
+     ABAC constraint rows, and the plain Add Role form) previously had
+     NOTHING behind vxAutoSave()'s save animation: every edit to a seed
+     role's own permissions, and every brand-new custom role, vanished on
+     the very next reload with no visible reason why — the save toast
+     claimed success the whole time. Two separate deltas, because both
+     things can happen: EDITS to one of the 10 seed roles (ids 1-10, keyed
+     by id since those never change) and WHOLLY NEW roles (id > 10, added
+     wholesale). */
+  const roleEdits = loadPersisted("vxRoleEdits", {});
+  D.roles.forEach(r => { if (roleEdits[r.id]) Object.assign(r, roleEdits[r.id]); });
+  (loadPersisted("vxCustomRoles", [])).forEach(r => {
+    if (!D.roles.some(x => x.id === r.id)) D.roles.push(r);
+  });
+  const UNAMES = [["Vikas Kumar","VeriDex Admin"],["Tom Brennan","Actuarial Analyst"],["Priya Raman","Rating Administrator"],["Maria Alvarez","Product Manager"],["Neha Kapoor","Rating Administrator"]];
   /* ABAC needs something on the user's side to compare against, so every user
      carries the attributes the role constraints reference. "*" means
      unrestricted on that axis — an administrator is not licensed state by
      state. Authority limit is the underwriter's binding authority in premium. */
   const ROLE_ATTRS = {
+    "VeriDex Admin":        { lob: ["*"], state: ["*"], authorityLimit: 0 },
+    "Super Admin":          { lob: ["*"], state: ["*"], authorityLimit: 10000000 },
     "Rating Administrator": { lob: ["*"], state: ["*"], authorityLimit: 10000000 },
     "Actuarial Analyst":    { lob: ["Commercial Trucking", "General Liability"], state: ["*"], authorityLimit: 0 },
     "Product Manager":      { lob: ["Commercial Property", "Cyber"], state: ["*"], authorityLimit: 0 },
@@ -2205,7 +2281,20 @@
     email: role === "Service Account" ? name.toLowerCase().replace(/\s+/g, ".") + "@system.veridex.io" : name.toLowerCase().replace(/\s+/g, ".") + "@veridex.io",
     role, status: rnd() > .1 ? "Active" : "Suspended", mfa: rnd() > .2 ? "Enabled" : "Disabled",
     attrs: { tenantId: 1, owner: i + 1, ...(ROLE_ATTRS[role] || { lob: ["*"], state: ["*"], authorityLimit: 0 }) },
-    lastLogin: dt(0, 40) + " " + String(ri(7, 19)).padStart(2, "0") + ":" + String(ri(0, 59)).padStart(2, "0") }));
+    lastLogin: dt(0, 40) + " " + String(ri(7, 19)).padStart(2, "0") + ":" + String(ri(0, 59)).padStart(2, "0"),
+    /* VeriDex's own seeded team is tenant 1's — see COSMOS_TENANT_SCOPED
+       (cosmos-model.js), which now partitions "users" the same as every
+       other tenant-owned collection, so each tenant manages only its own
+       people on Users/Roles instead of seeing (or worse, editing) every
+       other tenant's team. */
+    tenantId: 1 }));
+  /* Every tenant onboarded after this platform's own seed five gets its own
+     Super Admin user (tenants.html's provisionSuperAdmin, run the moment a
+     tenant is created) — persisted here, separately from the seed list
+     above, which is regenerated fresh (not loadPersisted) on every load. */
+  (loadPersisted("vxTenantUsers", [])).forEach(u => {
+    if (!D.users.some(x => x.id === u.id)) D.users.push(u);
+  });
 
   /* ---------------- Audit log ---------------- */
   const AREAS = ["Rating Factors","Base Rates","Products","Rating Versions","State Configuration","Coverages","Discounts","Surcharges","Taxes","Eligibility Rules","Lookup Tables","Users & Roles","System Settings","Formula Builder","Form Builder"];

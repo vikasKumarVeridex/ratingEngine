@@ -77,14 +77,16 @@ document.getElementById("vxBody").innerHTML = `
         <a href="analytics.html" class="btn btn-outline-secondary btn-sm">Full Analytics <i class="fa-solid fa-arrow-right ms-1"></i></a></div>
       <canvas id="c2" height="104"></canvas>
     </div>
-    <div class="vx-card vx-anim">
+    ${vxIsAdmin() ? `<div class="vx-card vx-anim">
       <h2>Recent Activity</h2><div class="sub">Latest configuration changes across the platform</div>
       <div class="vx-tw"><table class="vx-t"><thead><tr><th>Time</th><th>User</th><th>Area</th><th>Action</th><th>Version</th></tr></thead>
       <tbody>${VX.audit.slice(0,7).map(a=>`<tr><td style="white-space:nowrap">${a.timestamp}</td>
         <td>${a.user.includes("ai")?'<i class="fa-solid fa-robot me-1" style="color:var(--purple)"></i>':""}${a.user.split("@")[0]}</td>
         <td>${a.area}</td><td>${a.detail}</td><td><span class="vx-b gray">${a.version}</span></td></tr>`).join("")}</tbody></table></div>
       <div class="text-end mt-2"><a href="audit.html" style="font-size:12.5px">View full audit history <i class="fa-solid fa-arrow-right ms-1"></i></a></div>
-    </div>
+    </div>` : `<div class="vx-card vx-anim">
+      <h2>Recent Activity</h2><div class="sub">Not shown here — Audit History entries aren't tagged per tenant yet, so this card can't honestly show only YOUR tenant's changes without showing everyone's.</div>
+    </div>`}
   </div>
 
   <div class="col-lg-4">
@@ -114,25 +116,34 @@ document.getElementById("vxBody").innerHTML = `
    picked it shows the portfolio-wide aggregate rather than inventing a
    "current version" that doesn't exist. */
 const LOB_OPTS = [...new Set(VX.lobs.filter(l => l.status === "Active").map(l => l.name))];
-const MGA_OPTS = [...new Set(VX.quotes.map(q => q.mga))].filter(Boolean).sort();
+/* Tenant-scoped, same as tenantVersions/tenantProducts/tenantFactors above
+   — VX.quotes is every tenant's quotes together, and every stat and chart
+   fed from it (this row, the two quote-driven charts further down) used to
+   read it raw. A tenant's own Dashboard showed the platform-wide "260
+   quotes, $12.3M premium" totals no matter which tenant was logged in,
+   identical for every one of them — the one thing a tenant's OWN dashboard
+   most obviously should not do. */
+const tenantQuotesAll = (typeof COSMOS !== "undefined") ? COSMOS.query("quotes", {}) : VX.quotes;
 let selLob = sessionStorage.getItem("vxDashLob") || "";
-let selMga = sessionStorage.getItem("vxDashMga") || "";
 
 /* The quotes behind the portfolio row and the two quote-driven charts.
    The stat cards used to read fixed totals off VX.dashboard, which would have
    sat unchanged next to a filtered chart — so they are computed from the same
    filtered set instead. Configuration counts (versions, factors, pending
-   changes) are deliberately NOT filtered: an MGA doesn't own rating
-   configuration, so narrowing them by MGA would be meaningless. */
+   changes) are deliberately NOT filtered by LOB — a tenant's overall
+   configuration health isn't a per-line number. An MGA filter used to sit
+   alongside this one, but a single tenant's own book runs through one MGA
+   relationship, not several to tell apart — removed rather than kept as a
+   dropdown with one option that can never do anything. */
 function filteredQuotes() {
-  return VX.quotes.filter(q => (!selLob || q.lob === selLob) && (!selMga || q.mga === selMga));
+  return tenantQuotesAll.filter(q => !selLob || q.lob === selLob);
 }
 function renderPortfolio() {
   const Q = filteredQuotes();
   const prem = Q.reduce((a, q) => a + q.premium, 0);
   const bound = Q.filter(q => q.status === "Bound");
   const boundPrem = bound.reduce((a, q) => a + q.premium, 0);
-  const scope = [selLob, selMga].filter(Boolean).join(" · ") || "whole book";
+  const scope = selLob || "whole book";
   document.getElementById("portfolioStats").innerHTML =
     stat("Quotes", vxNum(Q.length), scope, "flat", "fa-file-invoice", "var(--cat-2)", "loss-runs.html") +
     stat("Premium Quoted", vxMoney(prem), scope, "flat", "fa-sack-dollar", "var(--cat-1)", "loss-runs.html") +
@@ -151,18 +162,11 @@ function renderActionBar() {
     <div class="vx-card vx-anim mb-3" style="padding:11px 14px">
       <div class="d-flex flex-wrap align-items-center gap-2">
         ${lobSelect}
-        <select class="form-select form-select-sm" id="dashMga" style="width:auto;min-width:170px">
-          <option value="">All MGAs</option>
-          ${MGA_OPTS.map(m => `<option ${m === selMga ? "selected" : ""}>${m}</option>`).join("")}</select>
       </div>
     </div>`;
 
   document.getElementById("dashLob").onchange = e => {
     selLob = e.target.value; sessionStorage.setItem("vxDashLob", selLob);
-    renderActionBar(); renderPortfolio(); draw();
-  };
-  document.getElementById("dashMga").onchange = e => {
-    selMga = e.target.value; sessionStorage.setItem("vxDashMga", selMga);
     renderActionBar(); renderPortfolio(); draw();
   };
 }
@@ -195,7 +199,7 @@ function draw(){
       scales:{ x:{ grid:{ display:false } }, y:{ grid:{ color:grid }, border:{ display:false } } } }}));
 
   /* Premium share now comes from QUOTES, not from each product's static gwp
-     field — otherwise this chart ignored the LOB/MGA filter sitting directly
+     field — otherwise this chart ignored the LOB filter sitting directly
      above it, and showed a different premium basis from the card beside it. */
   const gwp = vxLobNames().map(n=>FQ.filter(q=>q.lob===n).reduce((a,q)=>a+q.premium,0));
   charts.push(new Chart(document.getElementById("c3"), { type:"doughnut",

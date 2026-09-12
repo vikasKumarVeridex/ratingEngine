@@ -186,7 +186,10 @@ function view(id) {
        ["Rating Basis",r.ratingBasis],["Unit",r.unit?`${r.unit}${unit?` — ${unit.basis}`:""}`:"—"],
        ["Default Limit",r.defaultLimit?vxMoney(r.defaultLimit):"—"],["Deductible",r.deductible?vxMoney(r.deductible):"—"],
        ["Status",r.status||"Active"],["Effective",r.effectiveStart?(r.effectiveStart+(r.effectiveEnd?" – "+r.effectiveEnd:" – open")):"—"],
-       ["Required",r.mandatory?"Yes":"No"],["Source Reference",r.sourceRef],["Quotes",vxNum(r.quotes)]]
+       ["Required",r.mandatory?"Yes":"No"],
+       ["Taxable",r.parentCobId ? `Follows parent (${r.parentName || "—"})` : (r.taxable!==false?"Yes":"No")],
+       ["Fully Earned",r.fullyEarned?"Yes":"No"],
+       ["Source Reference",r.sourceRef],["Quotes",vxNum(r.quotes)]]
       .map(([l,v])=>`<div class="col-md-6"><label class="d-block">${l}</label><div style="font-size:13.3px">${v}</div></div>`).join("")}
     <div class="col-md-6"><label class="d-block">Formula</label><div style="font-size:13.3px">
       ${formula ? `<a href="formula-builder.html">${formula.name} →</a>` : '<span style="color:var(--text-mute)">No active formula attached</span>'}</div></div>
@@ -201,7 +204,7 @@ function view(id) {
 }
 function form(rec, parentId) {
   const isNew = !rec;
-  const r = rec ? { ...rec } : { parentCobId: parentId || null, level: parentId ? "Child" : "Primary", version: "v2026.03", active: true, quotes: 0, childCount: 0 };
+  const r = rec ? { ...rec } : { parentCobId: parentId || null, level: parentId ? "Child" : "Primary", version: "v2026.03", active: true, taxable: true, fullyEarned: false, quotes: 0, childCount: 0 };
   vxModal(`${isNew ? "Add" : "Edit"} ${r.parentCobId ? "Child" : "Primary"} Coverage`, `<div class="row g-3">
     <div class="col-md-6"><label>Coverage / Class of Business Name</label><input class="form-control form-control-sm C" data-k="name" value="${r.name||""}"></div>
     <div class="col-md-6"><label>Code</label><input class="form-control form-control-sm C" data-k="code" value="${r.code||""}"></div>
@@ -225,6 +228,12 @@ function form(rec, parentId) {
       <div class="form-check form-switch"><input class="form-check-input C" type="checkbox" data-k="mandatory" ${r.mandatory?"checked":""}></div></div>
     <div class="col-md-6"><label class="d-block">Active</label>
       <div class="form-check form-switch"><input class="form-check-input C" type="checkbox" data-k="active" ${r.active?"checked":""}></div></div>
+    <div class="col-md-6"><label class="d-block">Taxable</label>
+      <div class="form-check form-switch"><input class="form-check-input C" type="checkbox" data-k="taxable" ${r.taxable!==false?"checked":""}></div>
+      <div style="font-size:10.8px;color:var(--text-mute);margin-top:2px">${r.parentCobId ? "A child coverage's own setting is ignored — its parent's Taxable flag governs, since a child's premium rolls into the parent's group before tax is computed." : "Whether this coverage's own premium is included in the taxable base. Off means this coverage's share of the premium is carried through untaxed — a real but narrow case (e.g. a non-insurance service charge billed as a coverage)."}</div></div>
+    <div class="col-md-6"><label class="d-block">Fully Earned</label>
+      <div class="form-check form-switch"><input class="form-check-input C" type="checkbox" data-k="fullyEarned" ${r.fullyEarned?"checked":""}></div>
+      <div style="font-size:10.8px;color:var(--text-mute);margin-top:2px">Earned in full at inception rather than pro-rata over the term — this coverage's premium is not returned on mid-term cancellation. Recorded for now; this platform has no return-premium/cancellation flow yet to apply it to.</div></div>
     </div>
     <div class="vx-ai mt-3"><span class="tag"><i class="fa-solid fa-wand-magic-sparkles"></i>AI Validation</span>
     ${r.parentCobId ? "Child coverages inherit their parent's LOB and roll their premium into the parent group on the quote."
@@ -260,7 +269,8 @@ function form(rec, parentId) {
              without carrying a stale copy of everything else on the row. */
           const patch = {};
           ["name","code","lob","parentCobId","parentName","level","ratingBasis","defaultLimit",
-           "unit","deductible","status","effectiveStart","effectiveEnd","mandatory","active"]
+           "unit","deductible","status","effectiveStart","effectiveEnd","mandatory","active",
+           "taxable","fullyEarned"]
             .forEach(k => { patch[k] = r[k]; });
           VX.cobDelta.edited[r.id] = patch;
         }

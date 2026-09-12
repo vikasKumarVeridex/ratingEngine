@@ -266,6 +266,7 @@ document.getElementById("tenantCfgUpload").onchange = async e => {
         /* The tenant now genuinely owns this line — record it so its own
            screens and the tenant switcher agree with what was imported. */
         if (res.lobName && !tenant.lobs.includes(res.lobName)) tenant.lobs.push(res.lobName);
+        provisionSuperAdmin(tenant);
 
         /* Publishing is the one step that decides whether this tenant can
            actually quote, so it is an explicit choice rather than something
@@ -352,6 +353,29 @@ document.getElementById("tenantCfgUpload").onchange = async e => {
    rows. Matches the same blank
    shape data.js's tenant-partitioning pass now rebuilds on every load (see
    the SEEDED_TENANT_IDS note there) so "just added" and "after reload" agree. */
+/* A tenant with no user of its own has no one who can ever add a second
+   one — Users/Roles (now scoped per tenant, see COSMOS_TENANT_SCOPED in
+   cosmos-model.js) would show a permanently empty grid with no way to
+   break out of it. Every new tenant gets exactly one seed user, Super
+   Admin, the same bootstrap role a real SaaS onboarding grants the person
+   who just signed up — from there THEY invite their own Rating
+   Administrator, Actuarial Analyst and Product Manager, not VeriDex. */
+function provisionSuperAdmin(t) {
+  const nextId = arr => Math.max(0, ...arr.map(x => +x.id || 0)) + 1;
+  const slug = String(t.code || t.name).toLowerCase().replace(/[^a-z0-9]+/g, "");
+  VX.users.push({
+    id: nextId(VX.users), name: t.name + " Admin",
+    email: "admin@" + slug + ".veridex.io", role: "Super Admin",
+    status: "Active", mfa: "Enabled",
+    attrs: { tenantId: t.id, owner: 0, lob: ["*"], state: ["*"], authorityLimit: 10000000 },
+    lastLogin: null, tenantId: t.id,
+  });
+  // Seed users are ids 1-5 (data.js, regenerated fresh every load, never
+  // persisted); anything above that is a real, added user and is what
+  // survives a reload — see data.js's own restore of "vxTenantUsers".
+  try { localStorage.setItem("vxTenantUsers", JSON.stringify(VX.users.filter(u => u.id > 5))); } catch (e) {}
+}
+
 function provisionTenant(t) {
   const lobs = t.lobs || [];
   if (!lobs.length) return;
@@ -461,10 +485,16 @@ vxAgGrid({ el:"#grid", key:"tenants", name:"Tenant", size:12,
       const clash = VX.tenants.some(t=>t.id!==rec.id && String(t.code||"")===String(rec.code||""));
       if(!rec.code || clash) rec.code = vxTenantCode();
     }
-    if(isNew){ provisionTenant(rec);
+    if(isNew){ provisionTenant(rec); provisionSuperAdmin(rec);
     vxToast("Tenant provisioned", `${(rec.lobs||[]).length} line(s) of business configured — switch to ${rec.name} to work in it`, "ok"); }
     persistTenants(); },
-  rowActions:[{i:"fa-right-to-bracket",t:"Work in this tenant",fn:r=>vxSetTenant(r.id)}] });
+  /* Logs in, not just switches: sets the active tenant AND opens its own
+     workspace (vxLoginToTenant, core.js) — this row action is reached from
+     the admin console, so "work in this tenant" means leaving that console
+     for the tenant's full nav, not just changing which tenant a still-admin
+     session happens to be pointed at (that's what vxSetTenant, used by the
+     topbar picker, is for once you're already logged into a workspace). */
+  rowActions:[{i:"fa-right-to-bracket",t:"Log in to this tenant",fn:r=>vxLoginToTenant(r.id)}] });
 
 /* Real write-back, not the vxAutoSave() toast's visual illusion of one. A
    created/edited tenant persists via onAfterSave above; delete and clone are

@@ -494,9 +494,9 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
       hideIf: (r, isNew) => (r && r.kind) !== "Computed",
       hint: "A short description if there's no formula attached above yet — e.g. \"Base Rate × Territory Factor × Increased Limits Factor\". Documentation only, same as the attached formula." },
     { k: "defaultValue", l: "Default Value", t: "number", step: "0.001", def: 1,
-      hint: "Applied on every quote (Constant), or as a fallback when a Lookup factor's table has no matching row. 1.000 is neutral — it changes no premium. For a factor that has a rate table, this field is not read unless \"Override table with Default Value\" below is checked — the table's own value governs instead." },
+      hint: "Applied on every quote (Constant), or as a fallback when a Lookup factor's table has no matching row. 1.000 is neutral — it changes no premium. For a factor that has a rate table on an ADMITTED tenant, this field is not read unless \"Override table with Default Value\" below is checked — the table's own filed value governs instead. A non-admitted (surplus lines) tenant has nothing filed to defer to, so this always applies directly there regardless of the checkbox." },
     { k: "overrideValue", l: "Override table with Default Value", t: "check", def: false,
-      hint: "Only matters for a factor that has a rate table (an uploaded configuration's own factors always do). Unchecked, the table's value is what actually prices every quote — editing Default Value above changes nothing. Checked, Default Value is used directly and the table is set aside." },
+      hint: "Only matters for a factor that has a rate table on an ADMITTED tenant (an uploaded configuration's own factors often do). Unchecked, the table's filed value is what actually prices every quote — editing Default Value above changes nothing. Checked, Default Value is used directly and the table is set aside. A non-admitted (surplus lines) tenant's own Default Value always governs — there is no filed table to defer to, so this checkbox has nothing to do there." },
 
     { k: "_secRef", l: "Reference", t: "section",
       sub: "Where the value came from, for later audit." },

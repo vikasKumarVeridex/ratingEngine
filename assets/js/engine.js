@@ -129,6 +129,25 @@ const ENGINE = (() => {
     return ((VX.taxes || []).find(t => t.state === st) || { surplusTax: 2 }).surplusTax / 100;
   }
 
+  /* Whether a coverage's own premium belongs in the taxable base — Coverages
+     (coverages.html) carries a Taxable flag per row, defaulting to true (so
+     a coverage nobody has touched taxes exactly as it always did). A CHILD
+     coverage's own flag is never read: its premium already rolls into its
+     PARENT's group before any of this runs (assemble() groups by name, and
+     a child was never its own group to begin with), so it is the PARENT's
+     Taxable setting that decides it — reading the child's own would let a
+     child silently make its own tax call independent of the coverage it
+     is actually billed under. Unknown coverage (no VX.cob row — a built-in
+     filed line's group name, which was never meant to have one) stays
+     taxable, the same default every existing quote already priced under. */
+  function coverageTaxable(groupName, lobName) {
+    const mine = (VX.cob || []).filter(ofTenant).filter(c => c.lob === lobName);
+    const row = mine.find(c => c.name === groupName);
+    if (!row) return true;
+    const effective = row.parentCobId ? (mine.find(c => c.id === row.parentCobId) || row) : row;
+    return effective.taxable !== false;
+  }
+
   /* A product name is typed or exported by more than one source on this
      platform — a manual Add Product form, several JSON export shapes, a
      re-upload of the same config months apart — and nobody typing
@@ -1626,6 +1645,22 @@ const ENGINE = (() => {
        table is set aside and Default Value is used directly, everywhere
        this function is the source of truth. */
     if (f && f.overrideValue) return null;
+    /* A filed table is what "admitted" MEANS — the carrier rates strictly
+       off the rates it filed with the state, which is exactly why an
+       admitted factor's table wins over its own Default Value unless
+       someone explicitly overrides it above. A non-admitted (surplus
+       lines) tenant is not filing anything: its own Default Value IS its
+       real, proprietary rate, uploaded table or not, with no override
+       checkbox needed to say so — the table stays visible for reference
+       (View rows in Rate Tables) but never governs a non-admitted tenant's
+       own premium. Read off the TENANT's own licence, not a specific
+       product's, since a Rating Factor is not itself tied to one product;
+       `!== false` treats an unset licence as non-admitted, this platform's
+       own stated default paper. */
+    if (f && f.tenantId != null) {
+      const t = (VX.tenants || []).find(x => x.id === f.tenantId);
+      if (!t || t.nonAdmitted !== false) return null;
+    }
     const imported = importedFactorTableInfo(f);
     if (imported) return imported;
     if (!f || f.kind !== "Lookup" || typeof f.tableId !== "string" || f.tableId.slice(0, 3) !== "lt:") return null;
@@ -1928,9 +1963,21 @@ const ENGINE = (() => {
     });
     const fees = feeLines.reduce((a, f) => a + f.amt, 0);
 
+    /* What share of the rated premium is actually taxable — per-coverage,
+       via coverageTaxable() above, not a flat yes/no for the whole quote. A
+       coverage's account/driver-factor and discount/surcharge adjustments
+       aren't tracked per-coverage in this engine (those are quote-level
+       numbers), so the taxable GROUPS' share of raw coverage premium is
+       taken as the taxable share of the fully-adjusted premium too — an
+       approximation, but an exact one whenever every coverage is taxable
+       (the untouched default), since the fraction is then exactly 1 and
+       every existing quote's tax is unchanged to the cent. */
+    const taxableCoverage = groups.filter(g => coverageTaxable(g.name, lob)).reduce((a, g) => a + g.subtotal, 0);
+    const taxableFraction = coverage > 0 ? taxableCoverage / coverage : 1;
+
     // taxable fees are taxed alongside premium
     const taxableFees = feeLines.filter(f => f.taxable).reduce((a, f) => a + f.amt, 0);
-    const taxBase = afterAdj + taxableFees;
+    const taxBase = Math.round(afterAdj * taxableFraction) + taxableFees;
     const tax = Math.round(taxBase * taxPct);
 
     /* County / municipal tax.
@@ -1956,7 +2003,22 @@ const ENGINE = (() => {
        a fact. The quote says so instead, and the screens surface it. */
     const countyUnknown = !!countyName && !countyRow;
 
-    let final = afterAdj + fees + tax + countyTax;
+    /* Stamping fee — a real surplus-lines charge (remitted to the state's
+       stamping office, distinct from premium tax) that VX.taxes has carried
+       a real, deterministic per-state rate for since it was seeded, with a
+       comment saying it belongs in the total — but nothing here ever read
+       it. A quote for a state whose stamping fee is genuinely 0% (most of
+       them) is unaffected; one in AZ/FL/MI/NV/TX/etc. was quietly under-
+       charged by the fee's own rate every time. Same basis as state tax and
+       county tax (premium plus taxable fees), so all three agree on what is
+       being taxed, and gated on admitted status the same way surplus-lines
+       tax and the SL filing fee already are — an admitted carrier owes no
+       surplus-lines stamping fee. */
+    const taxRow = (VX.taxes || []).find(t => t.state === state);
+    const stampingFeePct = admitted ? 0 : ((taxRow && taxRow.stampingFee) || 0);
+    const stampingFee = stampingFeePct ? Math.round(taxBase * stampingFeePct / 100) : 0;
+
+    let final = afterAdj + fees + tax + countyTax + stampingFee;
     const minApplied = final < o.minRule;
     if (minApplied) final = o.minRule;
 
@@ -2017,6 +2079,7 @@ const ENGINE = (() => {
       discounts, surcharges, discountTotal: dTot, surchargeTotal: sTot, creditsSkipped,
       fees, feeLines, taxPct, tax, taxBase,
       countyTax, countyRate, countyName: countyRow ? countyName : null, countyUnknown, countyRequested: countyName,
+      stampingFee, stampingFeePct, taxableFraction,
       minApplied, minRule: o.minRule, finalPremium: final,
       feeDetail: applicable, taxDetail: VX.taxes.find(t => t.state === state),
     };

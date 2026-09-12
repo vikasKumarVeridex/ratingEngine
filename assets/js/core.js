@@ -11,6 +11,12 @@ const NAV = [
     { h: "dashboard.html", i: "fa-gauge-high", l: "Dashboard" },
     { h: "loss-runs.html", i: "fa-triangle-exclamation", l: "Loss Run Analytics" },
     { h: "quote-portal.html", i: "fa-flask", l: "Quote Sandbox" },
+    /* Grouped with the two other ways to produce a quote (Sandbox: fill a
+       form; Quotes: browse ones already on file) rather than filed under
+       Reference & Tools — pasting a JSON payload in to rate it is a third
+       way of DOING the same thing those two do, not documentation about
+       the platform. */
+    { h: "quote-json.html", i: "fa-code", l: "Quote JSON" },
     { h: "quotes.html", i: "fa-file-lines", l: "Quotes" },
   ]},
   /* Configuration sits above Rating: you define the line of business, the
@@ -54,9 +60,18 @@ const NAV = [
      still reaches tenants.html — so the flow stays available without two
      nav rows for something an admin touches rarely. The unconfigured-tenant
      banner also still links to tenant-setup.html. */
-  { g: "Administration", items: [
+  /* Its own team, not VeriDex's. Users/Roles used to sit in Administration
+     below, which the admin/tenant workspace split (vxScopedNav) hides
+     entirely once you're logged into a tenant — meaning no tenant had any
+     way to add its own second user at all. Its own group so it stays
+     visible inside a tenant's workspace while everything actually about
+     overseeing OTHER tenants (Tenants, Audit History, Export, and VeriDex's
+     own Settings) stays out of it. */
+  { g: "Team", items: [
     { h: "users.html", i: "fa-users", l: "Users" },
     { h: "roles.html", i: "fa-user-shield", l: "Roles" },
+  ]},
+  { g: "Administration", items: [
     /* Back in the sidebar. It was removed on the reasoning that switching
        tenant is a top-bar action and the picker's "Manage tenants" item
        still reached this page — which held while Tenants was only a list
@@ -72,11 +87,90 @@ const NAV = [
   ]},
   { g: "Reference & Tools", items: [
     { h: "engine-flow.html", i: "fa-sitemap", l: "Engine Flow" },
-    { h: "quote-json.html", i: "fa-code", l: "Quote JSON" },
     { h: "integration.html", i: "fa-plug", l: "Integration Guide" },
     { h: "ai-assistant.html", i: "fa-wand-magic-sparkles", l: "AI Assistant" },
   ]},
 ];
+
+/* ---------- admin vs tenant workspace ----------
+   Two real audiences use this platform very differently: someone standing
+   up and overseeing CARRIERS (which tenants exist, how they're doing) has
+   no business in one tenant's own rating configuration, and vice versa —
+   someone working a tenant's products/factors/formulas has no business in
+   platform-wide tenant administration. Nothing distinguished the two
+   before this: every one of the 41 pages was one flat nav shown identically
+   to everyone.
+
+   An earlier version of this gated on the ACTING-AS user's role (Settings
+   → Switch User) — but that reused a mechanism this platform already has
+   for a genuinely different purpose (who a factor-value-change approval is
+   attributed to, dual-control sign-off), and the two tangled: switching
+   Acting As for an approval also silently changed which workspace you saw,
+   and a role left switched from an earlier session came back as "stuck in
+   the wrong workspace" with nothing on screen explaining why.
+
+   This is its own explicit state instead — an actual LOGIN to a tenant, the
+   same shape as logging into any real multi-tenant console: pick a tenant
+   from the admin console (Tenant Management / Tenant Stat Dashboard) and
+   log in, and its full workspace opens up; log out and you're back to
+   overseeing every tenant. Nothing about the Acting-As user or its role is
+   touched by this — the two systems no longer share a knob. */
+const ADMIN_NAV = [
+  { g: "Administration", items: [
+    { h: "tenants.html", i: "fa-building", l: "Tenant Management" },
+    { h: "tenant-stats.html", i: "fa-chart-simple", l: "Tenant Stat Dashboard" },
+  ]},
+];
+/* Reachable by direct link regardless of workspace — the topbar's own
+   Account menu (vxShell below) links to Settings independently of the
+   sidebar, on purpose: switching the Acting-As user/role is a separate
+   concern from which workspace you're in, and gating Settings the same way
+   as everything else would strand whoever needed it from either side. */
+const WORKSPACE_EXEMPT_PAGES = new Set(["settings.html"]);
+/* Persisted (not session-only): logging into a tenant is meant to survive a
+   reload the same way the tenant/user pickers already do — the whole point
+   is that it behaves like being logged in, not like a scroll position. */
+function vxWorkspaceMode() {
+  try { return localStorage.getItem("vxWorkspaceMode") || "admin"; } catch (e) { return "admin"; }
+}
+function vxIsAdmin() { return vxWorkspaceMode() !== "tenant"; }
+/* The one real state transition: pick a tenant, log in, land in ITS
+   workspace. Setting the active tenant here (rather than requiring it be
+   set separately first) is what makes "log in to tenant A" one action
+   instead of two — the picker and the login used to be different steps
+   that could disagree about which tenant you actually ended up in. */
+function vxLoginToTenant(tenantId, landingPage) {
+  VX.activeTenantId = tenantId;
+  try { localStorage.setItem("vxActiveTenant", JSON.stringify(tenantId)); } catch (e) {}
+  try { localStorage.setItem("vxWorkspaceMode", "tenant"); } catch (e) {}
+  location.href = landingPage || "dashboard.html";
+}
+function vxLogoutOfTenant() {
+  try { localStorage.setItem("vxWorkspaceMode", "admin"); } catch (e) {}
+  location.href = "tenants.html";
+}
+/* The nav this session's workspace actually gets: the admin console (2
+   pages) logged out of any tenant, or the full tenant workspace minus
+   platform Administration once logged into one — Users, Roles, Tenants,
+   Audit History and Export are how the platform oversees every tenant, not
+   something a single tenant's own rating team touches. */
+function vxScopedNav() {
+  return vxIsAdmin() ? ADMIN_NAV : NAV.filter(g => g.g !== "Administration");
+}
+/* Enforced, not just hidden: a hidden link a person can still reach by
+   typing the URL isn't really two workspaces, it's one page with fewer
+   bookmarks. Redirects the FIRST moment a page they can't see in their own
+   nav loads — vxShell runs before any page's own body executes, so this
+   is the one place that reliably front-runs the other 40. */
+function vxEnforceWorkspace() {
+  const cur = location.pathname.split("/").pop() || "dashboard.html";
+  if (WORKSPACE_EXEMPT_PAGES.has(cur)) return;
+  const allowed = vxScopedNav().some(g => g.items.some(it => it.h === cur));
+  if (allowed) return;
+  const home = vxIsAdmin() ? "tenants.html" : "dashboard.html";
+  if (cur === home) return;
+  location.replace(home);
+}
 
 /* ---------- theme ----------
    Removed. §17 forbids dark mode in content areas: rating figures, factor
@@ -254,7 +348,9 @@ function vxSetSubtitle(text) {
   if (el) el.outerHTML = vxSubtitle(text);
 }
 function vxShell(title, subtitle, crumbs) {
+  vxEnforceWorkspace();
   const cur = location.pathname.split("/").pop() || "dashboard.html";
+  const scopedNav = vxScopedNav();
   /* Each nav group is a labelled list, so a screen reader announces
      "Configuration, list, 6 items" instead of 41 undifferentiated links.
      aria-current marks the active page — the orange marker beside it is the
@@ -267,7 +363,7 @@ function vxShell(title, subtitle, crumbs) {
      page actually being viewed — that one always renders expanded so a
      stored preference from a prior visit can never hide where you are. */
   const navCollapsed = (() => { try { return JSON.parse(localStorage.getItem("vxNavCollapsed")) || {}; } catch (e) { return {}; } })();
-  const nav = NAV.map((g, gi) => {
+  const nav = scopedNav.map((g, gi) => {
     const isCurGroup = g.items.some(it => it.h === cur);
     /* A fresh browser has no stored preference for any group — before this,
        that meant every group rendered expanded, so a first-time visit to
@@ -331,6 +427,8 @@ function vxShell(title, subtitle, crumbs) {
         <div class="vx-searchres" id="vxQR" role="listbox" aria-label="Search results"></div>
       </div>
       <div class="vx-tb-actions">
+        ${vxIsAdmin() ? "" : `<button class="btn btn-outline-secondary btn-sm" id="vxLogoutTenant" title="Log out of ${vxTenant().name} back to the admin console">
+          <i class="fa-solid fa-right-from-bracket me-1"></i>Tenant Management</button>`}
         <div style="position:relative">
           <button class="vx-tenant" id="vxTenantBtn" aria-haspopup="true" aria-expanded="false"
             aria-controls="vxTenantPop" aria-label="Switch tenant. Current tenant ${vxTenant().name}">
@@ -463,6 +561,8 @@ function vxShell(title, subtitle, crumbs) {
   document.querySelectorAll("#vxTenantPop [data-tenant]").forEach(a => a.onclick = e => {
     e.preventDefault(); e.stopPropagation(); vxSetTenant(a.dataset.tenant);
   });
+  const logoutBtn = document.getElementById("vxLogoutTenant");
+  if (logoutBtn) logoutBtn.onclick = vxLogoutOfTenant;
 
   document.addEventListener("click", () => {
     pops.forEach(([, p]) => document.getElementById(p).classList.remove("on"));
@@ -500,7 +600,11 @@ function vxShell(title, subtitle, crumbs) {
 /* ---------- global search ---------- */
 function vxSearchIndex() {
   const ix = [];
-  NAV.forEach(g => g.items.forEach(i => ix.push({ t: i.l, s: "Page · " + g.g, h: i.h, ic: i.i })));
+  vxScopedNav().forEach(g => g.items.forEach(i => ix.push({ t: i.l, s: "Page · " + g.g, h: i.h, ic: i.i })));
+  // Everything below is data that only lives on pages an admin's restricted
+  // nav doesn't reach — surfacing it would put a search result one click
+  // from the same redirect vxEnforceWorkspace() would then bounce it off.
+  if (vxIsAdmin()) return ix;
   VX.products.forEach(p => ix.push({ t: p.name, s: "Product · " + p.lob, h: "products.html", ic: "fa-cubes" }));
   VX.lobs.forEach(l => ix.push({ t: l.name, s: "Line of Business", h: "lob.html", ic: "fa-layer-group" }));
   VX.states.forEach(s => ix.push({ t: s.name, s: "State · " + s.abv, h: "states.html", ic: "fa-flag-usa" }));
@@ -811,16 +915,19 @@ let _asT;
    can call vxAudit(); factor edits additionally write the purpose-built
    before/after row that the Loss Run and factor-history views read. */
 /* Which of VX.users this browser is acting as — same shape as the tenant
-   switcher (VX.activeTenantId), persisted, defaulting to the platform's own
-   Rating Administrator so every existing screen keeps working unchanged
-   until someone actually switches. This is what makes the approval flows
-   (factor changes, lookup-table row changes, table values, formulas) usable
-   through the real UI at all: every one of them blocks approving your own
-   request, and a single-user prototype had no way to become a second user
-   to approve as, short of a browser console. */
+   switcher (VX.activeTenantId), persisted, defaulting to VeriDex's own
+   platform admin — a separate concern from which WORKSPACE is open (see
+   the admin-vs-tenant-workspace block above): this is who audit entries and
+   factor-change approvals are attributed to, unrelated to whether you're
+   currently logged into a tenant's workspace or the admin console. This is
+   what makes the approval flows (factor changes, lookup-table row changes,
+   table values, formulas) usable through the real UI at all: every one of
+   them blocks approving your own request, and a single-user prototype had
+   no way to become a second user to approve as, short of a browser
+   console. */
 function vxActiveUser() {
   const byId = VX.activeUserId && (VX.users || []).find(u => u.id === VX.activeUserId);
-  return byId || (VX.users || []).find(x => x.role === "Rating Administrator") || (VX.users || [])[0];
+  return byId || (VX.users || []).find(x => x.role === "VeriDex Admin") || (VX.users || [])[0];
 }
 function vxCurrentUser() {
   const u = vxActiveUser();

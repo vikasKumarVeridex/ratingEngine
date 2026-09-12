@@ -2,7 +2,7 @@
 <html lang="en" style="background-color:#1A1D23">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Roles &amp; Permissions — Administration | VeriDex</title>
+<title>Roles &amp; Permissions — Team | VeriDex</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-grid.css" rel="stylesheet">
@@ -24,10 +24,28 @@
 <script src="assets/js/ag-grid-adapter.js"></script>
 <script>
 vxShell("Roles & Permissions", "Who may do what, and under which conditions. || Roles grant actions (RBAC); constraints narrow them by attribute (ABAC).",
-  [{l:"Administration"},{l:"Roles & Permissions"}]);
+  [{l:"Team"},{l:"Roles & Permissions"}]);
 
 const P = VX_PERM;
 const LEVEL_CLS = { Admin:"red", Write:"amber", Operate:"blue", Read:"gray", External:"cyan", System:"purple" };
+
+/* The 10 seed roles (data.js) are regenerated fresh every load and
+   restore their own edits from "vxRoleEdits"; anything with an id above
+   that range is a wholly new role and restores from "vxCustomRoles" — see
+   the matching restore block in data.js. vxAutoSave() (core.js) is a save
+   ANIMATION only, nothing behind it — every actual write on this page
+   goes through here instead, called after every real mutation: the plain
+   Add Role form (onAfterSave/onAfterDelete below) and the RBAC/ABAC editor
+   (roleEditor's Save button). */
+function persistRoles() {
+  const edits = {};
+  VX.roles.filter(r => r.id <= 10).forEach(r => {
+    edits[r.id] = { name: r.name, level: r.level, users: r.users, perms: r.perms,
+      permissions: r.permissions, constraints: r.constraints };
+  });
+  try { localStorage.setItem("vxRoleEdits", JSON.stringify(edits)); } catch (e) {}
+  try { localStorage.setItem("vxCustomRoles", JSON.stringify(VX.roles.filter(r => r.id > 10))); } catch (e) {}
+}
 
 document.getElementById("vxBody").innerHTML = `
   <div class="vx-exp2 vx-anim" id="expRbac">
@@ -153,6 +171,7 @@ function roleEditor(rec, startTab) {
         API.update("roles", rec.id, { name: editing.name, level: editing.level, users: editing.users,
           perms: editing.perms, permissions: editing.permissions, constraints: editing.constraints })
           .then(() => {
+            persistRoles();
             vxToast("Permissions saved", `${P.grantCount(editing)} grants · ${editing.constraints.length} constraint${editing.constraints.length === 1 ? "" : "s"}`, "ok");
             vxAutoSave(); grid.reload(); renderSim();
           });
@@ -313,6 +332,15 @@ function cxSummary(r) {
   return `<span class="vx-b amber" title="${c.map(P.describe).join(" · ")}">${c.length} constraint${c.length === 1 ? "" : "s"}</span>`;
 }
 
+/* "VeriDex Admin" is the platform operator's own role — not something any
+   tenant should see, let alone edit or assign, on a page this tenant's own
+   Super Admin now reaches (roles.html moved into the tenant-visible "Team"
+   group). Filtered out of the grid's own source rather than hidden with
+   CSS, so it's also unreachable via the row pencil/matrix shortcut, not
+   just invisible in the list. Left fully visible and editable in VeriDex's
+   own admin console — vxIsAdmin() covers exactly that. */
+if (!vxIsAdmin()) VX.roles = VX.roles.filter(r => r.name !== "VeriDex Admin");
+
 const grid = vxAgGrid({ el:"#grid", key:"roles", name:"Role",
   cols:[
     {k:"name",l:"Role"},
@@ -333,7 +361,8 @@ const grid = vxAgGrid({ el:"#grid", key:"roles", name:"Role",
      as a shortcut that lands directly on the matrix tab. */
   onEdit: rec => roleEditor(rec, "details"),
   rowActions:[{ t:"Jump to permission matrix", i:"fa-user-shield", fn: rec => roleEditor(rec, "rbac") }],
-  filters:[{k:"level",l:"Level",opts:["Admin","Write","Operate","Read","External","System"]}] });
+  filters:[{k:"level",l:"Level",opts:["Admin","Write","Operate","Read","External","System"]}],
+  onAfterSave: persistRoles, onAfterDelete: persistRoles });
 
 function renderEffective() {
   const users = VX.users || [];
