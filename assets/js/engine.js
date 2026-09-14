@@ -116,7 +116,7 @@ const ENGINE = (() => {
     const lob = (VX.lobs || []).find(l => l.name === lobName);
     if (lob && lob.licenceBasis === "Admitted") return true;          // 1. statutory
     if (productName) {
-      const p = (VX.products || []).filter(ofTenant).find(x => x.name === productName);
+      const p = (VX.products || []).filter(ofTenant).find(x => sameProduct(x.name, productName));
       if (p && p.licenceBasis) return p.licenceBasis === "Admitted";  // 2. product paper
     }
     const tid = tenantId != null ? tenantId : ratingTenant();
@@ -141,8 +141,8 @@ const ENGINE = (() => {
      filed line's group name, which was never meant to have one) stays
      taxable, the same default every existing quote already priced under. */
   function coverageTaxable(groupName, lobName) {
-    const mine = (VX.cob || []).filter(ofTenant).filter(c => c.lob === lobName);
-    const row = mine.find(c => c.name === groupName);
+    const mine = (VX.cob || []).filter(ofTenant).filter(c => sameText(c.lob, lobName));
+    const row = mine.find(c => sameText(c.name, groupName));
     if (!row) return true;
     const effective = row.parentCobId ? (mine.find(c => c.id === row.parentCobId) || row) : row;
     return effective.taxable !== false;
@@ -159,8 +159,23 @@ const ENGINE = (() => {
      (title case), the two never matched, and resolution fell through to
      "no version has ever taken effect" and picked the nearest stub instead
      of the real, live, Published filing sitting right there under a
-     differently-cased name for the same product. */
-  const sameProduct = (a, b) => !!a && !!b && String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+     differently-cased name for the same product.
+
+     The same drift, and the same fix, turned out to apply well beyond
+     product names — a product's own .lob string, a coverage's .lob, and a
+     factor's own coverage string are all typed or exported independently
+     from the same source data and routinely disagree only in case. Each
+     site that discovered this (configuredRoute, configuredRate,
+     coverageTaxable) had grown its own byte-identical trim+lowercase
+     closure before being consolidated here — which is exactly the
+     failure mode a shared helper exists to prevent: a future fix to the
+     comparison (Unicode case-folding, say) applied to one copy and missed
+     in the others would quietly reintroduce this same class of bug in
+     just the copy nobody remembered to touch. `sameProduct` keeps its own
+     name at call sites naming a product specifically, for readability. */
+  const normText = s => String(s || "").trim().toLowerCase();
+  const sameText = (a, b) => !!a && !!b && normText(a) === normText(b);
+  const sameProduct = sameText;
 
   /* A product may pin a transaction type to a specific version — new
      business on the latest filing while renewals stay on the prior one, for
@@ -1617,8 +1632,21 @@ const ENGINE = (() => {
      same convention the lookup-table branch below uses. */
   function importedFactorTableInfo(f) {
     if (!f || !f.tableId || typeof VX === "undefined") return null;
+    /* tenantRateTables is exclusively tenant-owned — "each tenant's own
+       isolated copy" per its own definition (cosmos-model.js) — so a
+       shared/no-tenant factor (f.tenantId == null) has no table of its own
+       in here to find, and must not read anyone else's. The old
+       `f.tenantId == null || x.tenantId === f.tenantId` short-circuited to
+       true on the FIRST clause whenever f.tenantId was null, matching
+       whichever tenant's table happened to come first with a matching
+       factorCode — and factorCode collisions across tenants are not rare
+       here: auto-generated codes like "RAT-FACTOR-001" repeat across every
+       tenant onboarded from a similarly-shaped export. A shared factor
+       could therefore surface an arbitrary other tenant's proprietary rate
+       data. Requires an actual tenant match now, both sides. */
+    if (f.tenantId == null) return null;
     const t = (VX.tenantRateTables || []).find(x =>
-      x.factorCode === f.code && (f.tenantId == null || x.tenantId === f.tenantId));
+      x.factorCode === f.code && x.tenantId === f.tenantId);
     if (!t || !Array.isArray(t.data) || !t.data.length) return null;
     const rows = t.data.map(r => {
       const keys = Object.keys(r);
@@ -1653,13 +1681,24 @@ const ENGINE = (() => {
        real, proprietary rate, uploaded table or not, with no override
        checkbox needed to say so — the table stays visible for reference
        (View rows in Rate Tables) but never governs a non-admitted tenant's
-       own premium. Read off the TENANT's own licence, not a specific
-       product's, since a Rating Factor is not itself tied to one product;
-       `!== false` treats an unset licence as non-admitted, this platform's
-       own stated default paper. */
+       own premium. Goes through the SAME isAdmitted() precedence every
+       other admitted/non-admitted decision on this platform uses (statutory
+       LOB override tested first, then tenant licence — no specific product
+       to check here, since a Rating Factor is not itself tied to one) —
+       reading only the tenant's own nonAdmitted flag directly, as this once
+       did, disagreed with isAdmitted() for any tenant writing a
+       statutorily-admitted line (Workers' Compensation) on an otherwise
+       non-admitted licence: the quote itself charges no surplus-lines tax
+       on that line (correctly, per isAdmitted()), while this function would
+       have bypassed its filed table anyway, pricing a statutorily admitted
+       line off an unfiled Default Value. Checked across every LOB the
+       factor names — one statutorily-admitted line among them is enough to
+       keep the table governing, the safer of the two ways to disagree with
+       a filed-rate requirement. */
     if (f && f.tenantId != null) {
-      const t = (VX.tenants || []).find(x => x.id === f.tenantId);
-      if (!t || t.nonAdmitted !== false) return null;
+      const lobs = asFieldArr(f.lob);
+      const admittedOnAny = lobs.length ? lobs.some(lobName => isAdmitted(lobName, f.tenantId)) : isAdmitted(null, f.tenantId);
+      if (!admittedOnAny) return null;
     }
     const imported = importedFactorTableInfo(f);
     if (imported) return imported;
@@ -1698,11 +1737,10 @@ const ENGINE = (() => {
   function approvedCustomFactorVars(lobName, cobKey) {
     if (typeof VX === "undefined" || !VX.ratingFactors) return {};
     const coverage = cobKey === "__ACCOUNT__" || cobKey === "__ACCOUNT_PD__" ? "Account Level" : cobKey;
-    const asArr = v => Array.isArray(v) ? v : (v ? [v] : []);
     const out = {};
     VX.ratingFactors.filter(ofTenant).forEach(f => {
       if (!(f.custom || f.verified === undefined) || !f.approvedForFormulas || !f.code) return;
-      if (!asArr(f.lob).includes(lobName) || !asArr(f.coverage).includes(coverage)) return;
+      if (!asFieldArr(f.lob).includes(lobName) || !asFieldArr(f.coverage).includes(coverage)) return;
       let v = null;
       const tinfo = customFactorTableInfo(f);
       if (tinfo) v = tinfo.base;
@@ -1934,7 +1972,25 @@ const ENGINE = (() => {
       .filter(f => !(f.code === "FEE_SLFILE" && admitted))
       .filter(ofTenant);
     o.__admitted = admitted;
-    const preTax = Math.round(afterAdj * taxPct);
+
+    /* What share of the rated premium is actually taxable — per-coverage,
+       via coverageTaxable() above, not a flat yes/no for the whole quote. A
+       coverage's account/driver-factor and discount/surcharge adjustments
+       aren't tracked per-coverage in this engine (those are quote-level
+       numbers), so the taxable GROUPS' share of raw coverage premium is
+       taken as the taxable share of the fully-adjusted premium too — an
+       approximation, but an exact one whenever every coverage is taxable
+       (the untouched default), since the fraction is then exactly 1 and
+       every existing quote's tax is unchanged to the cent. Computed here,
+       ahead of preTax/BASIS below, so a fee priced as a percent of
+       "Premium + Taxes" sees the SAME tax the quote is actually charged —
+       computing it after (as originally written) left preTax using the
+       full, un-reduced tax while the real `tax` a few lines down used the
+       coverage-shrunk one, silently overcharging that one fee basis. */
+    const taxableCoverage = groups.filter(g => coverageTaxable(g.name, lob)).reduce((a, g) => a + g.subtotal, 0);
+    const taxableFraction = coverage > 0 ? taxableCoverage / coverage : 1;
+
+    const preTax = Math.round(Math.round(afterAdj * taxableFraction) * taxPct);
     const BASIS = {
       "Premium Before Fees": afterAdj,
       "Coverage Premium": coverage,
@@ -1962,18 +2018,6 @@ const ENGINE = (() => {
       }
     });
     const fees = feeLines.reduce((a, f) => a + f.amt, 0);
-
-    /* What share of the rated premium is actually taxable — per-coverage,
-       via coverageTaxable() above, not a flat yes/no for the whole quote. A
-       coverage's account/driver-factor and discount/surcharge adjustments
-       aren't tracked per-coverage in this engine (those are quote-level
-       numbers), so the taxable GROUPS' share of raw coverage premium is
-       taken as the taxable share of the fully-adjusted premium too — an
-       approximation, but an exact one whenever every coverage is taxable
-       (the untouched default), since the fraction is then exactly 1 and
-       every existing quote's tax is unchanged to the cent. */
-    const taxableCoverage = groups.filter(g => coverageTaxable(g.name, lob)).reduce((a, g) => a + g.subtotal, 0);
-    const taxableFraction = coverage > 0 ? taxableCoverage / coverage : 1;
 
     // taxable fees are taxed alongside premium
     const taxableFees = feeLines.filter(f => f.taxable).reduce((a, f) => a + f.amt, 0);
@@ -2214,9 +2258,14 @@ const ENGINE = (() => {
        Live by configuredRoute(), yet never actually reaching a premium
        group. Matching case-insensitively keeps what "wired" reports and
        what configuredRate() actually prices in agreement. */
-    const normL2 = s => String(s || "").trim().toLowerCase();
-    const covers = new Set((VX.cob || [])
-      .filter(c => c.tenantId === tid && normL2(c.lob) === normL2(lobName)).map(c => c.name));
+    /* Keyed by the NORMALIZED name, valued with the coverage's own canonical
+       (VX.cob) casing — a factor's own `coverage` string can carry different
+       casing than the cob row it means (the same independently-typed drift
+       configuredRoute() already normalizes past), so the lookup below has to
+       match case-insensitively too, and group factors under the coverage's
+       real name rather than whatever casing happened to land on the factor. */
+    const coverCanon = new Map((VX.cob || [])
+      .filter(c => c.tenantId === tid && sameText(c.lob, lobName)).map(c => [normText(c.name), c.name]));
     const byCover = {};
     const unattached = [];
     mine.forEach(f => {
@@ -2235,9 +2284,11 @@ const ENGINE = (() => {
       const named = cobs.length ? cobs : [f.assignedTo || ""];
       let matchedAny = false;
       named.forEach(g => {
-        if (!g || /base premium/i.test(g) || !covers.has(g)) return;
+        if (!g || /base premium/i.test(g)) return;
+        const canon = coverCanon.get(normText(g));
+        if (!canon) return;
         matchedAny = true;
-        (byCover[g] = byCover[g] || []).push(f);
+        (byCover[canon] = byCover[canon] || []).push(f);
       });
       if (!matchedAny) unattached.push(f);
     });
@@ -2506,12 +2557,11 @@ const ENGINE = (() => {
          correctly attached factor into a permanent "Not wired" with nothing
          on screen explaining why — the same class of bug already found and
          fixed for product-name matching in resolveRatingVersion(). */
-      const normL = s => String(s || "").trim().toLowerCase();
-      const isBuiltInLine = Object.values(LOB_NAME).some(n => normL(n) === normL(lob));
+      const isBuiltInLine = Object.values(LOB_NAME).some(n => sameText(n, lob));
       const hasProduct = (VX.products || []).some(p =>
-        p.tenantId === tenantId && normL(p.lob) === normL(lob) && (p.imported || !isBuiltInLine));
+        p.tenantId === tenantId && sameText(p.lob, lob) && (p.imported || !isBuiltInLine));
       if (!hasProduct) return false;
-      return (VX.cob || []).some(c => c.tenantId === tenantId && normL(c.lob) === normL(lob) && normL(c.name) === normL(cov));
+      return (VX.cob || []).some(c => c.tenantId === tenantId && sameText(c.lob, lob) && sameText(c.name, cov));
     },
     customFactorTableInfo,
     configuredBasePremium,
@@ -2524,8 +2574,7 @@ const ENGINE = (() => {
        folded into varMap, honoured by RemainingFactors. */
     factorIsLive(f) {
       if (!f || !f.approvedForFormulas) return { live: false, reason: !f ? "missing" : "notApproved" };
-      const asArr = v => Array.isArray(v) ? v : (v ? [v] : []);
-      /* The base premium row genuinely has no single coverage — configuredRate()
+        /* The base premium row genuinely has no single coverage — configuredRate()
          (further down this file) applies it to every one of a configured
          product's coverages by name, not through the per-coverage routing
          every other factor needs. Without this, it reported "Not wired" here
@@ -2538,11 +2587,11 @@ const ENGINE = (() => {
          whether there is a real number to apply in the first place. */
       const isBaseRow = /base premium/i.test(f.assignedTo || "") || /base/i.test(f.code || "");
       if (isBaseRow && f.tenantId != null) {
-        for (const lob of asArr(f.lob)) {
+        for (const lob of asFieldArr(f.lob)) {
           if (ENGINE.configuredBasePremium(f.tenantId, lob).value != null) return { live: true, lob, coverage: null, configuredBase: true };
         }
       }
-      const lobs = asArr(f.lob), covs = asArr(f.coverage);
+      const lobs = asFieldArr(f.lob), covs = asFieldArr(f.coverage);
       let sawRoute = false, sawFormula = false;
       for (const lob of lobs) {
         for (const cov of covs) {
