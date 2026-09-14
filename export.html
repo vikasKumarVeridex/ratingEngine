@@ -22,7 +22,7 @@ vxShell("Export Configuration", "Export any part of the rating configuration. ||
   [{ l: "Administration" }, { l: "Export Configuration" }]);
 
 const MODULES = [
-  ["products","Products",VX.products.length],["lobs","Lines of Business",VX.lobs.length],
+  ["products","Products",VX.products.length],["lobs","Coverage Lines",VX.lobs.length],
   ["cob","Coverages / Class of Business",VX.cob.length],["industryClasses","Industry Classes (NAICS)",VX.industryClasses.length],
   ["ratingFactors","Rating Factors",VX.ratingFactors.length],["baseRates","Base Rate Tables",VX.baseRates.length],
   ["lookupTables","Lookup Tables",VX.lookupTables.length],["versions","Rating Versions",VX.versions.length],
@@ -61,7 +61,7 @@ document.getElementById("vxBody").innerHTML = `
         <option>Active versions only</option><option>All versions (full history)</option>
         ${[...new Set(VX.versions.map(v => v.version))].slice(0, 6).map(v => `<option>${v}</option>`).join("")}</select></div>
       <div class="mb-3"><label>Scope</label><select class="form-select form-select-sm" id="scope">
-        <option>All lines of business</option>${vxLobNames().map(n => `<option>${n}</option>`).join("")}</select></div>
+        <option>All coverages</option>${vxLobNames().map(n => `<option>${n}</option>`).join("")}</select></div>
       <div class="mb-3"><label>Purpose</label><select class="form-select form-select-sm" id="purp">
         <option>Offline review</option><option>Regulatory filing packet</option>
         <option>Environment promotion (Sandbox → Prod)</option><option>Backup / archive</option></select></div>

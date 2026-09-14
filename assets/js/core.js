@@ -26,17 +26,20 @@ const NAV = [
   { g: "Configuration", items: [
     { h: "products.html", i: "fa-cubes", l: "Products" },
     { h: "versions.html", i: "fa-code-branch", l: "Versions" },
-    { h: "lob.html", i: "fa-layer-group", l: "Lines of Business" },
+    { h: "lob.html", i: "fa-layer-group", l: "Coverage" },
     { h: "coverages.html", i: "fa-shield", l: "Coverages" },
     { h: "units.html", i: "fa-ruler", l: "Rating Units" },
     { h: "industry-classes.html", i: "fa-industry", l: "Industry Classes" },
   ]},
   { g: "Rating", items: [
     /* Lines of Business moved up to Configuration — an LOB is something you
-       define before rating it, not a rating artefact. */
+       define before rating it, not a rating artefact. Rate Tables moved OUT
+       (see Administration below) — it holds the platform's own real, FILED
+       reference data, not anything a tenant owns or edits; nothing here
+       otherwise distinguished "the real filed loss costs everyone rates
+       against" from "this tenant's own configuration built on top of it". */
     { h: "factors.html", i: "fa-sliders", l: "Rating Factors" },
     { h: "formula-builder.html", i: "fa-square-root-variable", l: "Rating Formulas" },
-    { h: "rate-tables.html", i: "fa-database", l: "Rate Tables (live)" },
     { h: "lookup-tables.html", i: "fa-table-list", l: "Lookup Tables" },
     { h: "glossary.html", i: "fa-book", l: "Glossary" },
   ]},
@@ -84,6 +87,14 @@ const NAV = [
     { h: "audit.html", i: "fa-clock-rotate-left", l: "Audit History" },
     { h: "settings.html", i: "fa-gear", l: "Settings" },
     { h: "export.html", i: "fa-file-export", l: "Export Configuration" },
+    /* Moved from Rating: the platform's own real, filed reference data
+       (loss costs, ILFs, class factors extracted from actual carrier
+       workbooks) that every tenant's built-in calculator reads from, the
+       same way real carriers all rate off one shared set of ISO/NCCI filed
+       tables — not a tenant's own configuration, and not something a
+       tenant should see or edit. Lives with the rest of what VeriDex
+       administers on everyone's behalf, not in a tenant's own workspace. */
+    { h: "rate-tables.html", i: "fa-database", l: "Rate Tables (live)" },
   ]},
   { g: "Reference & Tools", items: [
     { h: "engine-flow.html", i: "fa-sitemap", l: "Engine Flow" },
@@ -119,6 +130,14 @@ const ADMIN_NAV = [
   { g: "Administration", items: [
     { h: "tenants.html", i: "fa-building", l: "Tenant Management" },
     { h: "tenant-stats.html", i: "fa-chart-simple", l: "Tenant Stat Dashboard" },
+    /* The platform's own real, filed reference data — VeriDex's to
+       maintain, no tenant's to see. Listed here explicitly (not derived
+       from NAV's own "Administration" group) since this array is a
+       standalone replacement for the tenant workspace nav, not a filtered
+       view of it — without this, moving rate-tables.html into NAV's
+       Administration group would have hidden it from tenants correctly
+       but left VeriDex's own admin with no way to reach it either. */
+    { h: "rate-tables.html", i: "fa-database", l: "Rate Tables" },
   ]},
 ];
 /* Reachable by direct link regardless of workspace — the topbar's own
@@ -126,7 +145,7 @@ const ADMIN_NAV = [
    sidebar, on purpose: switching the Acting-As user/role is a separate
    concern from which workspace you're in, and gating Settings the same way
    as everything else would strand whoever needed it from either side. */
-const WORKSPACE_EXEMPT_PAGES = new Set(["settings.html"]);
+const WORKSPACE_EXEMPT_PAGES = new Set(["settings.html", "tenant-setup.html"]);
 /* Persisted (not session-only): logging into a tenant is meant to survive a
    reload the same way the tenant/user pickers already do — the whole point
    is that it behaves like being logged in, not like a scroll position. */
@@ -226,11 +245,29 @@ function vxUnit(name, tenantId) {
   const tid = tenantId === undefined ? VX.activeTenantId : tenantId;
   return (VX.units || []).find(u => u.name === name && (u.tenantId == null || u.tenantId === tid)) || null;
 }
+/* Picking a specific tenant by name here always means "I want to work in
+   THIS tenant now" — there is no reading of the topbar picker where
+   choosing a tenant while in the admin console was meant to leave you
+   looking at the SAME 2-page admin nav with just a different tenant's id
+   pointed at underneath it (the admin console's own two pages, Tenant
+   Management and Tenant Stat Dashboard, show every tenant at once — picking
+   one here changes nothing about what either of them displays). Before this,
+   using this picker from the admin console silently left vxIsAdmin() true:
+   the active tenant changed, but the sidebar stayed the restricted admin
+   nav and the "Tenant Management" logout button never appeared, which read
+   as the tenant switch — or the whole platform — simply not working, with
+   no error and nothing on screen to explain it. Logging in is therefore
+   folded into every use of this picker, not only the dedicated "Log in to
+   this tenant" row action — picking a tenant FROM WITHIN an existing tenant
+   session still just switches which one you're logged into, exactly as
+   before, since vxWorkspaceMode is already "tenant" and setting it again is
+   a no-op. */
 function vxSetTenant(id) {
   const t = (VX.tenants || []).find(x => x.id === +id);
   if (!t) return;
   VX.activeTenantId = t.id;
   localStorage.setItem("vxActiveTenant", JSON.stringify(t.id));
+  try { localStorage.setItem("vxWorkspaceMode", "tenant"); } catch (e) {}
   vxToast("Tenant switched", `Now working in ${t.name} · ${t.plan}`, "ok");
   setTimeout(() => location.reload(), 550);
 }
@@ -409,7 +446,13 @@ function vxShell(title, subtitle, crumbs) {
           <path d="M20 22 L28 8 L36 8 L26 26 Z" style="fill:var(--color-on-brand);fill-opacity:.55"/>
         </svg>
       </div>
-      <div><b>VeriDex</b><span>${vxTenant().name}</span></div>
+      <div style="min-width:0;flex:1">
+        <b>VeriDex</b>
+        ${vxIsAdmin()
+          ? `<span>Admin Console</span>`
+          : `<span class="vx-brand-tenant" title="${vxTenant().name}">${vxTenant().name}</span>
+             <a href="#" id="vxBrandLogout" class="vx-brand-logout" title="Log out to the admin console">&larr; Back to Admin</a>`}
+      </div>
     </div>
     <nav class="vx-nav" aria-label="Primary">${nav}</nav>
   </aside>
@@ -563,6 +606,14 @@ function vxShell(title, subtitle, crumbs) {
   });
   const logoutBtn = document.getElementById("vxLogoutTenant");
   if (logoutBtn) logoutBtn.onclick = vxLogoutOfTenant;
+  /* Same action, a second place — the topbar button (above) is easy to
+     miss among the search box and three other icon buttons crowding the
+     same row; this one sits in the sidebar brand, the first thing on
+     every single page regardless of viewport width or which nav group is
+     scrolled into view, and never lives behind a menu that has to be
+     opened first. */
+  const brandLogout = document.getElementById("vxBrandLogout");
+  if (brandLogout) brandLogout.onclick = e => { e.preventDefault(); vxLogoutOfTenant(); };
 
   document.addEventListener("click", () => {
     pops.forEach(([, p]) => document.getElementById(p).classList.remove("on"));
@@ -606,7 +657,7 @@ function vxSearchIndex() {
   // from the same redirect vxEnforceWorkspace() would then bounce it off.
   if (vxIsAdmin()) return ix;
   VX.products.forEach(p => ix.push({ t: p.name, s: "Product · " + p.lob, h: "products.html", ic: "fa-cubes" }));
-  VX.lobs.forEach(l => ix.push({ t: l.name, s: "Line of Business", h: "lob.html", ic: "fa-layer-group" }));
+  VX.lobs.forEach(l => ix.push({ t: l.name, s: "Coverage", h: "lob.html", ic: "fa-layer-group" }));
   VX.states.forEach(s => ix.push({ t: s.name, s: "State · " + s.abv, h: "states.html", ic: "fa-flag-usa" }));
   VX.ratingFactors.slice(0, 120).forEach(f => ix.push({ t: f.name, s: "Rating Factor · " + f.category, h: "factors.html", ic: "fa-sliders" }));
   VX.quotes.slice(0, 60).forEach(q => ix.push({ t: q.quoteNo + " — " + q.insured, s: "Quote · " + q.product, h: "quotes.html", ic: "fa-file-invoice" }));

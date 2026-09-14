@@ -25,7 +25,7 @@
 vxShell("Base Rate Tables", "Loss costs and base rates by state, territory, class and coverage. || The starting point of every calculation chain.", [{l:"Rating Data"},{l:"Base Rate Tables"}]);
 document.getElementById("vxBody").innerHTML = `
   ${vxNotWiredBanner('An inventory, not what the engine rates from — editing a row here changes no premium.',
-    'Each line of business reads its own real, filed tables in <a href="rate-tables.html">Rate Tables</a> instead: loss costs, ILFs, class factors and the rest.')}
+    'Each coverage reads its own real, filed tables in <a href="rate-tables.html">Rate Tables</a> instead: loss costs, ILFs, class factors and the rest.')}
   <div class="vx-card vx-anim"><div id="grid"></div></div>`;
 vxAgGrid({ el:"#grid", key:"baseRates", name:"Base Rate",
   

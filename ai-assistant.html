@@ -39,7 +39,7 @@ function respond(q) {
     const st = (s.match(/\b(california|texas|florida|new york|georgia)\b/) || [,"all states"])[1];
     return { text: `I'll create a new Cyber product scoped to ${st}. It will inherit the Cyber rating engine (Base Rate × Aggregate Risk Mod × ILF × Schedule Rating) and the 4 standard insuring-agreement groups. Review the proposed configuration below.`,
       diff: [["Product Name","—","VeriDex CyberShield — " + st,"add"],["Product Code","—","CYBER-" + st.slice(0,2).toUpperCase(),"add"],
-        ["Line of Business","—","Cyber","add"],["Rating Engine","—","Base Rate × Agg Risk × ILF × Sched","add"],
+        ["Coverage","—","Cyber","add"],["Rating Engine","—","Base Rate × Agg Risk × ILF × Sched","add"],
         ["Classes of Business","—","Liability, Breach Response, Cyber Crime, Business Loss","add"],
         ["Initial Version","—","v2026.08 (Draft)","add"],["Status","—","Draft","add"]],
       impact: "Creates 1 product and 1 draft rating version. No in-force policies affected." };
@@ -76,7 +76,7 @@ function respond(q) {
   if (/class of business|cob/.test(s)) {
     return { text: "I'll create a new Class of Business for drone/UAV operators. Based on similar aviation-adjacent classes I recommend Hazard Group 4 and an initial class factor of 1.55.",
       diff: [["Class Code","—","488999-D","add"],["Name","—","Drone / UAV Commercial Operations","add"],
-        ["Line of Business","—","General Liability","add"],["Hazard Group","—","4 — High Risk (1.45×)","add"],
+        ["Coverage","—","General Liability","add"],["Hazard Group","—","4 — High Risk (1.45×)","add"],
         ["Class Factor","—","1.550","add"],["Eligibility","—","Requires FAA Part 107 certification","add"]],
       impact: "Adds 1 class. No existing policies affected. Class becomes selectable in the Quote Portal immediately after publish." };
   }
@@ -139,8 +139,8 @@ document.getElementById("vxBody").innerHTML = `
   <div class="col-lg-4">
     <div class="vx-card vx-anim">
       <h2><i class="fa-solid fa-file-arrow-up me-1"></i>Upload a Rating Sheet</h2>
-      <div class="sub">Pick the line of business, then the rater workbook. The assistant derives the full factor configuration for that line and stages it into ${VX.meta.tenant}.</div>
-      <label>Line of Business</label>
+      <div class="sub">Pick the coverage, then the rater workbook. The assistant derives the full factor configuration for that coverage and stages it into ${VX.meta.tenant}.</div>
+      <label>Coverage</label>
       <select class="form-select form-select-sm mb-2" id="upLob">
         ${vxLobNames(true).map(n => `<option>${n}</option>`).join("")}
       </select>
@@ -177,7 +177,7 @@ function paint() {
   chatEl.scrollTop = chatEl.scrollHeight;
 }
 function boot() {
-  CHAT = [{ r: "ai", h: `Hello Vikas — I'm your configuration assistant. I have access to <b>${VX.products.length} products</b>, <b>${VX.lobs.length} lines of business</b>, <b>${vxNum(VX.ratingFactors.length)} rating factors</b> and <b>${VX.lookupTables.length} lookup tables</b> across every line of business.<br><br>Describe a change and I'll show you a preview before anything is staged.` }];
+  CHAT = [{ r: "ai", h: `Hello Vikas — I'm your configuration assistant. I have access to <b>${VX.products.length} products</b>, <b>${VX.lobs.length} coverages</b>, <b>${vxNum(VX.ratingFactors.length)} rating factors</b> and <b>${VX.lookupTables.length} lookup tables</b> across every coverage.<br><br>Describe a change and I'll show you a preview before anything is staged.` }];
   paint();
 }
 function ask(q) {

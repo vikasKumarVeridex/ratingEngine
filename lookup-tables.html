@@ -72,7 +72,7 @@ document.getElementById("vxBody").innerHTML = `
   <div class="mb-3 vx-anim" style="border:1px solid var(--border);border-left:3px solid var(--accent);background:var(--primary-soft);border-radius:0 10px 10px 0;padding:11px 15px;font-size:12.3px;line-height:1.6">
     <i class="fa-solid fa-circle-info me-1" style="color:var(--accent)"></i>
     <b>This is an inventory, not the data itself.</b> It records each table's size at production scale, not the filed
-    numbers. <b>${myLookupTables.filter(t => LOOKUP_LIVE[t.name] !== undefined).length} of ${myLookupTables.length}</b> tables — every line of business
+    numbers. <b>${myLookupTables.filter(t => LOOKUP_LIVE[t.name] !== undefined).length} of ${myLookupTables.length}</b> tables — every coverage
     the engine rates, not just Trucking — have real rows extracted and browsable — click <i class="fa-solid fa-table-cells"></i> on those rows.
     <b>${myLookupTables.filter(t => t.sample).length}</b> more have a small <span class="vx-b amber">Sample</span> dataset —
     a few placeholder rows shaped like the real key columns, generated here rather than filed, so the table isn't empty

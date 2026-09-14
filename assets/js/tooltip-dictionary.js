@@ -65,7 +65,7 @@
 
     /* loss-runs.html */
     "State / Province": { d: "Jurisdiction code for the geographic rollup.", w: "Used to enforce per-state rate-filing boundaries and reporting cadences." },
-    "Primary LOB":    { d: "Line of business that drives the bulk of premium and losses for this segment.", w: "Used to route the experience mod to the correct actuarial team." },
+    "Primary LOB":    { d: "Coverage that drives the bulk of premium and losses for this segment.", w: "Used to route the experience mod to the correct actuarial team." },
     "Quotes":         { d: "Count of bound + non-bound quotes in the selected period.", w: "Exposure base for loss-ratio calculations." },
     "Loss Ratio vs Target": { d: "Actual loss ratio divided by the filed target loss ratio, expressed as a percentage.", w: "Above 100% signals a portfolio drift that should trigger a rate review." },
     "Trend":          { d: "Direction (up/down/flat) of the loss ratio across the last four periods.", w: "Quick visual cue for portfolio health." },
@@ -135,7 +135,7 @@
 
     /* factors.html — main grid headers not already covered above */
     "Rating Factor":  { d: "The factor's display name, written as an underwriter would say it (e.g. \"Radius of Operation Factor\").", w: "Shown in the rating trace on a quote, so it is what an underwriter sees when explaining a price." },
-    "Line of Business": { d: "The line whose engine reads this factor (Commercial Trucking, General Liability, Cyber, etc.).", w: "Factors are LOB-scoped; a factor never applies outside the line it is registered against." },
+    "Coverage Line":  { d: "The line whose engine reads this factor (Commercial Trucking, General Liability, Cyber, etc.).", w: "Factors are scoped to their coverage line; a factor never applies outside the line it is registered against." },
     "Values / Rules": { d: "How many distinct outcomes this factor can produce — a lookup factor's row count, or 1 for a fixed value.", w: "A quick read on how much of the factor's behaviour lives in a table versus a single number." },
     "Coverage":       { d: "The coverage this factor prices — its position in the Factor → Assigned To chain.", w: "Distinct from Scope: Coverage is WHAT the factor prices, Scope is WHAT it varies by." },
     "Coverage Type":  { d: "Which specific coverage within the policy this row's limit applies to (e.g. per-person vs. per-accident).", w: "The same limit menu can list several coverage types that are not interchangeable." },

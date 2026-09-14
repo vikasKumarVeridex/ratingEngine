@@ -578,7 +578,7 @@ function vxAgGrid(opt) {
                     <span>${c}</span></label>`).join("")}
                 </div>
               </div>`; }).join("")
-              : `<div style="font-size:12px;color:var(--text-mute);padding:6px 4px">No coverages defined for this line of business yet.</div>`}
+              : `<div style="font-size:12px;color:var(--text-mute);padding:6px 4px">No coverages defined for this coverage line yet.</div>`}
           </div>${hint}</div>`;
       }
       if (f.t === "textarea") return `<div class="col-md-12${lk ? " vx-fld-locked" : ""}" data-fw="${f.k}"><label>${f.l}</label>

@@ -73,7 +73,7 @@ document.getElementById("vxBody").innerHTML = `
       <canvas id="c1" height="96"></canvas>
     </div>
     <div class="vx-card vx-anim vx-anim-d2">
-      <div class="vx-card-head"><div><h2>Quotes by Line of Business</h2><div class="sub">Volume and bound conversion by LOB this quarter</div></div>
+      <div class="vx-card-head"><div><h2>Quotes by Coverage</h2><div class="sub">Volume and bound conversion by coverage this quarter</div></div>
         <a href="analytics.html" class="btn btn-outline-secondary btn-sm">Full Analytics <i class="fa-solid fa-arrow-right ms-1"></i></a></div>
       <canvas id="c2" height="104"></canvas>
     </div>
@@ -101,7 +101,7 @@ document.getElementById("vxBody").innerHTML = `
         <div style="font-size:12.7px;line-height:1.5">${w.text}</div></div>`).join("")}
     </div>
     <div class="vx-card vx-anim">
-      <h2>Rating Data Loaded</h2><div class="sub">By line of business</div>
+      <h2>Rating Data Loaded</h2><div class="sub">By coverage</div>
       ${VX.workbooks.map(w=>`<div class="d-flex justify-content-between align-items-center py-2" style="border-bottom:1px solid var(--border);font-size:12.5px">
         <div><b style="font-size:12.5px">${w.lob}</b><div style="color:var(--text-mute);font-size:11px">${w.rows} rating rows</div></div>
         <span class="vx-b green">${w.status}</span></div>`).join("")}
@@ -131,8 +131,8 @@ let selLob = sessionStorage.getItem("vxDashLob") || "";
    sat unchanged next to a filtered chart — so they are computed from the same
    filtered set instead. Configuration counts (versions, factors, pending
    changes) are deliberately NOT filtered by LOB — a tenant's overall
-   configuration health isn't a per-line number. An MGA filter used to sit
-   alongside this one, but a single tenant's own book runs through one MGA
+   configuration health isn't a per-line number. An MGU filter used to sit
+   alongside this one, but a single tenant's own book runs through one MGU
    relationship, not several to tell apart — removed rather than kept as a
    dropdown with one option that can never do anything. */
 function filteredQuotes() {
@@ -155,7 +155,7 @@ function renderPortfolio() {
 
 function renderActionBar() {
   const lobSelect = `<select class="form-select form-select-sm" id="dashLob" style="width:auto;min-width:210px">
-      <option value="">All lines of business</option>
+      <option value="">All coverages</option>
       ${LOB_OPTS.map(l => `<option ${l === selLob ? "selected" : ""}>${l}</option>`).join("")}</select>`;
 
   document.getElementById("actionBar").innerHTML = `

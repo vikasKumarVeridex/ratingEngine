@@ -268,7 +268,7 @@ function manageFormulas(r) {
   vxModal(`Formulas attached to ${r.version}`, `
     <div style="font-size:12.3px;color:var(--text-dim);margin-bottom:10px">
       <b>${r.product}</b> · ${r.lob} · <span class="vx-b ${r.status === "Published" ? "green" : "amber"}">${r.status}</span><br>
-      Tick every formula this rating version should execute. Only ${r.lob} formulas are listed — a formula rates one line of business.
+      Tick every formula this rating version should execute. Only ${r.lob} formulas are listed — a formula rates one coverage line.
     </div>
     <div style="max-height:300px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:10px 12px">
       ${eligible.map(f => `<div class="form-check">
@@ -545,7 +545,7 @@ function viewFormulaDetail(fid, engineRec) {
     vxModal(`Formula — ${f.name}`, `
       <div class="row g-3 mb-3">
         <div class="col-md-6"><label>Scope</label><div style="font-size:13px">${f.scope === "Class of Business" ? `Class of Business — <b>${f.cob}</b>` : "Account Level — applies once across the policy"}</div></div>
-        <div class="col-md-6"><label>Line of Business</label><div style="font-size:13px">${f.lob}</div></div>
+        <div class="col-md-6"><label>Coverage</label><div style="font-size:13px">${f.lob}</div></div>
         <div class="col-md-6"><label>Rating Engines</label><div style="font-size:13px">${(f.attachments || []).length ? f.attachments.map(a => `${a.ratingVersion} <span style="color:var(--text-mute)">(${a.product})</span>`).join("<br>") : '<span style="color:var(--text-mute)">Unattached</span>'}</div></div>
         <div class="col-md-6"><label>Status</label><div><span class="vx-b ${f.status==="Active"?"green":"amber"}">${f.status}</span></div></div>
         <div class="col-md-6"><label>Tested</label><div>${f.tested
@@ -781,8 +781,8 @@ const grid = vxAgGrid({ el:"#grid", key:"versions", name:"Rating Version", size:
       dependsOn:"product",clearOnChange:false,
       val:r=>attachedFormulas(r).map(f=>f.id),
       opts:formulaOpts,
-      empty:"No formulas exist for this product's line of business yet — build one in Formulas.",
-      hint:"A formula rates on the version it is attached to. Only formulas for this product's line of business are listed."},
+      empty:"No formulas exist for this product's coverage line yet — build one in Formulas.",
+      hint:"A formula rates on the version it is attached to. Only formulas for this product's coverage line are listed."},
     {k:"notes",l:"Notes",t:"textarea"}],
   filters:[{k:"status",l:"Status",opts:VVER_ORDER},{k:"lob",l:"LOB",opts:vxLobNames()}],
   extraView:[{k:"notes",l:"Notes"},{k:"createdOn",l:"Created On"}],

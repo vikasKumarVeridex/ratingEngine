@@ -1407,7 +1407,7 @@ function renderQuoteContext() {
     <div class="vx-ctxbar">
       <div class="seg meta"><label>Tenant</label><div class="val">${vxTenant().name}</div></div>
       <i class="fa-solid fa-chevron-right vx-ctx-sep"></i>
-      <div class="seg"><label>Line of Business</label>
+      <div class="seg"><label>Coverage</label>
         <select class="form-select form-select-sm" id="qLob">
           ${avail.map(l => `<option value="${l.k}" ${l.k === S.lob ? "selected" : ""}>${l.n}</option>`).join("")}
         </select></div>
@@ -1473,8 +1473,10 @@ function render() {
             <small data-field-help class="d-block" style="font-size:10.5px;color:var(--text-mute);margin-top:2px">Clears any quote an eligibility rule has referred (see Roles) — distinct from the day-to-day Underwriter above.</small></div>
         </div></div>
       </div>
-      <div class="grp"><h3><i class="fa-solid fa-user-tie" style="color:var(--primary)"></i>Broker Info</h3>
+      <div class="grp"><h3><i class="fa-solid fa-user-tie" style="color:var(--primary)"></i>Broker &amp; MGU Info</h3>
         <div class="bd"><div class="row g-3">
+          <div class="col-md-4"><label>MGU / Wholesaler</label><input class="form-control form-control-sm F" data-k="mgu" list="mguNames" value="${S.v.mgu || ""}" placeholder="Which MGU this rating is placed through">
+            <datalist id="mguNames">${[...new Set((VX.quotes || []).map(q => q.mgu))].filter(Boolean).map(m => `<option value="${m}">`).join("")}</datalist></div>
           <div class="col-md-4"><label>Producing Agency</label><input class="form-control form-control-sm F" data-k="brokerAgency" value="${S.v.brokerAgency || ""}"></div>
           <div class="col-md-4"><label>Producer / Agent Name</label><input class="form-control form-control-sm F" data-k="brokerAgent" value="${S.v.brokerAgent || ""}"></div>
           <div class="col-md-4"><label>Agency Code / NPN</label><input class="form-control form-control-sm F" data-k="brokerAgencyCode" value="${S.v.brokerAgencyCode || ""}"></div>
@@ -2231,7 +2233,7 @@ function truckFactorTabs(r) {
   const acctPanel = () => {
     const liabLines = r.accountFactorLines || [];
     const pdLines = r.pdAccountFactorLines || [];
-    if (!liabLines.length && !pdLines.length) return `<div class="vx-empty" style="padding:20px"><i class="fa-solid fa-sliders"></i>No account-level factor applies to this line of business.</div>`;
+    if (!liabLines.length && !pdLines.length) return `<div class="vx-empty" style="padding:20px"><i class="fa-solid fa-sliders"></i>No account-level factor applies to this coverage.</div>`;
     return `<div class="sub">One policy-level credit/debit set per coverage, applied to every unit.</div>
       ${liabLines.length ? acctTable("Auto Liability \u2014 Account-Level Factor", liabLines, r.accountFactor) : ""}
       ${pdLines.length ? acctTable("Physical Damage \u2014 Account-Level Factor", pdLines, r.pdAccountFactor) : ""}`;
@@ -2412,6 +2414,7 @@ function paint() {
       <div style="font-size:11px;color:var(--text-mute);font-weight:650;text-transform:uppercase;letter-spacing:.04em">Annual Premium</div>
       <div style="font-size:34px;font-weight:800;margin:5px 0;letter-spacing:-.02em">${vxMoney(r.finalPremium)}</div>
       <div style="font-size:12px;color:var(--text-dim)">${r.lob} · ${r.state}${county ? " · " + county : ""}</div>
+      ${(S.v.mgu || S.v.brokerAgency) ? `<div style="font-size:11px;color:var(--text-mute);margin-top:3px" title="Who this rating is placed through">${[S.v.mgu, S.v.brokerAgency].filter(Boolean).join(" · ")}</div>` : ""}
       ${r.minApplied ? '<div class="vx-b amber mt-2">Minimum premium applied</div>' : ""}
       <div class="d-flex gap-2 mt-3"><button class="btn btn-primary btn-sm w-100" onclick="issue()" ${declined ? "disabled title=\"Resolve the decline above first\"" : ""}><i class="fa-solid fa-file-lines me-1"></i>Generate Quote</button></div>
     </div>
@@ -2537,6 +2540,7 @@ function issue() {
       <div style="width:48px;height:48px;border-radius:13px;background:rgba(18,160,106,.13);color:var(--good);display:grid;place-items:center;margin:0 auto 10px;font-size:20px"><i class="fa-solid fa-file-circle-check"></i></div>
       <h4 style="font-size:16px;margin:0 0 3px">Q-2026-${10500 + Math.floor(Math.random() * 400)}</h4>
       <div style="color:var(--text-dim);font-size:13px">${S.insName || "Lonestar Freight LLC"} · ${r.lob} · ${r.state}</div>
+      ${(S.v.mgu || S.v.brokerAgency) ? `<div style="color:var(--text-mute);font-size:11.5px;margin-top:2px">${[S.v.mgu, S.v.brokerAgency].filter(Boolean).join(" · ")}</div>` : ""}
       <div style="font-size:25px;font-weight:800;margin-top:9px">${vxMoney(r.finalPremium)}</div>
       ${r.minApplied ? '<div class="vx-b amber mt-1">Minimum premium applied</div>' : ""}
     </div>

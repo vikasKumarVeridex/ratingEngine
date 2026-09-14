@@ -74,7 +74,7 @@ vxAgGrid({ el:"#grid", key:"fees", name:"Fee", size:12,
     {k:"active",l:"Status",r:r=>'<span class="vx-b '+(r.active?"green":"gray")+'">'+(r.active?"Active":"Inactive")+'</span>'}],
   form:[
     {k:"name",l:"Fee Name"},{k:"code",l:"Fee Code"},
-    {k:"lob",l:"Line of Business",t:"select",opts:["All"].concat(vxLobNames())},
+    {k:"lob",l:"Coverage",t:"select",opts:["All"].concat(vxLobNames())},
     {k:"valueType",l:"Fee Type",t:"select",opts:["Fixed","Percent"]},
     {k:"value",l:"Value  (dollars if Fixed · percent if Percent)",t:"number",step:"0.01"},
     {k:"percentOf",l:"Percent Applied To  (Percent fees only)",t:"select",opts:BASES},

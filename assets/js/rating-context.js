@@ -44,7 +44,7 @@ function vxContextBar(el, opt) {
     const vr = currentVersion();
     root.innerHTML = `
       <div class="vx-ctxbar">
-        <div class="seg"><label>Line of Business</label>
+        <div class="seg"><label>Coverage</label>
           <select class="form-select form-select-sm" id="ctxLob">${lobs.map(l => `<option ${l === state.lob ? "selected" : ""}>${l}</option>`).join("")}</select></div>
         <i class="fa-solid fa-chevron-right vx-ctx-sep"></i>
         <div class="seg"><label>Rating Plan</label>

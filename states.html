@@ -41,7 +41,7 @@ vxAgGrid({ el:"#grid", key:"states", name:"State",
       {k:"counties",l:"Counties",r:r=>r.counties
         ? '<a href="counties.html?state='+r.abv+'"><span class="vx-b blue">'+r.counties+'</span></a>'
         : '<span class="vx-b gray">None</span>'},
-      {k:"lobs",l:"Lines of Business",sort:false,r:r=>(r.lobNames||[]).length
+      {k:"lobs",l:"Coverages",sort:false,r:r=>(r.lobNames||[]).length
         ? r.lobNames.map(n=>'<span class="vx-b cyan me-1">'+(n==="All"?"All lines":n.replace(" (MPL)",""))+'</span>').join("")
         : '<span class="vx-b gray">None configured</span>'},
       {k:"included",l:"In Rater",editable:true,r:r=>'<span class="vx-b '+(r.included?"green":"gray")+'">'+(r.included?"Yes":"No")+'</span>'}],

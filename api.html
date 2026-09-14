@@ -75,7 +75,7 @@ const GROUPS = [
       res:{ data:[{ code:"DTP", name:"Digital Trucking Program", lob:"Commercial Trucking", version:"v2026.03", states:50 }], total:10 } },
     { m:"GET", p:"/products/{code}", d:"Product detail with active version", auth:"config:read",
       res:{ code:"DTP", name:"Digital Trucking Program", activeVersion:"v2026.03", coverages:3, states:50 } },
-    { m:"GET", p:"/lobs", d:"List lines of business", auth:"config:read",
+    { m:"GET", p:"/lobs", d:"List coverage lines", auth:"config:read",
       res:{ data:[{ code:"TRUCK", name:"Commercial Trucking", engine:"Multiplicative + Exp/Loss Mod" }], total:6 } },
     { m:"GET", p:"/coverages", d:"Coverage / class-of-business tree", auth:"config:read",
       req:{ lob:"Commercial Trucking", level:"Primary" },

@@ -53,9 +53,9 @@ document.getElementById("vxBody").innerHTML = `
       <div class="col-lg-4">
         <div class="vx-card vx-anim">
           <h2>Rate Tables <span class="vx-b blue">${RATE_TABLES.length}</span></h2>
-          <div class="sub">Grouped by line of business</div>
+          <div class="sub">Grouped by coverage</div>
           <input class="form-control form-control-sm mb-2" id="rtq" placeholder="Search tables or factors...">
-          <select class="form-select form-select-sm mb-2" id="rtLob"><option value="">All Lines of Business</option></select>
+          <select class="form-select form-select-sm mb-2" id="rtLob"><option value="">All Coverages</option></select>
           <div class="rtlist" id="rtList"></div>
         </div>
       </div>
@@ -149,7 +149,7 @@ document.getElementById("rtq").oninput = e => renderList(e.target.value);
 /* LOB filter — the list otherwise groups every line's tables together with
    no way to isolate one, which gets unwieldy once several LOBs are on file. */
 const rtLobs = [...new Set(RATE_TABLES.map(t => t.lob))].sort();
-document.getElementById("rtLob").innerHTML = `<option value="">All Lines of Business</option>`
+document.getElementById("rtLob").innerHTML = `<option value="">All Coverages</option>`
   + rtLobs.map(l => `<option value="${l}">${l}</option>`).join("");
 document.getElementById("rtLob").onchange = () => renderList(document.getElementById("rtq").value);
 

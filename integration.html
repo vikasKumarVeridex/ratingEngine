@@ -387,13 +387,13 @@ const trace = ENGINE.trace(result);     // ${E ? E.trace(E.rate("TRUCK", { state
       Claims posts <b>incurred losses</b> and <b>claim counts</b> back against the bound quote. That is what turns a
       quote record into loss experience, which drives
       <a href="loss-runs.html">Loss Run Analytics</a>, the experience mod on the next renewal, and rate-action
-      indications by state, carrier, MGA and broker.
+      indications by state, carrier, MGU and broker.
       <br><br>Without this feed the platform can price new business but can never tell you whether the price was right.
     </div>
     <div class="ig-flow mt-2">
       <div class="ig-box"><b>Claims</b><span>incurredLosses, claims</span></div>
       <i class="fa-solid fa-arrow-right ig-arrow"></i>
-      <div class="ig-box"><b>Loss runs</b><span>LR vs target by state / MGA</span></div>
+      <div class="ig-box"><b>Loss runs</b><span>LR vs target by state / MGU</span></div>
       <i class="fa-solid fa-arrow-right ig-arrow"></i>
       <div class="ig-box core"><b>Next version</b><span>factor changes, rate action</span></div>
     </div>

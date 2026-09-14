@@ -292,7 +292,7 @@ function renderSim() {
       <div class="col-6"><label>Status</label>
         <select class="form-select form-select-sm S" data-k="status">
           ${["Draft","Published","Expired","Active","Retired"].map(s => `<option ${s === SIM.status ? "selected" : ""}>${s}</option>`).join("")}</select></div>
-      <div class="col-12"><label>Line of business</label>
+      <div class="col-12"><label>Coverage</label>
         <select class="form-select form-select-sm S" data-k="lob">
           ${vxLobNames().map(l => `<option ${l === SIM.lob ? "selected" : ""}>${l}</option>`).join("")}</select></div>
       <div class="col-12"><label>Quote premium</label>

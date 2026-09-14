@@ -61,7 +61,7 @@ document.getElementById("vxBody").innerHTML = `
   <div class="vx-card-head"><div><h2>Tenants</h2><div class="sub">One row per tenant on this account — open one to switch into its own workspace.</div></div>
     <a href="tenants.html" class="btn btn-primary btn-sm"><i class="fa-solid fa-plus me-1"></i>Onboard a tenant</a></div>
   <div class="vx-tw"><table class="vx-t">
-    <thead><tr><th>Tenant</th><th>Plan</th><th>Lines of Business</th><th>Products</th><th>Published Versions</th>
+    <thead><tr><th>Tenant</th><th>Plan</th><th>Coverages</th><th>Products</th><th>Published Versions</th>
       <th>Rating Factors</th><th>Quotes</th><th>Bound Premium</th><th>Status</th><th style="text-align:right">Switch to</th></tr></thead>
     <tbody>${rows.map(r => `<tr>
       <td><b>${r.tenant.name}</b><div style="font-size:10.5px;color:var(--text-mute)"><code>${r.tenant.code}</code></div></td>

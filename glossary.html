@@ -31,7 +31,7 @@ vxShell("Glossary", "Plain-language definitions. || For the rating and underwrit
 
 const GROUPS = [
   { key: "platform", title: "Platform & Workflow", icon: "fa-diagram-project", terms: [
-    { t: "LOB", ab: "Line of Business", d: "A category of insurance product — Commercial Trucking, General Liability, Commercial Property, Professional Liability (MPL), Cyber, Umbrella/Excess. Everything else in the platform is scoped under one." },
+    { t: "LOB", ab: "Coverage", d: "A category of insurance product — Commercial Trucking, General Liability, Commercial Property, Professional Liability (MPL), Cyber, Umbrella/Excess. Everything else in the platform is scoped under one. Displayed as \"Coverage\" throughout the UI; not the same as a COB below, which is a specific coverage WITHIN one of these." },
     { t: "COB", ab: "Class of Business", d: "A specific coverage within a LOB — e.g. Trucking's Auto Liability, Physical Damage and Motor Truck Cargo, or Cyber's Liability, Breach Response, Cyber Crime and Business Loss. Some COBs have child coverages under them (a parent/child tree)." },
     { t: "Product", d: "A sellable insurance program — e.g. \"Digital Trucking Program.\" A product belongs to one LOB, carries a set of COBs, and points at one current Rating Version." },
     { t: "Rating Version", ab: "aka \"Rating Engine\"", d: "One dated, versioned snapshot of a product's rating logic — its factors, formulas and rules as of a specific effective date. Only one version can be Published per product at a time; older ones become Expired but stay queryable for in-force policies." },

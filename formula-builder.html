@@ -860,7 +860,7 @@ document.getElementById("vxBody").innerHTML = `
 <div class="vx-card vx-anim" id="pickerCard">
   <h2 class="mb-3"><i class="fa-solid fa-truck-fast me-2 text-primary"></i>What are you rating?</h2>
   <div class="fb-step">
-    <div class="fb-step-hd"><span class="fb-step-n">1</span>Line of business</div>
+    <div class="fb-step-hd"><span class="fb-step-n">1</span>Coverage</div>
     <div class="fb-picker-grid" id="lobPicker"></div>
   </div>
   <div class="fb-step">
@@ -1059,7 +1059,7 @@ function renderCobPicker() {
     warn: COB_WARN[name],
   }));
   cobs.push({ key: null, label: "Account-Level (this LOB)", icon: "fa-layer-group", color: "var(--cat-8)",
-    code: "", desc: "Not tied to one coverage — applies once across the whole policy for this line of business." });
+    code: "", desc: "Not tied to one coverage — applies once across the whole policy for this coverage line." });
   document.getElementById("cobPicker").innerHTML = cobs.map(c => { const on = c.key === currentCob; return `
     <div class="covcard ${on ? "on" : ""}" data-cob="${c.key === null ? "" : c.key}" ${c.desc ? `title="${c.desc}"` : ""}>
       ${on ? '<i class="fa-solid fa-circle-check covcard-check"></i>' : ""}
@@ -1482,7 +1482,7 @@ function saveF() {
 
   vxModal(currentFormula ? "Save Formula — " + currentFormula.name : "Save Formula", `<div class="row g-3">
     <div class="col-md-6"><label>Formula Name</label><input class="form-control form-control-sm" id="sfName" value="${src.name || "New Formula"}"></div>
-    <div class="col-md-6"><label>Line of Business</label><select class="form-select form-select-sm" id="sfLob">${vxLobNames().map(n => `<option ${n === defLob ? "selected" : ""}>${n}</option>`).join("")}</select></div>
+    <div class="col-md-6"><label>Coverage</label><select class="form-select form-select-sm" id="sfLob">${vxLobNames().map(n => `<option ${n === defLob ? "selected" : ""}>${n}</option>`).join("")}</select></div>
     <div class="col-md-6"><label>Scope</label><select class="form-select form-select-sm" id="sfScope">
       <option value="Account" ${defScope === "Account" ? "selected" : ""}>Account Level — applies once across the policy</option>
       <option value="Class of Business" ${defScope === "Class of Business" ? "selected" : ""}>Class of Business Level — applies to one coverage</option>
@@ -1703,7 +1703,7 @@ fbGrid = vxAgGrid({ el: "#fbGrid", key: "savedFormulas", name: "Formula", size: 
   onHist: r => showFormulaHistory(r),
   cols: [
     { k: "name", l: "Formula" },
-    { k: "lob", l: "Line of Business" },
+    { k: "lob", l: "Coverage" },
     { k: "_scope", l: "Rates", sort: false, r: r => r.scope === "Account"
         ? '<span class="vx-b purple">Account level</span>'
         : `<span class="vx-b cyan">${r.cob || "—"}</span>` },

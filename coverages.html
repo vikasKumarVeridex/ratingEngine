@@ -78,7 +78,7 @@ document.getElementById("vxBody").innerHTML = `
       <div class="r"><button class="btn btn-outline-secondary btn-sm" onclick="exp()"><i class="fa-solid fa-file-export me-1"></i>Export</button></div>
     </div>
     <div class="vx-tw"><table class="vx-t">
-      <thead><tr><th>Coverage / Class of Business</th><th>Level</th><th>Code</th><th>Line of Business</th>
+      <thead><tr><th>Coverage / Class of Business</th><th>Level</th><th>Code</th><th>Coverage Line</th>
         <th>Rating Basis</th><th>Unit</th><th>Default Limit</th><th>Deductible</th><th>Status</th>
         <th>Formula</th><th>Required</th><th>Quotes</th><th style="text-align:right">Actions</th></tr></thead>
       <tbody id="tb"></tbody></table></div>
@@ -182,7 +182,7 @@ function view(id) {
       <a href="versions.html" class="vx-b gray" style="text-decoration:none">${r.version}</a>
     </div>
     <div class="row g-3">
-    ${[["Level",r.level],["Code",r.code],["Line of Business",r.lob],["Parent",r.parentName||"— (this is a primary coverage)"],
+    ${[["Level",r.level],["Code",r.code],["Coverage Line",r.lob],["Parent",r.parentName||"— (this is a primary coverage)"],
        ["Rating Basis",r.ratingBasis],["Unit",r.unit?`${r.unit}${unit?` — ${unit.basis}`:""}`:"—"],
        ["Default Limit",r.defaultLimit?vxMoney(r.defaultLimit):"—"],["Deductible",r.deductible?vxMoney(r.deductible):"—"],
        ["Status",r.status||"Active"],["Effective",r.effectiveStart?(r.effectiveStart+(r.effectiveEnd?" – "+r.effectiveEnd:" – open")):"—"],
@@ -208,7 +208,7 @@ function form(rec, parentId) {
   vxModal(`${isNew ? "Add" : "Edit"} ${r.parentCobId ? "Child" : "Primary"} Coverage`, `<div class="row g-3">
     <div class="col-md-6"><label>Coverage / Class of Business Name</label><input class="form-control form-control-sm C" data-k="name" value="${r.name||""}"></div>
     <div class="col-md-6"><label>Code</label><input class="form-control form-control-sm C" data-k="code" value="${r.code||""}"></div>
-    <div class="col-md-6"><label>Line of Business</label><select class="form-select form-select-sm C" data-k="lob">
+    <div class="col-md-6"><label>Coverage Line</label><select class="form-select form-select-sm C" data-k="lob">
       ${vxLobNames().map(n=>`<option ${n===r.lob?"selected":""}>${n}</option>`).join("")}</select></div>
     <div class="col-md-6"><label>Parent Coverage</label><select class="form-select form-select-sm C" data-k="parentCobId">
       <option value="">— None (this is a Primary coverage)</option>

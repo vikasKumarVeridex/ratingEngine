@@ -49,7 +49,7 @@ const custom = tenantFactorRows.filter(f => f.custom).length;
 document.getElementById("vxBody").innerHTML = `
   <div class="row g-2 mb-3">
     <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">Factors in the engine</div>
-      <div class="val">${tenantFactorRows.length}</div><div class="dt flat">across ${new Set(tenantFactorRows.map(f => f.lob)).size} lines of business</div></div></div>
+      <div class="val">${tenantFactorRows.length}</div><div class="dt flat">across ${new Set(tenantFactorRows.map(f => f.lob)).size} coverage lines</div></div></div>
     <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">Verified</div>
       <div class="val" style="color:var(--good)">${verified}</div><div class="dt flat">matched to a filed workbook</div></div></div>
     <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">Approximated</div>
@@ -285,7 +285,7 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
     if (isNew) {
       return `<div class="vx-ai mb-3" style="padding:10px 14px;font-size:12.3px;line-height:1.6">
         <i class="fa-solid fa-circle-info me-1"></i>
-        Registers a new rating factor against a line of business.
+        Registers a new rating factor against a coverage line.
         <span class="hintdot" title="It stays recorded but unread until someone else approves it for Formula Builder AND its coverage runs a formula ending in RemainingFactors — check the factor's Path to Wired card after saving to see exactly which of those it's still missing.">It will be marked <b>Not wired</b></span>
         until that path is complete — not necessarily a code change.
       </div>`;
@@ -326,7 +326,7 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
   },
   cols: [
     { k: "name", l: "Rating Factor" },
-    { k: "lob", l: "Line of Business", r: r => vxJoinField(r.lob) },
+    { k: "lob", l: "Coverage Line", r: r => vxJoinField(r.lob) },
     { k: "defaultValue", l: "Default", r: r => {
         /* A factor with a real table (every uploaded/imported one has one)
            ignores this field entirely unless overrideValue is checked — the
@@ -423,12 +423,12 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
       val: r => (r && r.code) || vxGenerateFactorCode(r && r.name, r && r.lob),
       readonly: (r, isNew) => isNew,
       hint: (r, isNew) => isNew
-        ? "Generated automatically from the name and line of business — upper snake case, guaranteed unique. This is what exports and the change log key on, so it isn't left to free text."
+        ? "Generated automatically from the name and coverage line — upper snake case, guaranteed unique. This is what exports and the change log key on, so it isn't left to free text."
         : "Short stable identifier, upper snake case (VEH_RADIUS). Used in exports and the change log, so it should not be renamed after quotes have used it." },
 
     { k: "_secWhere", l: "Where it applies", t: "section",
-      sub: "The line(s) of business, coverage(s) and scope(s) this factor is assigned to — pick more than one where the same factor genuinely applies across all of them." },
-    { k: "lob", l: "Line of Business", t: "dropdown", opts: vxLobNames(), placeholder: "No line of business selected",
+      sub: "The coverage line(s), coverage(s) and scope(s) this factor is assigned to — pick more than one where the same factor genuinely applies across all of them." },
+    { k: "lob", l: "Coverage Line", t: "dropdown", opts: vxLobNames(), placeholder: "No coverage line selected",
       hint: "The line(s) whose engine reads this factor. Selecting more than one applies the same definition across all of them. Changing this reloads the Coverage and Lookup Table lists below, and regenerates the Factor Code above (from whichever line is picked first)." },
     /* Re-renders when the LOB selection changes, so the list always leads
        with the chosen lines' own coverage tree rather than another line's. */
@@ -1110,7 +1110,7 @@ function formulaOptsFor(rec) {
   const none = [{ value: "", label: "— none —" }];
   const opt = f => ({ value: f.id, label: f.name });
   return none.concat(mine.map(opt))
-    .concat(rest.length ? [{ value: "", label: "── other lines of business ──" }] : [])
+    .concat(rest.length ? [{ value: "", label: "── other coverage lines ──" }] : [])
     .concat(rest.map(opt));
 }
 function formulaName(id) {

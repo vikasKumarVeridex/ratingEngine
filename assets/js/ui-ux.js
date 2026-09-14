@@ -105,9 +105,9 @@
   }
 
   const secondary = {
-    dashboard: ['Recent Activity', 'Rating Data Loaded', 'Quotes by Line of Business', 'Premium Distribution by LOB'],
+    dashboard: ['Recent Activity', 'Rating Data Loaded', 'Quotes by Coverage', 'Premium Distribution by LOB'],
     analytics: ['Agency Performance', 'Top Rating Factors by Impact', 'Configuration Change Activity', 'AI Suggestion Adoption'],
-    'loss-runs': ['Premium & Incurred Losses — Monthly', 'Loss Ratio by Line of Business'],
+    'loss-runs': ['Premium & Incurred Losses — Monthly', 'Loss Ratio by Coverage'],
     roles: ['Access simulator', 'Effective access'],
     api: ['Who Consumes This API', 'Authentication', 'Limits & Conventions'],
     integration: ['Two meanings of “underwriter”', 'Data flow: CRM → Underwriting → Rating', 'Rules the underwriting service must respect', 'Submission shape by application type', 'Deployment boundary', 'Storage contract', 'Feedback loop', 'Integration checklist'],

@@ -22,7 +22,7 @@
 <script src="assets/js/grid.js?v=20260912"></script>
 <script src="assets/js/ag-grid-adapter.js?v=20260912"></script>
 <script>
-vxShell("Tenants", "Carriers subscribing to VeriDex. || Each tenant has its own branding, plan tier, seat count and enabled lines of business.",
+vxShell("Tenants", "Carriers subscribing to VeriDex. || Each tenant has its own branding, plan tier, seat count and enabled coverage lines.",
   [{ l: "Administration" }, { l: "Tenants" }]);
 
 /* Real parent/child coverage tree for the Add/Edit Tenant form — same
@@ -74,7 +74,7 @@ document.getElementById("vxBody").innerHTML = `
 
   <div class="vx-exp2 vx-anim" id="expTen" style="border-left-color:var(--primary)">
     <div class="hd"><i class="fa-solid fa-shield-halved" style="color:var(--primary);font-size:11.5px"></i><b>Isolation</b><span>Tenant data is partitioned on <code>/tenantId</code>. Rate tables and geography are shared.</span><button type="button" class="tog" onclick="vxExpToggle('expTen')">Why?</button></div>
-    <div class="bd"><p>Switching tenant changes which lines of business, products, rating factors, versions, quotes, discounts,
+    <div class="bd"><p>Switching tenant changes which coverage lines, products, rating factors, versions, quotes, discounts,
     surcharges and fees load. Every grid reads through the partition boundary in <code>API.list</code>, so no screen
     can show another tenant's rows, and a record created here is written into the active tenant's partition only.</p>
     <p><b>Shared reference data:</b> the extracted rate tables (loss costs, ILFs, class factors), geography and the
@@ -198,7 +198,7 @@ document.getElementById("tenantCfgUpload").onchange = async e => {
     <h6 style="font-size:12px;font-weight:700;margin:18px 0 8px">2 · What this file will create</h6>
     <div class="vx-tw"><table class="vx-t"><tbody>
       <tr><td style="width:190px">Product</td><td><b>${pv.P.name}</b> <code style="font-size:11px">${pv.P.code || "—"}</code> · ${pv.P.status === "draft" ? "Draft" : "Active"}</td></tr>
-      <tr><td>Line of Business</td><td>${pv.lobIsNew
+      <tr><td>Coverage Line</td><td>${pv.lobIsNew
         ? `<span class="vx-b amber">${pv.lobName}</span> <span style="color:var(--warn);font-size:11.5px">— new line, no calculation engine behind it. A quote on it cannot be rated.</span>`
         : `<span class="vx-b green">${pv.lobName}</span> <span style="font-size:11.5px;color:var(--text-mute)">— binds to this platform's existing engine</span>`}</td></tr>
       <tr><td>Coverages</td><td>${pv.parents.length} primary${pv.children.length ? ` · ${pv.children.length} child` : ""}
@@ -299,7 +299,7 @@ document.getElementById("tenantCfgUpload").onchange = async e => {
           <div style="font-size:13.5px;line-height:1.7">
             <b>${tenant.name}</b> created and configured from <code style="font-size:11.5px">${pv.P.code || pv.P.name}</code>.
             <div class="vx-tw mt-3"><table class="vx-t"><tbody>
-              <tr><td style="width:180px">Line of Business</td><td>${res.lobName}${res.lobIsNew ? ' <span class="vx-b amber">new line — not rateable</span>' : ""}</td></tr>
+              <tr><td style="width:180px">Coverage Line</td><td>${res.lobName}${res.lobIsNew ? ' <span class="vx-b amber">new line — not rateable</span>' : ""}</td></tr>
               <tr><td>Coverages</td><td>${res.coverCount}</td></tr>
               <tr><td>Rating factors</td><td>${res.factorCount}${res.tableCount ? ` · ${res.tableCount} rate tables` : ""}</td></tr>
               <tr><td>Rating formulas</td><td>${res.formulaCount || 0}</td></tr>
@@ -445,7 +445,7 @@ vxAgGrid({ el:"#grid", key:"tenants", name:"Tenant", size:12,
        VX.lobs is partitioned per tenant, so a raw map repeats every line once
        per tenant that bought it. */
     {k:"states",l:"Licensed States (surplus lines)",t:"multi",opts:VX.states.map(s=>s.abv)},
-    {k:"lobs",l:"Enabled Lines of Business",t:"multi",opts:vxLobNames()},
+    {k:"lobs",l:"Enabled Coverage Lines",t:"multi",opts:vxLobNames()},
     /* One real parent/child tree, not two unrelated flat lists — ticking a
        child auto-ticks its parent (a child coverage cannot be written
        without the primary it rolls up into), matching the same coverage

@@ -1469,8 +1469,8 @@
       minFee: 0, maxFee: 0, chargeType: "Per Driver", basis: "Per driver ordered", taxable: false, lob: "Commercial Trucking", active: true },
     { id: 6, name: "Vehicle Inspection Fee", code: "FEE_VEHINSP", valueType: "Fixed", value: 45, percentOf: "—",
       minFee: 0, maxFee: 0, chargeType: "Per Vehicle", basis: "Per power unit scheduled", taxable: false, lob: "Commercial Trucking", active: true },
-    { id: 7, name: "Managing General Agent Fee", code: "FEE_MGA", valueType: "Percent", value: 5.0, percentOf: "Premium Before Fees",
-      minFee: 100, maxFee: 0, chargeType: "Per Policy", basis: "5% of premium, min $100 — MGA commission override", taxable: false, lob: "All", active: true },
+    { id: 7, name: "Managing General Underwriter Fee", code: "FEE_MGU", valueType: "Percent", value: 5.0, percentOf: "Premium Before Fees",
+      minFee: 100, maxFee: 0, chargeType: "Per Policy", basis: "5% of premium, min $100 — MGU commission override", taxable: false, lob: "All", active: true },
     { id: 8, name: "Installment Fee", code: "FEE_INSTALL", valueType: "Fixed", value: 10, percentOf: "—",
       minFee: 0, maxFee: 0, chargeType: "Per Installment", basis: "Per installment when financed", taxable: false, lob: "All", active: false },
     { id: 9, name: "Cyber Scan Fee", code: "FEE_CYBSCAN", valueType: "Fixed", value: 250, percentOf: "—",
@@ -2030,13 +2030,13 @@
   /* ---------------- Quotes / policies ---------------- */
   const AGENTS = ["Dominguez Insurance Group","Pinnacle Risk Partners","Cornerstone Brokerage","Summit Commercial","Blue Harbor Agency","Redwood Risk","Lakeside Underwriters","Vantage Point Insurance"];
   /* Surplus-lines distribution chain: a retail BROKER places business through
-     a wholesale MGA, which binds on a CARRIER's paper. All three are real,
+     a wholesale MGU, which binds on a CARRIER's paper. All three are real,
      separate parties an underwriter slices loss experience by — the data
-     previously carried only the retail agency, so "which MGA is running hot"
+     previously carried only the retail agency, so "which MGU is running hot"
      could not be asked.
-     broker -> MGA is a stable appointment (a retail agency works through one
-     wholesaler here), so the Broker filter can narrow to the MGA selected. */
-  const MGAS = ["Anchor Underwriting Managers","Crestline Specialty MGA","Tideline Program Managers","VeriDex Wholesale Partners"];
+     broker -> MGU is a stable appointment (a retail agency works through one
+     wholesaler here), so the Broker filter can narrow to the MGU selected. */
+  const MGUS = ["Anchor Underwriting Managers","Crestline Specialty MGU","Tideline Program Managers","VeriDex Wholesale Partners"];
   const CARRIERS = ["VeriDex Casualty Co.","Summit Mutual Insurance Co.","Cascade Specialty E&S","Meridian Indemnity","Atlas Surplus Lines Co."];
   const INSUREDS = ["Lonestar Freight LLC","Redline Logistics Inc","Cascade Property Holdings","Summit Manufacturing Co","Harbor Point Restaurants","Precision Engineering PC","Northgate Medical Group","Vertex Data Systems","Ironclad Transport","Blue Ridge Distributors","Everest Contracting","Riverside Apartments LP","Copper Creek Retail","Sterling Financial Advisors","Meridian Health Partners","Apex Warehousing","Golden Gate Couriers","Cardinal Logistics Group","Silverline Trucking","Beacon Professional Svcs"];
   /* Per-state loss bias so the loss-run picture is coherent rather than pure
@@ -2078,7 +2078,7 @@
     return { id: i + 1, quoteNo: "Q-2026-" + String(10240 + i), insured: pick(INSUREDS), product: p.name, lob: p.lob,
       state: s.abv, county, country: isCanada ? "CA" : "US", agent, premium: prem,
       // deterministic, so the distribution chain doesn't reshuffle per reload
-      mga: MGAS[AGENTS.indexOf(agent) % MGAS.length],
+      mgu: MGUS[AGENTS.indexOf(agent) % MGUS.length],
       broker: agent,                       // the retail broker IS the producing agency
       carrier: CARRIERS[i % CARRIERS.length],
       status: pick(["Quoted","Quoted","Bound","Bound","Declined","Referred","Expired"]),
