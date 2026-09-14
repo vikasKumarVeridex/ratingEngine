@@ -17,7 +17,7 @@ const NAV = [
        way of DOING the same thing those two do, not documentation about
        the platform. */
     { h: "quote-json.html", i: "fa-code", l: "Quote JSON" },
-    { h: "quotes.html", i: "fa-file-lines", l: "Quotes" },
+    // { h: "quotes.html", i: "fa-file-lines", l: "Quotes" },
   ]},
   /* Configuration sits above Rating: you define the line of business, the
      coverages under it and the product that sells them BEFORE the factors and

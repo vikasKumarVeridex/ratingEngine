@@ -334,10 +334,12 @@ function vxGrid(opt) {
     }).join("");
 
     vxModal(`${isNew ? "Add" : "Edit"} ${name}`,
-      `<div class="row g-3">${inputs}</div>
-       <div class="vx-ai mt-3"><span class="tag"><i class="fa-solid fa-wand-magic-sparkles"></i>AI Validation</span>
+      `<div class="row g-3">${inputs}</div>`
+      /* AI Validation banner — commented out per request, not deleted:
+      + `<div class="vx-ai mt-3"><span class="tag"><i class="fa-solid fa-wand-magic-sparkles"></i>AI Validation</span>
        No conflicting effective-date ranges detected. Factor values fall within the expected statistical range for this ${name.toLowerCase()} type.
-       ${isNew ? "This will be created in the current draft version." : "Changes create a new revision; the prior value stays queryable for in-force policies."}</div>`,
+       ${isNew ? "This will be created in the current draft version." : "Changes create a new revision; the prior value stays queryable for in-force policies."}</div>`
+      */,
       [{ t: "Cancel", c: "secondary" }, { t: `Save ${name}`, c: "primary", fn: async () => {
         const el = document.getElementById("vxModal");
         el.querySelectorAll("[data-f]").forEach(i => {

@@ -392,6 +392,7 @@ a:hover{text-decoration:underline}
    need this since a checked box already says so. */
 .vx-dd-opt.sel{background:var(--primary-soft);color:var(--primary);font-weight:600}
 .vx-dd-opt-hd{padding:6px 8px 3px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-mute)}
+.vx-dd-foot{padding:8px 11px;border-top:1px solid var(--border);background:var(--surface-2);display:flex;justify-content:flex-end}
 
 /* ---------- Collapsible parent/child checkbox tree (form field) ---------- */
 .vx-tree-grp{border-bottom:1px solid var(--border)}

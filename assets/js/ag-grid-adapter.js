@@ -524,6 +524,9 @@ function vxAgGrid(opt) {
                     <input class="form-check-input" type="checkbox" data-fm="${f.k}" value="${val}" ${sel.includes(String(val)) ? "checked" : ""}>
                     <span>${lab}</span></label>`; }).join("")}
               </div>
+              <div class="vx-dd-foot">
+                <button type="button" class="btn btn-primary btn-sm" data-dddone="${f.k}">Done</button>
+              </div>
             </div>
           </div>${hint}</div>`;
       }
@@ -608,10 +611,12 @@ function vxAgGrid(opt) {
     const headerHtml = opt.formHeader ? (opt.formHeader(rec, isNew) || "") : "";
 
     vxModal(titleText,
-      `${headerHtml}<div class="row g-3" data-vxflds>${inputs}</div>
-       <div class="vx-ai mt-3"><span class="tag"><i class="fa-solid fa-wand-magic-sparkles"></i>AI Validation</span>
+      `${headerHtml}<div class="row g-3" data-vxflds>${inputs}</div>`
+      /* AI Validation banner — commented out per request, not deleted:
+      + `<div class="vx-ai mt-3"><span class="tag"><i class="fa-solid fa-wand-magic-sparkles"></i>AI Validation</span>
        No conflicting effective-date ranges detected. Factor values fall within the expected statistical range for this ${name.toLowerCase()} type.
-       ${isNew ? "This will be created in the current draft version." : "Changes create a new revision; the prior value stays queryable for in-force policies."}</div>`,
+       ${isNew ? "This will be created in the current draft version." : "Changes create a new revision; the prior value stays queryable for in-force policies."}</div>`
+      */,
       /* `Save & Add Another` keeps the dialog open and reopens it empty, so
          entering a run of records is one continuous action instead of
          re-clicking Add between each. Offered on Add only — there is no
@@ -745,6 +750,16 @@ function vxAgGrid(opt) {
         };
       });
       modal.querySelectorAll("[data-ddpanel]").forEach(p => p.onclick = e => e.stopPropagation());
+      // Multi-select panels stay open across checkbox clicks so several
+      // options can be picked in a row — but that leaves no visible way to
+      // close one once you're done, short of knowing to click outside it.
+      // Done just closes the panel; the checkboxes underneath already wrote
+      // the selection as each was clicked.
+      modal.querySelectorAll("[data-dddone]").forEach(b => b.onclick = e => {
+        e.preventDefault(); e.stopPropagation();
+        const dd = modal.querySelector(`[data-dd="${b.dataset.dddone}"]`);
+        if (dd) dd.classList.remove("on");
+      });
       if (!modal.__ddOutside) {
         modal.__ddOutside = true;
         modal.addEventListener("click", () => modal.querySelectorAll("[data-dd]").forEach(x => x.classList.remove("on")));
@@ -880,7 +895,18 @@ function vxAgGrid(opt) {
         const deps = Array.isArray(f.dependsOn) ? f.dependsOn : [f.dependsOn];
         deps.forEach(depKey => {
           const srcs = [...modal.querySelectorAll(`[data-f="${depKey}"]`), ...modal.querySelectorAll(`[data-fm="${depKey}"]`)];
-          srcs.forEach(src => src.addEventListener("change", () => {
+          srcs.forEach(src => {
+          // wire() re-runs after every dependsOn-triggered re-render (below),
+          // and a source like the Type tiles is never itself replaced — so
+          // without this guard, each re-render re-added another "change"
+          // listener onto the SAME persistent node, and every one of those
+          // fired (and called wire() again) on the next click: the listener
+          // count, and the visible lag/flicker from repeatedly re-rendering
+          // and re-syncing, compounded with every field the user touched.
+          src.__vxDepWired = src.__vxDepWired || new Set();
+          if (src.__vxDepWired.has(f.k)) return;
+          src.__vxDepWired.add(f.k);
+          src.addEventListener("change", () => {
           sync();
           // the dependency changed, so a stale selection no longer applies —
           // skipped for a field with its own `val`, which recomputes instead
@@ -912,7 +938,8 @@ function vxAgGrid(opt) {
             }
           }
           wire();
-          }));
+          });
+          });
         });
       });
     }
