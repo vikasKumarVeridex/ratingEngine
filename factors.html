@@ -465,9 +465,10 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
        plain select. tableOptsFor() scopes the list to the chosen LOB plus
        its admin-defined tables, which for Trucking alone still runs past 20
        entries — too many to scan by eye once you're picking, not browsing. */
-    { k: "tableId", l: "Lookup Table", t: "combo", opts: r => tableOptsFor(r), dependsOn: "lob",
+    { k: "tableId", l: "Lookup Table", t: "combo", opts: r => tableOptsFor(r), dependsOn: ["lob", "kind"],
+      hideIf: (r, isNew) => (r && r.kind) !== "Lookup",
       searchPlaceholder: "Search by table name…",
-      hint: "Which rate table this factor reads. Only meaningful when Type is Lookup — leave as none for Constant or Computed." },
+      hint: "Which rate table this factor reads." },
     { k: "driver", l: "Driven by (which insured answer)",
       hint: "The question on the quote that selects the row, or that feeds a Computed formula — \"Radius of Operation\", \"Vehicle stated value\". Leave blank for a Constant; it is driven by nothing." },
     /* Picking "Computed" used to be a dead end — nowhere on this form asked
