@@ -1,39 +1,43 @@
 /* ==========================================================================
    Veridex Rating Platform — Design System
    ========================================================================== */
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap");
+@import url("../../theme/global.css");
 
 :root {
   /* ====================================================================
-     VeriDex Global UI/UX Framework v3.0 — authoritative token block.
-     Copied verbatim per §3. Do not edit values here; changing a token hex
-     is a breaking change requiring a major version bump (§25).
+     VeriDex Enterprise UI/UX Framework v2.0.0 — token layer.
+     theme/global.css (imported above) is the actual, linked source of
+     every value below — nothing here is a copied hex literal. Legacy
+     alias names (--bg, --primary, --side-bg, etc.) are kept so the ~800
+     lines of component CSS in this file don't need call-site rewriting;
+     they now resolve through the vdx tokens instead of duplicated hex.
      ==================================================================== */
 
   /* Brand */
-  --color-brand:            #F97316;
-  --color-brand-dark:       #EA6A08;
-  --color-brand-amber:      #F59E0B;
-  --color-brand-light:      #FFF7ED;
-  --color-link:             #C2410C;   /* accessible text-link color on light surfaces */
-  --color-focus:            #C2410C;   /* focus indicator on light surfaces */
-  --color-control-border:   #6B7280;   /* form/control boundary; >=3:1 on light surfaces */
-  --color-on-brand:         #0D1117;   /* text/icons on orange brand fills */
-  --color-brand-gradient:   linear-gradient(135deg, #F97316, #F59E0B);
+  --color-brand:            var(--vdx-color-action-primary);
+  --color-brand-dark:       var(--vdx-color-action-primary-hover);
+  --color-brand-amber:      var(--vdx-primitive-amber-500);
+  --color-brand-light:      var(--vdx-color-action-primary-subtle);
+  --color-link:             var(--vdx-primitive-orange-700);   /* accessible text-link color; vdx's own text-link is navy, but this platform's --primary role needs an orange that still passes AA as text */
+  --color-focus:            var(--vdx-color-border-focus);
+  --color-control-border:   var(--vdx-color-form-input-border);
+  --color-on-brand:         var(--vdx-color-action-primary-text);
+  --color-brand-gradient:   linear-gradient(135deg, var(--vdx-primitive-orange-500), var(--vdx-primitive-amber-500));
 
   /* Shell (dark zones: topbar, left nav) */
-  --color-shell:            #1A1D23;
-  --color-shell-accent:     #22262E;
-  --color-border-dark:      #2E333D;
+  --color-shell:            var(--vdx-color-nav-bg);
+  --color-shell-accent:     var(--vdx-color-nav-item-hover-bg);
+  --color-border-dark:      var(--vdx-color-nav-border);
 
   /* Surfaces */
-  --color-ink:              #0D1117;
-  --color-ink-secondary:    #374151;
-  --color-surface:          #F7F8FA;
-  --color-panel:            #FFFFFF;
-  --color-border:           #E2E5EA;
+  --color-ink:              var(--vdx-color-text-primary);
+  --color-ink-secondary:    var(--vdx-color-text-secondary);
+  --color-surface:          var(--vdx-color-bg-canvas);
+  --color-panel:            var(--vdx-color-bg-surface);
+  --color-border:           var(--vdx-color-border-default);   /* §3.1.2 corrected default (3.14:1) — cards, inputs, panels */
+  --color-border-table:     var(--vdx-color-table-border);     /* §3.1.2 table-border — dense grid/list row dividers only */
 
-  /* Status — foreground */
+  /* Status — foreground (app-specific versioning lifecycle; no vdx equivalent) */
   --status-draft:           #475569;
   --status-review:          #B45309;
   --status-approved:        #1D4ED8;
@@ -50,18 +54,18 @@
   --status-retired-bg:      #F3F4F6;
 
   /* Functional */
-  --color-success:          #15803D;
-  --color-warning:          #B45309;
-  --color-danger:           #DC2626;
-  --color-info:             #0369A1;
-  --color-muted:            #6B7280;
-  --color-disabled:         #D1D5DB;
-  --color-success-bg:       #F0FDF4;
-  --color-warning-bg:       #FFFBEB;
-  --color-danger-bg:        #FEF2F2;
-  --color-info-bg:          #EFF6FF;
+  --color-success:          var(--vdx-color-text-success);
+  --color-warning:          var(--vdx-color-text-warning);
+  --color-danger:           var(--vdx-primitive-red-600);
+  --color-info:             var(--vdx-color-text-info);
+  --color-muted:            var(--vdx-color-text-secondary);
+  --color-disabled:         var(--vdx-color-text-disabled);
+  --color-success-bg:       var(--vdx-color-status-success-bg);
+  --color-warning-bg:       var(--vdx-color-status-warning-bg);
+  --color-danger-bg:        var(--vdx-color-status-error-bg);
+  --color-info-bg:          var(--vdx-color-status-info-bg);
 
-  /* Outcome decisions (decisioning modules only) */
+  /* Outcome decisions (decisioning modules only; app-specific, no vdx equivalent) */
   --outcome-accept:         #15803D;
   --outcome-decline:        #DC2626;
   --outcome-refer:          #B45309;
@@ -69,18 +73,21 @@
   --outcome-restrict:       #0369A1;
   --outcome-evidence:       #0F766E;
 
-  /* Spacing */
-  --space-1:  4px;
-  --space-2:  8px;
-  --space-3:  12px;
-  --space-4:  16px;
-  --space-5:  20px;
-  --space-6:  24px;
-  --space-8:  32px;
-  --space-10: 40px;
-  --space-12: 48px;
+  /* Spacing — identical scale to vdx; aliased for one source of truth */
+  --space-1:  var(--vdx-space-1);
+  --space-2:  var(--vdx-space-2);
+  --space-3:  var(--vdx-space-3);
+  --space-4:  var(--vdx-space-4);
+  --space-5:  var(--vdx-space-5);
+  --space-6:  var(--vdx-space-6);
+  --space-8:  var(--vdx-space-8);
+  --space-10: var(--vdx-space-10);
+  --space-12: var(--vdx-space-12);
 
-  /* Z-index scale */
+  /* Z-index scale — app-specific stacking order. vdx's own scale doesn't
+     map 1:1 onto this app's layering (e.g. vdx's toast sits at 700 but
+     this app's toast must clear --z-modal at 500, and vdx has nothing for
+     the tooltip-above-modal case below), so these stay independent. */
   --z-base:       0;
   --z-raised:     10;
   --z-dropdown:   100;
@@ -113,8 +120,9 @@
   --bg:            var(--color-surface);
   --surface:       var(--color-panel);
   --surface-2:     var(--color-surface);
-  --surface-3:     #EEF0F3;
+  --surface-3:     var(--vdx-primitive-neutral-100);
   --border:        var(--color-border);
+  --border-subtle: var(--color-border-table);
   --text:          var(--color-ink);
   --text-dim:      var(--color-ink-secondary);
   --text-mute:     var(--color-muted);
@@ -131,9 +139,9 @@
   --side-bg:        var(--color-shell);
   --side-bg-2:      var(--color-shell-accent);
   --side-border:    var(--color-border-dark);
-  --side-text:      #A8B0BC;
-  --side-text-dim:  #8B93A0;
-  --side-active-bg: var(--color-shell-accent);
+  --side-text:      var(--vdx-color-nav-text);
+  --side-text-dim:  var(--vdx-color-nav-group-label);
+  --side-active-bg: var(--color-brand);
 
   /* ====================================================================
      Categorical palette — LOB / category identity and chart series.
@@ -145,7 +153,7 @@
      language, and every one clears 4.5:1 against white in BOTH directions
      — they are used as an icon colour ON white and as a fill BEHIND a white
      glyph. The previous literals (#4A90D9 = 2.94:1, #1ABC9C = 2.13:1) failed
-     both ways.
+     both ways. No vdx equivalent exists for this set, so it stays literal.
      ==================================================================== */
   --cat-1: #1D4ED8;   /* 5.49:1  Commercial Trucking / primary series */
   --cat-2: #0F766E;   /* 4.80:1  General Liability */
@@ -166,14 +174,26 @@
   --cat-7-soft: #EFF8FE;
   --cat-8-soft: #F3F4F6;
 
-  --sidebar-w:  240px;   /* §5 */
-  --topbar-h:   56px;    /* §5 */
-  --radius:     8px;     /* §10.7 card radius */
-  --shadow:     0 1px 3px rgba(0, 0, 0, .06);
-  --shadow-lg:  0 4px 12px rgba(0, 0, 0, .12);
-  --font:       Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono:  "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --sidebar-w:           var(--vdx-sidebar-width-expanded);
+  --sidebar-w-collapsed: var(--vdx-sidebar-width-collapsed);
+  --topbar-h:   var(--vdx-topbar-height);
+  --radius:     var(--vdx-radius-md);
+  --shadow:     var(--vdx-shadow-xs);
+  --shadow-lg:  var(--vdx-shadow-lg);
+  --font:       var(--vdx-font-family-primary);
+  --font-mono:  var(--vdx-font-family-mono);
 }
+
+/* theme/global.css's own base reset (§2) blanks list-style on every bare
+   <ul>/<ol> and forces width:100% on every bare <table> — correct for its
+   .vdx-* components, but this platform still has a handful of plain,
+   unclassed lists/tables (e.g. quote-portal.html's inline bullet list,
+   formula-builder.html's preview table) that relied on browser defaults.
+   Restore those defaults only where no component class claims the element,
+   so classed tables/lists (table.vx-t, .vx-nav-list, Bootstrap .nav, …)
+   keep the vdx reset. */
+ul:not([class]), ol:not([class]) { list-style: revert; }
+table:not([class]) { width: auto; }
 
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
@@ -194,7 +214,7 @@ a:hover{text-decoration:underline}
 
 /* ---------- Shell ---------- */
 .vx-sidebar{position:fixed;inset:0 auto 0 0;width:var(--sidebar-w);background:var(--side-bg);
-  border-inline-end:1px solid var(--side-border);overflow-y:auto;z-index:var(--z-drawer);transition:transform .22s}
+  border-inline-end:1px solid var(--side-border);overflow-y:auto;z-index:var(--z-drawer);transition:transform .22s,width .18s}
 .vx-brand{display:flex;align-items:center;gap:10px;padding:16px;border-bottom:1px solid var(--side-border);position:sticky;top:0;background:var(--side-bg);z-index:var(--z-raised)}
 .vx-logo{width:34px;height:34px;border-radius:9px;background:var(--color-brand);
   display:grid;place-items:center;color:var(--color-panel);font-weight:800;font-size:17px;flex:none}
@@ -216,7 +236,33 @@ a:hover{text-decoration:underline}
   width:3px;height:18px;border-radius:0 3px 3px 0;background:var(--color-brand)}
 .vx-nav a .vx-chip{margin-inline-start:auto;font-size:9.5px;padding:1px 6px;border-radius:20px;background:var(--side-bg-2);color:var(--side-text-dim)}
 
-.vx-main{margin-inline-start:var(--sidebar-w);min-height:100vh;display:flex;flex-direction:column}
+/* ---------- Sidebar icon-rail collapse (NAV-002 §8.2) ---------- */
+.vx-sidebar-toggle{position:absolute;inset-block-end:0;inset-inline:0;display:flex;align-items:center;justify-content:center;
+  gap:8px;padding:12px;border:none;border-top:1px solid var(--side-border);background:var(--side-bg);color:var(--side-text-dim);
+  cursor:pointer;font-size:11.5px;font-weight:600;transition:.14s}
+.vx-sidebar-toggle:hover{background:var(--side-bg-2);color:var(--color-panel)}
+@media(min-width:992px){
+  .vx-sidebar.vx-collapsed{width:var(--sidebar-w-collapsed)}
+  .vx-sidebar.vx-collapsed .vx-brand{justify-content:center;padding-inline:8px}
+  .vx-sidebar.vx-collapsed .vx-brand b,
+  .vx-sidebar.vx-collapsed .vx-brand>div>span,
+  .vx-sidebar.vx-collapsed .vx-nav-grp{display:none}
+  /* Icon rail has no accordion to open/close — force every group's list
+     visible regardless of its own collapsed state (set in JS above). */
+  .vx-sidebar.vx-collapsed .vx-nav-list{display:block!important}
+  .vx-sidebar.vx-collapsed .vx-nav{padding-inline:6px}
+  .vx-sidebar.vx-collapsed .vx-nav a{justify-content:center;padding-inline:0}
+  /* Label text stays in the DOM (and the accessible name) but is visually
+     replaced by the native title= tooltip set on each link in core.js. */
+  .vx-sidebar.vx-collapsed .vx-nav a .vx-nav-label{position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+    overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+  .vx-main.vx-collapsed{margin-inline-start:var(--sidebar-w-collapsed)}
+  .vx-sidebar.vx-collapsed .vx-sidebar-toggle{justify-content:center}
+  .vx-sidebar.vx-collapsed .vx-sidebar-toggle .vx-nav-label{position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+    overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+}
+
+.vx-main{margin-inline-start:var(--sidebar-w);min-height:100vh;display:flex;flex-direction:column;transition:margin-inline-start .18s}
 .vx-topbar{height:var(--topbar-h);background:var(--surface);border-bottom:1px solid var(--border);
   display:flex;align-items:center;gap:14px;padding:0 18px;position:sticky;top:0;z-index:var(--z-sticky)}
 .vx-search{position:relative;flex:1;max-width:420px}
@@ -438,11 +484,11 @@ a:hover{text-decoration:underline}
 .vx-tw{overflow-x:auto;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
 table.vx-t{width:100%;border-collapse:collapse;font-size:12.7px;margin:0}
 table.vx-t th{text-align:left;background:var(--surface-2);color:var(--text-mute);font-size:10.5px;text-transform:uppercase;
-  letter-spacing:.04em;padding:9px 12px;border-bottom:1px solid var(--border);white-space:nowrap;user-select:none;font-weight:700}
+  letter-spacing:.04em;padding:9px 12px;border-bottom:1px solid var(--border-subtle);white-space:nowrap;user-select:none;font-weight:700}
 table.vx-t th.s{cursor:pointer}
 table.vx-t th.s:hover{color:var(--text)}
 table.vx-t th i{margin-inline-start:5px;opacity:.5;font-size:9.5px}
-table.vx-t td{padding:9.5px 12px;border-bottom:1px solid var(--border);vertical-align:middle;line-height:1.45}
+table.vx-t td{padding:9.5px 12px;border-bottom:1px solid var(--border-subtle);vertical-align:middle;line-height:1.45}
 table.vx-t tbody tr:last-child td{border-bottom:none}
 table.vx-t tbody tr:hover{background:var(--surface-2)}
 table.vx-t tbody tr.vx-row-click{cursor:pointer}
@@ -457,7 +503,7 @@ table.vx-t td.vx-editable .form-control,table.vx-t td.vx-editable .form-select{f
 .vx-ag.ag-theme-quartz{
   --ag-background-color:var(--surface); --ag-foreground-color:var(--text);
   --ag-header-background-color:var(--surface-2); --ag-header-foreground-color:var(--text-dim);
-  --ag-border-color:var(--border); --ag-row-border-color:var(--border);
+  --ag-border-color:var(--border); --ag-row-border-color:var(--border-subtle);
   --ag-row-hover-color:var(--surface-2); --ag-selected-row-background-color:var(--primary-soft);
   --ag-accent-color:var(--primary); --ag-checkbox-checked-color:var(--primary);
   --ag-font-family:var(--font); --ag-font-size:12.7px;
@@ -513,7 +559,7 @@ table.vx-t td.vx-editable .form-control,table.vx-t td.vx-editable .form-select{f
   color:var(--text-mute);margin-bottom:9px}
 .vx-covcard .off-note{font-size:12.2px;color:var(--text-mute);border-top:none;padding-top:0}
 table.vx-t.covkids{margin:0}
-table.vx-t.covkids td{padding:6px 10px;font-size:12.3px;border-bottom:1px solid var(--border)}
+table.vx-t.covkids td{padding:6px 10px;font-size:12.3px;border-bottom:1px solid var(--border-subtle)}
 table.vx-t.covkids tr:last-child td{border-bottom:none}
 table.vx-t.covkids tr.off td{opacity:.5}
 table.vx-t.covkids td.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}

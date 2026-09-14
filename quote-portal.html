@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" style="background-color:#1A1D23">
+<html lang="en" style="background-color:#1B2635">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sandbox Quote Generation — Main | VeriDex</title>
@@ -1131,13 +1131,13 @@ function questionsInner() {
         <div class="bd"><div class="sub" style="margin-top:-6px">Auto Liability and Physical Damage each compute their own Account-Level Factor from these answers, clamped 0.85×&ndash;1.50× — separately, not one shared value. <span class="hintdot" title="Each is a banded selection in the source rater, not a free number. &quot;No Inspections&quot; and &quot;No Loss Data&quot; are real answers, not zero.">Banded, not free-form.</span></div>
         <div class="row g-3">
         ${sel("yearsInBusiness","Years in Business",VX.truckAcctBizExp.map(b=>[b.yearsInBusiness,String(b.yearsInBusiness)]),5,"A New Venture also forfeits the safety, out-of-service and loss-frequency credits below.")}
-        ${sel("carrierSafetyRating","FMCSA Carrier Safety Rating",["Satisfactory","None","Conditional","Unsatisfactory"],"Satisfactory","Unsatisfactory is a hard decline, not just a debit.")}
+        ${sel("carrierSafetyRating","FMCSA Safety Rating",["Satisfactory","None","Conditional","Unsatisfactory"],"Satisfactory","Unsatisfactory is a hard decline, not just a debit.")}
         ${sel("fmcsaAlerts","FMCSA Alerts on File",[[0,"0"],[1,"1"],[2,"2"],[3,"3"],["4+","4+"]],0,"Open compliance alerts from the FMCSA SAFER system.")}
-        ${sel("oosVehiclesBand","Vehicle Out-of-Service Rate",VX.truckAcctOOS.vehicles.map(b=>[b.band,b.band]),"<=10%","As a share of roadside vehicle inspections.")}
-        ${sel("oosDriversBand","Driver Out-of-Service Rate",VX.truckAcctOOS.drivers.map(b=>[b.band,b.band]),"<=4%","Driver bands are tighter than vehicle bands.")}
-        ${sel("lossFreqBand","Loss Frequency, Trailing 3yr",VX.truckAcctLossFreqBands.map(b=>[b,b]),">24% and <=26%","Credit and debit both scale with fleet size — the same band is worth more on a large fleet.")}
+        ${sel("oosVehiclesBand","Vehicle OOS Rate",VX.truckAcctOOS.vehicles.map(b=>[b.band,b.band]),"<=10%","Vehicle out-of-service rate, as a share of roadside vehicle inspections.")}
+        ${sel("oosDriversBand","Driver OOS Rate",VX.truckAcctOOS.drivers.map(b=>[b.band,b.band]),"<=4%","Driver out-of-service rate. Driver bands are tighter than vehicle bands.")}
+        ${sel("lossFreqBand","Loss Frequency (3yr)",VX.truckAcctLossFreqBands.map(b=>[b,b]),">24% and <=26%","Trailing 3-year loss frequency. Credit and debit both scale with fleet size — the same band is worth more on a large fleet.")}
         ${sel("iccFiling","Requires ICC Filing?",[["yes","Yes"],["no","No"]],"yes","For-hire carriers generally require this; not requiring it earns a credit.")}
-        ${sel("driverCriteria1Year","Driver Criteria — 1-Year Threshold Breached?",[["no","No"],["yes","Yes"]],"no","A flat +15% on BOTH Liability and Physical Damage when any rated driver breaches the filed 1-year criteria.")}
+        ${sel("driverCriteria1Year","Driver Criteria Breached?",[["no","No"],["yes","Yes"]],"no","A flat +15% on BOTH Liability and Physical Damage when any rated driver breaches the filed 1-year criteria.")}
         ${sel("broadenedPollution","Broadened Pollution Form?",[["no","No"],["yes","Yes"]],"no","A flat +10% on Liability only — Physical Damage does not carry this term in the real rater.")}
         ${sel("defenseAddback","Defense Cost Addback?",[["no","No"],["yes","Yes"]],"no","A flat +10% on Liability only — same as Broadened Pollution, not applied to Physical Damage.")}
       </div>

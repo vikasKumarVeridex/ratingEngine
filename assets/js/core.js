@@ -363,6 +363,11 @@ function vxShell(title, subtitle, crumbs) {
      page actually being viewed — that one always renders expanded so a
      stored preference from a prior visit can never hide where you are. */
   const navCollapsed = (() => { try { return JSON.parse(localStorage.getItem("vxNavCollapsed")) || {}; } catch (e) { return {}; } })();
+  /* Whole-sidebar icon-rail mode (NAV-002 §8.2) — distinct from the
+     per-group accordion state above: this collapses the 240px sidebar to a
+     56px icon-only rail. Persisted separately so the two toggles never
+     fight over the same localStorage key. */
+  const sidebarCollapsed = (() => { try { return JSON.parse(localStorage.getItem("vxSidebarCollapsed")) || false; } catch (e) { return false; } })();
   const nav = scopedNav.map((g, gi) => {
     const isCurGroup = g.items.some(it => it.h === cur);
     /* A fresh browser has no stored preference for any group — before this,
@@ -371,15 +376,17 @@ function vxShell(title, subtitle, crumbs) {
        quote. Now the untouched default is collapsed, except Rating (the
        group this platform is actually about) and whichever group holds the
        page you're on — a stored preference from an earlier visit still
-       wins over both defaults once it exists. */
+       wins over both defaults once it exists. In icon-rail mode there is no
+       accordion at all — every item must render so it has an icon to show —
+       so the rail forces every group open regardless of that preference. */
     const explicit = navCollapsed[g.g];
-    const collapsed = !isCurGroup && (explicit !== undefined ? !!explicit : true);
+    const collapsed = !sidebarCollapsed && !isCurGroup && (explicit !== undefined ? !!explicit : true);
     return `<button type="button" class="vx-nav-grp" id="vxNavG${gi}" data-navgrp="${g.g}" aria-expanded="${!collapsed}" aria-controls="vxNavL${gi}">` +
       `<span>${g.g}</span><i class="fa-solid fa-chevron-down chev" aria-hidden="true"></i></button>` +
       `<ul class="vx-nav-list" id="vxNavL${gi}" aria-labelledby="vxNavG${gi}"${collapsed ? " hidden" : ""}>` +
-      g.items.map(it => `<li><a href="${it.h}" class="${it.h === cur ? "active" : ""}"` +
+      g.items.map(it => `<li><a href="${it.h}" class="${it.h === cur ? "active" : ""}" title="${it.l}"` +
         `${it.h === cur ? ' aria-current="page"' : ""}>` +
-        `<i class="fa-solid ${it.i}" aria-hidden="true"></i>${it.l}</a></li>`).join("") +
+        `<i class="fa-solid ${it.i}" aria-hidden="true"></i><span class="vx-nav-label">${it.l}</span></a></li>`).join("") +
       `</ul>`;
   }).join("");
 
@@ -400,8 +407,8 @@ function vxShell(title, subtitle, crumbs) {
   document.getElementById("vxApp").innerHTML = `
   <!-- WCAG 2.4.1 Bypass Blocks: 41 nav links sit before the content on every
        page. Visually hidden until focused, first thing in the tab order. -->
-  <a href="#vxMain" class="vx-skip">Skip to main content</a>
-  <aside class="vx-sidebar" id="vxSide">
+  <a href="#vxMain" class="vx-skip vdx-skip-link">Skip to main content</a>
+  <aside class="vx-sidebar${sidebarCollapsed ? " vx-collapsed" : ""}" id="vxSide">
     <div class="vx-brand">
       <div class="vx-logo" aria-hidden="true">
         <svg viewBox="0 0 40 40" width="22" height="22" fill="none">
@@ -412,9 +419,19 @@ function vxShell(title, subtitle, crumbs) {
       <div><b>VeriDex</b><span>${vxTenant().name}</span></div>
     </div>
     <nav class="vx-nav" aria-label="Primary">${nav}</nav>
+    <!-- Desktop-only icon-rail toggle (NAV-002 §8.2.2). Mobile already has
+         its own show/hide pattern via the hamburger + off-canvas drawer
+         below, so this stays hidden under the same breakpoint (lg, 992px)
+         that drawer switches over at. -->
+    <button type="button" class="vx-sidebar-toggle d-none d-lg-flex" id="vxSideToggle"
+      aria-label="${sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}"
+      aria-expanded="${!sidebarCollapsed}" aria-controls="vxSide" onclick="vxToggleSidebarCollapse(this)">
+      <i class="fa-solid ${sidebarCollapsed ? "fa-angles-right" : "fa-angles-left"}" aria-hidden="true"></i>
+      <span class="vx-nav-label">Collapse</span>
+    </button>
   </aside>
 
-  <div class="vx-main">
+  <div class="vx-main${sidebarCollapsed ? " vx-collapsed" : ""}">
     <header class="vx-topbar">
       <button class="vx-icobtn d-lg-none" aria-label="Open navigation" aria-controls="vxSide" aria-expanded="false"
         onclick="vxToggleNav(this)"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>
@@ -708,7 +725,7 @@ function vxAnnounce(msg) {
   if (!el) {
     el = document.createElement("div");
     el.id = "vxLive";
-    el.className = "vx-sr";
+    el.className = "vx-sr vdx-sr-only";
     el.setAttribute("aria-live", "polite");
     el.setAttribute("aria-atomic", "true");
     document.body.appendChild(el);
@@ -831,6 +848,38 @@ function vxToggleNav(btn) {
   const open = document.getElementById("vxSide").classList.toggle("on");
   btn.setAttribute("aria-expanded", open ? "true" : "false");
   btn.setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
+}
+
+/* Desktop icon-rail toggle (NAV-002 §8.2.2), separate from vxToggleNav's
+   mobile drawer above — that one shows/hides the whole sidebar off-canvas,
+   this one resizes it between 240px and 56px in place. */
+function vxToggleSidebarCollapse(btn) {
+  const side = document.getElementById("vxSide");
+  const main = document.querySelector(".vx-main");
+  const collapsed = side.classList.toggle("vx-collapsed");
+  if (main) main.classList.toggle("vx-collapsed", collapsed);
+  btn.setAttribute("aria-expanded", String(!collapsed));
+  btn.setAttribute("aria-label", collapsed ? "Expand navigation" : "Collapse navigation");
+  const icon = btn.querySelector("i");
+  if (icon) icon.className = "fa-solid " + (collapsed ? "fa-angles-right" : "fa-angles-left");
+  try { localStorage.setItem("vxSidebarCollapsed", JSON.stringify(collapsed)); } catch (e) {}
+
+  // Icon-rail mode has no accordion — every group must show. Restore each
+  // group's own stored preference (and the "current page" default) on the
+  // way back to the full-width sidebar, rather than leaving everything open.
+  // Mirrors vxShell's own initial-render rule: default is collapsed unless
+  // this is the current page's group or an explicit stored preference says
+  // otherwise — "no stored value" must fall back to collapsed, not open.
+  const stored = (() => { try { return JSON.parse(localStorage.getItem("vxNavCollapsed")) || {}; } catch (e) { return {}; } })();
+  document.querySelectorAll(".vx-nav-grp").forEach(g => {
+    const list = document.getElementById(g.getAttribute("aria-controls"));
+    if (!list) return;
+    const isCurGroup = !!list.querySelector("a.active");
+    const explicit = stored[g.dataset.navgrp];
+    const isOpen = collapsed || isCurGroup || (explicit !== undefined ? !explicit : false);
+    list.hidden = !isOpen;
+    g.setAttribute("aria-expanded", String(isOpen));
+  });
 }
 
 /* ---------- toasts ---------- */

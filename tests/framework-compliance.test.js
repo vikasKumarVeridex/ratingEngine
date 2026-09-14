@@ -15,6 +15,12 @@ const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..");
 const css = ["app.css", "workspace.css"].map(file => fs.readFileSync(path.join(ROOT, "assets/css", file), "utf8")).join("\n");
+const themeCss = fs.readFileSync(path.join(ROOT, "theme/global.css"), "utf8");
+/* app.css now sources its token layer from theme/global.css via var(--vdx-*)
+   chains (app.css @imports it directly) instead of copied hex, so token()
+   below has to resolve those chains against the combined text, not just
+   pattern-match a literal hex next to the app.css declaration. */
+const resolveCss = themeCss + "\n" + css;
 const pages = fs.readdirSync(ROOT).filter(f => f.endsWith(".html"));
 const jsFiles = fs.readdirSync(path.join(ROOT, "assets/js")).filter(f => f.endsWith(".js"));
 const read = p => fs.readFileSync(path.join(ROOT, p), "utf8");
@@ -39,9 +45,20 @@ function ratio(a, b) {
   const l1 = lum(a), l2 = lum(b);
   return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
 }
-function token(name) {
-  const m = css.match(new RegExp("--" + name + ":\\s*(#[0-9a-fA-F]{3,8})"));
-  return m ? m[1] : null;
+/* Resolves a token to its literal hex, following var(--other-token) chains
+   (app.css's legacy names -> vdx semantic tokens -> vdx primitives) up to
+   the point a plain #hex value is found. */
+function token(name, depth) {
+  depth = depth || 0;
+  if (depth > 10) return null;
+  const m = resolveCss.match(new RegExp("--" + name + "\\s*:\\s*([^;]+);"));
+  if (!m) return null;
+  const value = m[1].trim();
+  const hexMatch = value.match(/^#[0-9a-fA-F]{3,8}$/);
+  if (hexMatch) return hexMatch[0];
+  const varMatch = value.match(/^var\(\s*--([a-zA-Z0-9-]+)\s*\)$/);
+  if (varMatch) return token(varMatch[1], depth + 1);
+  return null;
 }
 
 /* ======================================================================
@@ -67,12 +84,12 @@ check("all v3.0 colour tokens declared", missingTokens.length === 0,
   missingTokens.length ? "missing: " + missingTokens.join(", ") : REQUIRED_TOKENS.length + " tokens");
 
 const EXACT = {
-  "color-brand": "#F97316", "color-link": "#C2410C", "color-focus": "#C2410C",
-  "color-control-border": "#6B7280", "color-on-brand": "#0D1117",
-  "color-shell": "#1A1D23", "color-ink": "#0D1117", "color-surface": "#F7F8FA",
-  "color-panel": "#FFFFFF", "color-border": "#E2E5EA",
+  "color-brand": "#F86407", "color-link": "#B84804", "color-focus": "#F86407",
+  "color-control-border": "#8D94A3", "color-on-brand": "#FFFFFF",
+  "color-shell": "#1B2635", "color-ink": "#1B2635", "color-surface": "#F5F6F8",
+  "color-panel": "#FFFFFF", "color-border": "#8D94A3",
   "status-review": "#B45309", "status-published": "#15803D",
-  "color-danger": "#DC2626", "color-muted": "#6B7280",
+  "color-danger": "#DC2626", "color-muted": "#565C6B",
 };
 const wrong = Object.entries(EXACT)
   .filter(([k, v]) => (token(k) || "").toUpperCase() !== v.toUpperCase())
@@ -93,7 +110,7 @@ check("no hard-coded hex in stylesheet rules", cssHex.length === 0,
       exists — so it cannot reference a token.
    2. A tenant's brand accent is customer data that a customer types into a
       form, not a design decision. Tokenising it would delete the feature. */
-const SHELL_LITERAL = /<html[^>]*background-color:#1A1D23[^>]*>/gi;
+const SHELL_LITERAL = /<html[^>]*background-color:#1B2635[^>]*>/gi;
 const TENANT_ACCENT = /(?:accent|def)\s*:\s*"#[0-9a-fA-F]{6}"/g;
 const scrub = src => src.replace(SHELL_LITERAL, "").replace(TENANT_ACCENT, "");
 
@@ -163,9 +180,11 @@ check("no [data-theme] content theming", !/\[data-theme/.test(css), "");
    §4 Typography · §23 Title pattern
    ====================================================================== */
 section("§4 Typography / §23 Title");
-check("Inter loaded", /family=Inter/.test(css), "");
-check("IBM Plex Mono loaded", /IBM\+Plex\+Mono/.test(css), "");
-check("font-display: swap", /display=swap/.test(css), "");
+/* The font @import now lives in theme/global.css, which app.css @imports —
+   check the resolved text, not just app.css's own source. */
+check("Inter loaded", /family=Inter/.test(resolveCss), "");
+check("JetBrains Mono loaded", /JetBrains\+Mono/.test(resolveCss), "");
+check("font-display: swap", /display=swap/.test(resolveCss), "");
 check("no font-weight 300", !/font-weight:\s*300/.test(css), "");
 
 const badTitles = pages.filter(f => {
@@ -186,7 +205,7 @@ check("titles \u2264 60 characters", longTitles.length === 0,
    §22 Loading — shell background prevents white flash
    ====================================================================== */
 section("§22 Loading");
-const noShellBg = pages.filter(f => !/<html[^>]*background-color:\s*#1A1D23/i.test(read(f)));
+const noShellBg = pages.filter(f => !/<html[^>]*background-color:\s*#1B2635/i.test(read(f)));
 check("<html> carries the shell background", noShellBg.length === 0,
   noShellBg.length ? noShellBg.length + " pages missing" : pages.length + " pages");
 
@@ -194,8 +213,23 @@ check("<html> carries the shell background", noShellBg.length === 0,
    §5 Shell dimensions
    ====================================================================== */
 section("§5 Shell");
-const navW = (css.match(/--sidebar-w:\s*(\d+)px/) || [])[1];
-const topH = (css.match(/--topbar-h:\s*(\d+)px/) || [])[1];
+/* --sidebar-w/--topbar-h now resolve through theme/global.css's
+   --vdx-sidebar-width-expanded/--vdx-topbar-height rather than a literal
+   px value in app.css, so follow the same var() chain token() uses. */
+function tokenPx(name, depth) {
+  depth = depth || 0;
+  if (depth > 10) return null;
+  const m = resolveCss.match(new RegExp("--" + name + "\\s*:\\s*([^;]+);"));
+  if (!m) return null;
+  const value = m[1].trim();
+  const pxMatch = value.match(/^(\d+)px$/);
+  if (pxMatch) return pxMatch[1];
+  const varMatch = value.match(/^var\(\s*--([a-zA-Z0-9-]+)\s*\)$/);
+  if (varMatch) return tokenPx(varMatch[1], depth + 1);
+  return null;
+}
+const navW = tokenPx("sidebar-w");
+const topH = tokenPx("topbar-h");
 check("left nav is 240px", navW === "240", navW + "px");
 check("topbar is 56px", topH === "56", topH + "px");
 

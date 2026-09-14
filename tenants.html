@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" style="background-color:#1A1D23">
+<html lang="en" style="background-color:#1B2635">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tenants — Administration | VeriDex</title>
@@ -109,7 +109,7 @@ document.getElementById("vxBody").innerHTML = `
 document.getElementById("vxPageActions").innerHTML =
   `<label class="btn btn-primary btn-sm" for="tenantCfgUpload" style="margin-bottom:0;cursor:pointer">
      <i class="fa-solid fa-cloud-arrow-up me-1"></i>Onboard Tenant from Configuration</label>
-   <input type="file" id="tenantCfgUpload" accept=".json" class="vx-sr">`;
+   <input type="file" id="tenantCfgUpload" accept=".json" class="vx-sr vdx-sr-only">`;
 
 /* What the file will actually produce, read from the file itself — the same
    fields vxImportProductStudioExport reads, so the preview cannot claim

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" style="background-color:#1A1D23">
+<html lang="en" style="background-color:#1B2635">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Products — Configuration | VeriDex</title>
@@ -107,7 +107,7 @@ function versionOpts(cur) {
 document.getElementById("vxPageActions").innerHTML =
   `<label class="btn btn-outline-secondary btn-sm" for="prodCfgUpload" style="margin-bottom:0;cursor:pointer">
      <i class="fa-solid fa-file-arrow-up me-1"></i>Upload Product Configuration</label>
-   <input type="file" id="prodCfgUpload" accept=".json" class="vx-sr">`;
+   <input type="file" id="prodCfgUpload" accept=".json" class="vx-sr vdx-sr-only">`;
 
 document.getElementById("prodCfgUpload").onchange = async e => {
   const file = e.target.files[0];
