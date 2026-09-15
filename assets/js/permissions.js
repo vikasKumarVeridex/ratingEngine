@@ -39,7 +39,7 @@
      "publish" a ZIP code, and pretending you can makes the matrix noise. */
   const RESOURCES = [
     { g: "Configuration", k: "lobs",       l: "Coverage Line",     actions: ["view", "create", "edit", "delete"] },
-    { g: "Configuration", k: "coverages",  l: "Coverages",         actions: ["view", "create", "edit", "delete"] },
+    { g: "Configuration", k: "coverages",  l: "Class of Business", actions: ["view", "create", "edit", "delete"] },
     { g: "Configuration", k: "products",   l: "Products",          actions: ["view", "create", "edit", "delete", "publish"] },
     { g: "Configuration", k: "units",      l: "Unit Configuration", actions: ["view", "create", "edit", "delete"] },
     { g: "Configuration", k: "versions",   l: "Rating Versions",   actions: ["view", "create", "edit", "delete", "publish", "approve"] },

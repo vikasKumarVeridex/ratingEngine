@@ -6,7 +6,7 @@ const path = require('path');
 const PAGES = [
   'dashboard.html','factors.html','rate-tables.html','formula-builder.html',
   'versions.html','quote-json.html','loss-runs.html','analytics.html',
-  'ai-assistant.html','glossary.html'
+  'glossary.html'
 ];
 
 function extractTh(html) {

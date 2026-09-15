@@ -83,11 +83,6 @@
     "LOB":            { d: "Line of business the factor belongs to (Trucking, GL, Property, MPL, Cyber).", w: "Drives segmentation in every analytics view." },
     "Impact":         { d: "Average change in premium attributable to this factor across all filtered quotes.", w: "Drives the factor-impact prioritisation backlog." },
 
-    /* ai-assistant.html */
-    "Attribute":      { d: "The rating input the assistant proposes to change.", w: "Restrict edits to one attribute per proposal so review remains atomic." },
-    "Current":        { d: "Existing authoritative value.", w: "Baseline against which the proposal is evaluated." },
-    "Proposed":       { d: "Suggested value the assistant would set.", w: "Carries an evidence trail back to the source data." },
-
     /* glossary.html */
     "Variable":       { d: "Token available inside the formula DSL.", w: "Mirrors the left rail of the formula builder; click-through for examples." },
     "Meaning":        { d: "Plain-English definition of the variable.", w: "The dictionary this tooltip module is itself sourced from." },

@@ -27,7 +27,7 @@ const NAV = [
     { h: "products.html", i: "fa-cubes", l: "Products" },
     { h: "versions.html", i: "fa-code-branch", l: "Versions" },
     { h: "lob.html", i: "fa-layer-group", l: "Coverage" },
-    { h: "coverages.html", i: "fa-shield", l: "Coverages" },
+    { h: "coverages.html", i: "fa-shield", l: "Class of Business" },
     { h: "units.html", i: "fa-ruler", l: "Rating Units" },
     { h: "industry-classes.html", i: "fa-industry", l: "Industry Classes" },
   ]},
@@ -99,7 +99,6 @@ const NAV = [
   { g: "Reference & Tools", items: [
     { h: "engine-flow.html", i: "fa-sitemap", l: "Engine Flow" },
     { h: "integration.html", i: "fa-plug", l: "Integration Guide" },
-    { h: "ai-assistant.html", i: "fa-wand-magic-sparkles", l: "AI Assistant" },
   ]},
 ];
 
@@ -704,7 +703,7 @@ function vxShortcutHelp() {
   const rows = [
     ["/", "Focus search"], ["Ctrl/Cmd + K", "Focus search"], ["Ctrl/Cmd + S", "Save the open dialog"],
     ["Esc", "Close search results / context menu"], ["Shift + D", "Dashboard"], ["Shift + P", "Products"],
-    ["Shift + F", "Rating Factors"], ["Shift + Q", "Sandbox Quote"], ["Shift + A", "AI Assistant"], ["Shift + R", "Reports"],
+    ["Shift + F", "Rating Factors"], ["Shift + Q", "Sandbox Quote"], ["Shift + R", "Reports"],
     ["?", "Show this list"],
   ];
   vxModal("Keyboard Shortcuts", `<div class="vx-tw"><table class="vx-t"><tbody>
@@ -722,7 +721,7 @@ function vxKeys() {
       document.getElementById("vxCtx")?.classList.remove("on");
     }
     if (!typing && e.shiftKey) {
-      const map = { D: "dashboard.html", P: "products.html", F: "factors.html", Q: "quote-portal.html", A: "ai-assistant.html", R: "analytics.html" };
+      const map = { D: "dashboard.html", P: "products.html", F: "factors.html", Q: "quote-portal.html", R: "analytics.html" };
       if (map[e.key.toUpperCase()]) { e.preventDefault(); location.href = map[e.key.toUpperCase()]; }
     }
     // Ctrl/Cmd+S — commit whatever modal is open (every vxModal's non-dismiss
@@ -739,7 +738,7 @@ function vxKeys() {
 function vxShortcuts() {
   vxModal("Keyboard Shortcuts", `
     <table class="vx-t"><tbody>
-      ${[["/ or Ctrl+K","Focus global search"],["Shift+D","Go to Dashboard"],["Shift+P","Go to Products"],["Shift+F","Go to Rating Factors"],["Shift+Q","Go to Quote Portal"],["Shift+A","Go to AI Assistant"],["Shift+R","Go to Reports & Analytics"],["Esc","Close popovers"],["Right-click row","Context menu"]]
+      ${[["/ or Ctrl+K","Focus global search"],["Shift+D","Go to Dashboard"],["Shift+P","Go to Products"],["Shift+F","Go to Rating Factors"],["Shift+Q","Go to Quote Portal"],["Shift+R","Go to Reports & Analytics"],["Esc","Close popovers"],["Right-click row","Context menu"]]
         .map(([k, d]) => `<tr><td style="width:150px"><kbd style="border:1px solid var(--border);border-radius:4px;padding:2px 7px;font-size:11px;background:var(--surface-2)">${k}</kbd></td><td>${d}</td></tr>`).join("")}
     </tbody></table>`, [{ t: "Close", c: "secondary" }]);
 }
