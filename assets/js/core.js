@@ -99,6 +99,7 @@ const NAV = [
   { g: "Reference & Tools", items: [
     { h: "engine-flow.html", i: "fa-sitemap", l: "Engine Flow" },
     { h: "integration.html", i: "fa-plug", l: "Integration Guide" },
+    { h: "design-patterns.html", i: "fa-shapes", l: "Technical Guide" },
   ]},
 ];
 
