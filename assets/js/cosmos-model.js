@@ -77,7 +77,40 @@ const COSMOS_TENANT_SCOPED = new Set([
      own isolated copy, distinct from the shared platform tables
      rate-tables-registry.js reads for known engine-rated lines. */
   "tenantRateTables",
+  /* VeriDex's own 23 admin-built lookup tables, and any tenant's own
+     additions to that screen — not shared reference data every tenant reads
+     equally (unlike the real filed rate-tables-registry.js tables, which
+     stay OUT of this set on purpose). A table a tenant's own Rating
+     Factors point at (via a "lt:" tableId) is that tenant's own
+     configuration, and one tenant seeing another's — or every tenant
+     seeing VeriDex's own — was the exact leak this set exists to prevent
+     everywhere else. */
+  "lookupTables",
+  /* Each tenant's own people. Every tenant is provisioned with exactly one
+     Super Admin (tenants.html's provisionSuperAdmin) the moment it's
+     onboarded, and manages its own Rating Administrator / Actuarial
+     Analyst / Product Manager users from there — not something VeriDex
+     does for them, and not something one tenant should ever see another
+     tenant's Users grid showing. `roles` stays OUT of this set on purpose:
+     the role catalog itself (which job titles exist, what each can do) is
+     shared reference data every tenant assigns from, the same way States
+     or Industry Classes are — a tenant customises WHO has a role, not
+     which roles exist. */
+  "users",
 ]);
+
+/* lookupTables mixes two genuinely different kinds of row: tenant-owned
+   custom tables (the reason it was added to COSMOS_TENANT_SCOPED above),
+   and rows lookup-tables.html auto-derives from RATE_TABLES — the platform's
+   own real, filed rate tables, which every tenant rates against and are
+   deliberately shared reference data everywhere ELSE on this platform
+   (rateTables itself is never in COSMOS_TENANT_SCOPED at all). Those rows
+   carry no tenantId, by design; a strict tenant match would have made them
+   invisible to every tenant instead of visible to all of them. This is the
+   one, narrow exception to "every tenant-scoped read requires a tenant" —
+   everywhere else, a null tenantId on a scoped collection is exactly the
+   bug this model exists to catch. */
+const COSMOS_SHARED_ROWS_ALLOWED = new Set(["lookupTables"]);
 
 const COSMOS = (() => {
   function tenantId() { return (typeof VX !== "undefined" && VX.activeTenantId) || null; }
@@ -100,7 +133,8 @@ const COSMOS = (() => {
     }
     const tid = opt.tenantId !== undefined ? opt.tenantId : tenantId();
     assertTenant(collection, tid);
-    let rows = all.filter(d => d.tenantId === tid);
+    const sharedOk = COSMOS_SHARED_ROWS_ALLOWED.has(collection);
+    let rows = all.filter(d => d.tenantId === tid || (sharedOk && d.tenantId == null));
     if (opt.where) rows = rows.filter(opt.where);
     return rows;
   }

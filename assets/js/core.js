@@ -10,7 +10,14 @@ const NAV = [
   { g: "Main", items: [
     { h: "dashboard.html", i: "fa-gauge-high", l: "Dashboard" },
     { h: "loss-runs.html", i: "fa-triangle-exclamation", l: "Loss Run Analytics" },
-    { h: "quote-portal.html", i: "fa-flask", l: "Sandbox Quote Generation" },
+    { h: "quote-portal.html", i: "fa-flask", l: "Quote Sandbox" },
+    /* Grouped with the two other ways to produce a quote (Sandbox: fill a
+       form; Quotes: browse ones already on file) rather than filed under
+       Reference & Tools — pasting a JSON payload in to rate it is a third
+       way of DOING the same thing those two do, not documentation about
+       the platform. */
+    { h: "quote-json.html", i: "fa-code", l: "Quote JSON" },
+    // { h: "quotes.html", i: "fa-file-lines", l: "Quotes" },
   ]},
   /* Configuration sits above Rating: you define the line of business, the
      coverages under it and the product that sells them BEFORE the factors and
@@ -19,13 +26,20 @@ const NAV = [
   { g: "Configuration", items: [
     { h: "products.html", i: "fa-cubes", l: "Products" },
     { h: "versions.html", i: "fa-code-branch", l: "Versions" },
+    { h: "lob.html", i: "fa-layer-group", l: "Coverage" },
+    { h: "coverages.html", i: "fa-shield", l: "Class of Business" },
+    { h: "units.html", i: "fa-ruler", l: "Rating Units" },
+    { h: "industry-classes.html", i: "fa-industry", l: "Industry Classes" },
   ]},
   { g: "Rating", items: [
     /* Lines of Business moved up to Configuration — an LOB is something you
-       define before rating it, not a rating artefact. */
+       define before rating it, not a rating artefact. Rate Tables moved OUT
+       (see Administration below) — it holds the platform's own real, FILED
+       reference data, not anything a tenant owns or edits; nothing here
+       otherwise distinguished "the real filed loss costs everyone rates
+       against" from "this tenant's own configuration built on top of it". */
     { h: "factors.html", i: "fa-sliders", l: "Rating Factors" },
     { h: "formula-builder.html", i: "fa-square-root-variable", l: "Rating Formulas" },
-    { h: "rate-tables.html", i: "fa-database", l: "Rate Tables (live)" },
     { h: "lookup-tables.html", i: "fa-table-list", l: "Lookup Tables" },
     { h: "glossary.html", i: "fa-book", l: "Glossary" },
   ]},
@@ -49,14 +63,132 @@ const NAV = [
      still reaches tenants.html — so the flow stays available without two
      nav rows for something an admin touches rarely. The unconfigured-tenant
      banner also still links to tenant-setup.html. */
-  { g: "Administration", items: [
+  /* Its own team, not VeriDex's. Users/Roles used to sit in Administration
+     below, which the admin/tenant workspace split (vxScopedNav) hides
+     entirely once you're logged into a tenant — meaning no tenant had any
+     way to add its own second user at all. Its own group so it stays
+     visible inside a tenant's workspace while everything actually about
+     overseeing OTHER tenants (Tenants, Audit History, Export, and VeriDex's
+     own Settings) stays out of it. */
+  { g: "Team", items: [
     { h: "users.html", i: "fa-users", l: "Users" },
     { h: "roles.html", i: "fa-user-shield", l: "Roles" },
+  ]},
+  { g: "Administration", items: [
+    /* Back in the sidebar. It was removed on the reasoning that switching
+       tenant is a top-bar action and the picker's "Manage tenants" item
+       still reached this page — which held while Tenants was only a list
+       you rarely touched. It now owns onboarding: creating a tenant AND
+       importing its product configuration in one action lives here, and a
+       destination you can only reach by opening a dropdown and looking for
+       a secondary link is not where you put the entry point for standing a
+       new customer up. */
+    { h: "tenants.html", i: "fa-building", l: "Tenants" },
     { h: "audit.html", i: "fa-clock-rotate-left", l: "Audit History" },
     { h: "settings.html", i: "fa-gear", l: "Settings" },
+    { h: "export.html", i: "fa-file-export", l: "Export Configuration" },
+    /* Moved from Rating: the platform's own real, filed reference data
+       (loss costs, ILFs, class factors extracted from actual carrier
+       workbooks) that every tenant's built-in calculator reads from, the
+       same way real carriers all rate off one shared set of ISO/NCCI filed
+       tables — not a tenant's own configuration, and not something a
+       tenant should see or edit. Lives with the rest of what VeriDex
+       administers on everyone's behalf, not in a tenant's own workspace. */
+    { h: "rate-tables.html", i: "fa-database", l: "Rate Tables (live)" },
+  ]},
+  { g: "Reference & Tools", items: [
+    { h: "engine-flow.html", i: "fa-sitemap", l: "Engine Flow" },
     { h: "integration.html", i: "fa-plug", l: "Integration Guide" },
   ]},
 ];
+
+/* ---------- admin vs tenant workspace ----------
+   Two real audiences use this platform very differently: someone standing
+   up and overseeing CARRIERS (which tenants exist, how they're doing) has
+   no business in one tenant's own rating configuration, and vice versa —
+   someone working a tenant's products/factors/formulas has no business in
+   platform-wide tenant administration. Nothing distinguished the two
+   before this: every one of the 41 pages was one flat nav shown identically
+   to everyone.
+
+   An earlier version of this gated on the ACTING-AS user's role (Settings
+   → Switch User) — but that reused a mechanism this platform already has
+   for a genuinely different purpose (who a factor-value-change approval is
+   attributed to, dual-control sign-off), and the two tangled: switching
+   Acting As for an approval also silently changed which workspace you saw,
+   and a role left switched from an earlier session came back as "stuck in
+   the wrong workspace" with nothing on screen explaining why.
+
+   This is its own explicit state instead — an actual LOGIN to a tenant, the
+   same shape as logging into any real multi-tenant console: pick a tenant
+   from the admin console (Tenant Management / Tenant Stat Dashboard) and
+   log in, and its full workspace opens up; log out and you're back to
+   overseeing every tenant. Nothing about the Acting-As user or its role is
+   touched by this — the two systems no longer share a knob. */
+const ADMIN_NAV = [
+  { g: "Administration", items: [
+    { h: "tenants.html", i: "fa-building", l: "Tenant Management" },
+    { h: "tenant-stats.html", i: "fa-chart-simple", l: "Tenant Stat Dashboard" },
+    /* The platform's own real, filed reference data — VeriDex's to
+       maintain, no tenant's to see. Listed here explicitly (not derived
+       from NAV's own "Administration" group) since this array is a
+       standalone replacement for the tenant workspace nav, not a filtered
+       view of it — without this, moving rate-tables.html into NAV's
+       Administration group would have hidden it from tenants correctly
+       but left VeriDex's own admin with no way to reach it either. */
+    { h: "rate-tables.html", i: "fa-database", l: "Rate Tables" },
+  ]},
+];
+/* Reachable by direct link regardless of workspace — the topbar's own
+   Account menu (vxShell below) links to Settings independently of the
+   sidebar, on purpose: switching the Acting-As user/role is a separate
+   concern from which workspace you're in, and gating Settings the same way
+   as everything else would strand whoever needed it from either side. */
+const WORKSPACE_EXEMPT_PAGES = new Set(["settings.html", "tenant-setup.html"]);
+/* Persisted (not session-only): logging into a tenant is meant to survive a
+   reload the same way the tenant/user pickers already do — the whole point
+   is that it behaves like being logged in, not like a scroll position. */
+function vxWorkspaceMode() {
+  try { return localStorage.getItem("vxWorkspaceMode") || "admin"; } catch (e) { return "admin"; }
+}
+function vxIsAdmin() { return vxWorkspaceMode() !== "tenant"; }
+/* The one real state transition: pick a tenant, log in, land in ITS
+   workspace. Setting the active tenant here (rather than requiring it be
+   set separately first) is what makes "log in to tenant A" one action
+   instead of two — the picker and the login used to be different steps
+   that could disagree about which tenant you actually ended up in. */
+function vxLoginToTenant(tenantId, landingPage) {
+  VX.activeTenantId = tenantId;
+  try { localStorage.setItem("vxActiveTenant", JSON.stringify(tenantId)); } catch (e) {}
+  try { localStorage.setItem("vxWorkspaceMode", "tenant"); } catch (e) {}
+  location.href = landingPage || "dashboard.html";
+}
+function vxLogoutOfTenant() {
+  try { localStorage.setItem("vxWorkspaceMode", "admin"); } catch (e) {}
+  location.href = "tenants.html";
+}
+/* The nav this session's workspace actually gets: the admin console (2
+   pages) logged out of any tenant, or the full tenant workspace minus
+   platform Administration once logged into one — Users, Roles, Tenants,
+   Audit History and Export are how the platform oversees every tenant, not
+   something a single tenant's own rating team touches. */
+function vxScopedNav() {
+  return vxIsAdmin() ? ADMIN_NAV : NAV.filter(g => g.g !== "Administration");
+}
+/* Enforced, not just hidden: a hidden link a person can still reach by
+   typing the URL isn't really two workspaces, it's one page with fewer
+   bookmarks. Redirects the FIRST moment a page they can't see in their own
+   nav loads — vxShell runs before any page's own body executes, so this
+   is the one place that reliably front-runs the other 40. */
+function vxEnforceWorkspace() {
+  const cur = location.pathname.split("/").pop() || "dashboard.html";
+  if (WORKSPACE_EXEMPT_PAGES.has(cur)) return;
+  const allowed = vxScopedNav().some(g => g.items.some(it => it.h === cur));
+  if (allowed) return;
+  const home = vxIsAdmin() ? "tenants.html" : "dashboard.html";
+  if (cur === home) return;
+  location.replace(home);
+}
 
 /* ---------- theme ----------
    Removed. §17 forbids dark mode in content areas: rating figures, factor
@@ -112,11 +244,29 @@ function vxUnit(name, tenantId) {
   const tid = tenantId === undefined ? VX.activeTenantId : tenantId;
   return (VX.units || []).find(u => u.name === name && (u.tenantId == null || u.tenantId === tid)) || null;
 }
+/* Picking a specific tenant by name here always means "I want to work in
+   THIS tenant now" — there is no reading of the topbar picker where
+   choosing a tenant while in the admin console was meant to leave you
+   looking at the SAME 2-page admin nav with just a different tenant's id
+   pointed at underneath it (the admin console's own two pages, Tenant
+   Management and Tenant Stat Dashboard, show every tenant at once — picking
+   one here changes nothing about what either of them displays). Before this,
+   using this picker from the admin console silently left vxIsAdmin() true:
+   the active tenant changed, but the sidebar stayed the restricted admin
+   nav and the "Tenant Management" logout button never appeared, which read
+   as the tenant switch — or the whole platform — simply not working, with
+   no error and nothing on screen to explain it. Logging in is therefore
+   folded into every use of this picker, not only the dedicated "Log in to
+   this tenant" row action — picking a tenant FROM WITHIN an existing tenant
+   session still just switches which one you're logged into, exactly as
+   before, since vxWorkspaceMode is already "tenant" and setting it again is
+   a no-op. */
 function vxSetTenant(id) {
   const t = (VX.tenants || []).find(x => x.id === +id);
   if (!t) return;
   VX.activeTenantId = t.id;
   localStorage.setItem("vxActiveTenant", JSON.stringify(t.id));
+  try { localStorage.setItem("vxWorkspaceMode", "tenant"); } catch (e) {}
   vxToast("Tenant switched", `Now working in ${t.name} · ${t.plan}`, "ok");
   setTimeout(() => location.reload(), 550);
 }
@@ -225,11 +375,7 @@ function vxCatAlpha(n, a) {
 }
 function vxSubtitle(sub) {
   if (!sub) return "";
-  const i = sub.indexOf("||");
-  if (i < 0) return `<p>${sub}</p>`;
-  const head = sub.slice(0, i).trim();
-  const more = sub.slice(i + 2).trim().replace(/"/g, "&quot;");
-  return `<p>${head} <span class="hintdot" title="${more}">More</span></p>`;
+  return `<p data-page-help>${sub.split("||").map(s => s.trim()).join(" ")}</p>`;
 }
 /* For pages that re-title themselves at runtime, so they get the same
    "short line + tooltip" treatment as a subtitle passed to vxShell. */
@@ -238,7 +384,9 @@ function vxSetSubtitle(text) {
   if (el) el.outerHTML = vxSubtitle(text);
 }
 function vxShell(title, subtitle, crumbs) {
+  vxEnforceWorkspace();
   const cur = location.pathname.split("/").pop() || "dashboard.html";
+  const scopedNav = vxScopedNav();
   /* Each nav group is a labelled list, so a screen reader announces
      "Configuration, list, 6 items" instead of 41 undifferentiated links.
      aria-current marks the active page — the orange marker beside it is the
@@ -251,7 +399,7 @@ function vxShell(title, subtitle, crumbs) {
      page actually being viewed — that one always renders expanded so a
      stored preference from a prior visit can never hide where you are. */
   const navCollapsed = (() => { try { return JSON.parse(localStorage.getItem("vxNavCollapsed")) || {}; } catch (e) { return {}; } })();
-  const nav = NAV.map((g, gi) => {
+  const nav = scopedNav.map((g, gi) => {
     const isCurGroup = g.items.some(it => it.h === cur);
     /* A fresh browser has no stored preference for any group — before this,
        that meant every group rendered expanded, so a first-time visit to
@@ -261,7 +409,7 @@ function vxShell(title, subtitle, crumbs) {
        page you're on — a stored preference from an earlier visit still
        wins over both defaults once it exists. */
     const explicit = navCollapsed[g.g];
-    const collapsed = !isCurGroup && (explicit !== undefined ? !!explicit : g.g !== "Rating");
+    const collapsed = !isCurGroup && (explicit !== undefined ? !!explicit : true);
     return `<button type="button" class="vx-nav-grp" id="vxNavG${gi}" data-navgrp="${g.g}" aria-expanded="${!collapsed}" aria-controls="vxNavL${gi}">` +
       `<span>${g.g}</span><i class="fa-solid fa-chevron-down chev" aria-hidden="true"></i></button>` +
       `<ul class="vx-nav-list" id="vxNavL${gi}" aria-labelledby="vxNavG${gi}"${collapsed ? " hidden" : ""}>` +
@@ -297,7 +445,13 @@ function vxShell(title, subtitle, crumbs) {
           <path d="M20 22 L28 8 L36 8 L26 26 Z" style="fill:var(--color-on-brand);fill-opacity:.55"/>
         </svg>
       </div>
-      <div><b>VeriDex</b><span>${vxTenant().name}</span></div>
+      <div style="min-width:0;flex:1">
+        <b>VeriDex</b>
+        ${vxIsAdmin()
+          ? `<span>Admin Console</span>`
+          : `<span class="vx-brand-tenant" title="${vxTenant().name}">${vxTenant().name}</span>
+             <a href="#" id="vxBrandLogout" class="vx-brand-logout" title="Log out to the admin console">&larr; Back to Admin</a>`}
+      </div>
     </div>
     <nav class="vx-nav" aria-label="Primary">${nav}</nav>
   </aside>
@@ -315,6 +469,8 @@ function vxShell(title, subtitle, crumbs) {
         <div class="vx-searchres" id="vxQR" role="listbox" aria-label="Search results"></div>
       </div>
       <div class="vx-tb-actions">
+        ${vxIsAdmin() ? "" : `<button class="btn btn-outline-secondary btn-sm" id="vxLogoutTenant" title="Log out of ${vxTenant().name} back to the admin console">
+          <i class="fa-solid fa-right-from-bracket me-1"></i>Tenant Management</button>`}
         <div style="position:relative">
           <button class="vx-tenant" id="vxTenantBtn" aria-haspopup="true" aria-expanded="false"
             aria-controls="vxTenantPop" aria-label="Switch tenant. Current tenant ${vxTenant().name}">
@@ -327,7 +483,7 @@ function vxShell(title, subtitle, crumbs) {
             ${VX.tenants.map(t => `<a class="it" href="#" data-tenant="${t.id}" style="text-decoration:none;color:inherit">
               <div class="ic" style="background:${t.accent}"><i class="fa-solid fa-building"></i></div>
               <div style="flex:1"><b style="font-size:12.5px">${t.name}</b>
-                <small>${t.plan} · ${t.seats} seats · ${t.lobs.length} LOB${t.lobs.length === 1 ? "" : "s"}</small></div>
+                <small><code style="font-size:10px">${t.code}</code> · ${t.plan} · ${t.seats} seats · ${t.lobs.length} LOB${t.lobs.length === 1 ? "" : "s"}</small></div>
               ${t.id === VX.activeTenantId ? '<i class="fa-solid fa-check" style="color:var(--good);align-self:center"></i>' : ""}
             </a>`).join("")}
             <a class="it" href="tenants.html" style="text-decoration:none;color:inherit">
@@ -372,8 +528,8 @@ function vxShell(title, subtitle, crumbs) {
     </main>
 
     <footer class="vx-foot">
-      <span>© 2026 Veridex Rating Platform — ${VX.meta.tenant} · ${VX.meta.env} · Build ${VX.meta.build}</span>
-      <span>${VX.meta.engine} · <a href="#" onclick="vxShortcuts();return false">Keyboard shortcuts</a></span>
+      <span>VeriDex · <span class="hintdot" title="${VX.meta.engine} · Build ${VX.meta.build}">${VX.meta.env}</span></span>
+      <span><a href="#" onclick="vxShortcuts();return false">Keyboard shortcuts</a></span>
     </footer>
   </div>
   <div class="vx-ov" id="vxOv" aria-hidden="true"></div>
@@ -447,6 +603,16 @@ function vxShell(title, subtitle, crumbs) {
   document.querySelectorAll("#vxTenantPop [data-tenant]").forEach(a => a.onclick = e => {
     e.preventDefault(); e.stopPropagation(); vxSetTenant(a.dataset.tenant);
   });
+  const logoutBtn = document.getElementById("vxLogoutTenant");
+  if (logoutBtn) logoutBtn.onclick = vxLogoutOfTenant;
+  /* Same action, a second place — the topbar button (above) is easy to
+     miss among the search box and three other icon buttons crowding the
+     same row; this one sits in the sidebar brand, the first thing on
+     every single page regardless of viewport width or which nav group is
+     scrolled into view, and never lives behind a menu that has to be
+     opened first. */
+  const brandLogout = document.getElementById("vxBrandLogout");
+  if (brandLogout) brandLogout.onclick = e => { e.preventDefault(); vxLogoutOfTenant(); };
 
   document.addEventListener("click", () => {
     pops.forEach(([, p]) => document.getElementById(p).classList.remove("on"));
@@ -484,9 +650,13 @@ function vxShell(title, subtitle, crumbs) {
 /* ---------- global search ---------- */
 function vxSearchIndex() {
   const ix = [];
-  NAV.forEach(g => g.items.forEach(i => ix.push({ t: i.l, s: "Page · " + g.g, h: i.h, ic: i.i })));
+  vxScopedNav().forEach(g => g.items.forEach(i => ix.push({ t: i.l, s: "Page · " + g.g, h: i.h, ic: i.i })));
+  // Everything below is data that only lives on pages an admin's restricted
+  // nav doesn't reach — surfacing it would put a search result one click
+  // from the same redirect vxEnforceWorkspace() would then bounce it off.
+  if (vxIsAdmin()) return ix;
   VX.products.forEach(p => ix.push({ t: p.name, s: "Product · " + p.lob, h: "products.html", ic: "fa-cubes" }));
-  VX.lobs.forEach(l => ix.push({ t: l.name, s: "Line of Business", h: "lob.html", ic: "fa-layer-group" }));
+  VX.lobs.forEach(l => ix.push({ t: l.name, s: "Coverage", h: "lob.html", ic: "fa-layer-group" }));
   VX.states.forEach(s => ix.push({ t: s.name, s: "State · " + s.abv, h: "states.html", ic: "fa-flag-usa" }));
   VX.ratingFactors.slice(0, 120).forEach(f => ix.push({ t: f.name, s: "Rating Factor · " + f.category, h: "factors.html", ic: "fa-sliders" }));
   VX.quotes.slice(0, 60).forEach(q => ix.push({ t: q.quoteNo + " — " + q.insured, s: "Quote · " + q.product, h: "quotes.html", ic: "fa-file-invoice" }));
@@ -533,7 +703,7 @@ function vxShortcutHelp() {
   const rows = [
     ["/", "Focus search"], ["Ctrl/Cmd + K", "Focus search"], ["Ctrl/Cmd + S", "Save the open dialog"],
     ["Esc", "Close search results / context menu"], ["Shift + D", "Dashboard"], ["Shift + P", "Products"],
-    ["Shift + F", "Rating Factors"], ["Shift + Q", "Sandbox Quote"], ["Shift + A", "AI Assistant"], ["Shift + R", "Reports"],
+    ["Shift + F", "Rating Factors"], ["Shift + Q", "Sandbox Quote"], ["Shift + R", "Reports"],
     ["?", "Show this list"],
   ];
   vxModal("Keyboard Shortcuts", `<div class="vx-tw"><table class="vx-t"><tbody>
@@ -551,7 +721,7 @@ function vxKeys() {
       document.getElementById("vxCtx")?.classList.remove("on");
     }
     if (!typing && e.shiftKey) {
-      const map = { D: "dashboard.html", P: "products.html", F: "factors.html", Q: "quote-portal.html", A: "ai-assistant.html", R: "analytics.html" };
+      const map = { D: "dashboard.html", P: "products.html", F: "factors.html", Q: "quote-portal.html", R: "analytics.html" };
       if (map[e.key.toUpperCase()]) { e.preventDefault(); location.href = map[e.key.toUpperCase()]; }
     }
     // Ctrl/Cmd+S — commit whatever modal is open (every vxModal's non-dismiss
@@ -568,7 +738,7 @@ function vxKeys() {
 function vxShortcuts() {
   vxModal("Keyboard Shortcuts", `
     <table class="vx-t"><tbody>
-      ${[["/ or Ctrl+K","Focus global search"],["Shift+D","Go to Dashboard"],["Shift+P","Go to Products"],["Shift+F","Go to Rating Factors"],["Shift+Q","Go to Quote Portal"],["Shift+A","Go to AI Assistant"],["Shift+R","Go to Reports & Analytics"],["Esc","Close popovers"],["Right-click row","Context menu"]]
+      ${[["/ or Ctrl+K","Focus global search"],["Shift+D","Go to Dashboard"],["Shift+P","Go to Products"],["Shift+F","Go to Rating Factors"],["Shift+Q","Go to Quote Portal"],["Shift+R","Go to Reports & Analytics"],["Esc","Close popovers"],["Right-click row","Context menu"]]
         .map(([k, d]) => `<tr><td style="width:150px"><kbd style="border:1px solid var(--border);border-radius:4px;padding:2px 7px;font-size:11px;background:var(--surface-2)">${k}</kbd></td><td>${d}</td></tr>`).join("")}
     </tbody></table>`, [{ t: "Close", c: "secondary" }]);
 }
@@ -795,16 +965,19 @@ let _asT;
    can call vxAudit(); factor edits additionally write the purpose-built
    before/after row that the Loss Run and factor-history views read. */
 /* Which of VX.users this browser is acting as — same shape as the tenant
-   switcher (VX.activeTenantId), persisted, defaulting to the platform's own
-   Rating Administrator so every existing screen keeps working unchanged
-   until someone actually switches. This is what makes the approval flows
-   (factor changes, lookup-table row changes, table values, formulas) usable
-   through the real UI at all: every one of them blocks approving your own
-   request, and a single-user prototype had no way to become a second user
-   to approve as, short of a browser console. */
+   switcher (VX.activeTenantId), persisted, defaulting to VeriDex's own
+   platform admin — a separate concern from which WORKSPACE is open (see
+   the admin-vs-tenant-workspace block above): this is who audit entries and
+   factor-change approvals are attributed to, unrelated to whether you're
+   currently logged into a tenant's workspace or the admin console. This is
+   what makes the approval flows (factor changes, lookup-table row changes,
+   table values, formulas) usable through the real UI at all: every one of
+   them blocks approving your own request, and a single-user prototype had
+   no way to become a second user to approve as, short of a browser
+   console. */
 function vxActiveUser() {
   const byId = VX.activeUserId && (VX.users || []).find(u => u.id === VX.activeUserId);
-  return byId || (VX.users || []).find(x => x.role === "Rating Administrator") || (VX.users || [])[0];
+  return byId || (VX.users || []).find(x => x.role === "VeriDex Admin") || (VX.users || [])[0];
 }
 function vxCurrentUser() {
   const u = vxActiveUser();
@@ -1178,8 +1351,20 @@ function vxRejectFactorTableChange(reqId, note) {
    Always requires someone other than whoever created the factor — including
    when that creator is a Rating Administrator. Use Switch User (account
    menu) to approve as a genuinely different person. */
+/* Factor codes are only unique WITHIN a tenant — two carriers onboarded from
+   the same Product Studio export both carry RAT-FACTOR-001. Matching on code
+   alone approved whichever row happened to come first in the array, so the
+   reviewer approved another tenant's factor and their own stayed pending:
+   "I approved it and it still shows as awaiting approval". Scope every
+   lookup to the acting tenant. Rows with no tenantId are shared platform
+   factors and stay reachable. */
+function vxFactorByCode(code) {
+  const tid = VX.activeTenantId;
+  const rows = (VX.ratingFactors || []).filter(x => x.code === code);
+  return rows.find(x => x.tenantId === tid) || rows.find(x => x.tenantId == null) || null;
+}
 function vxApproveFactorForFormulas(code) {
-  const f = (VX.ratingFactors || []).find(x => x.code === code);
+  const f = vxFactorByCode(code);
   if (!f) return null;
   if (f.createdBy && f.createdBy === vxCurrentUser()) {
     vxToast("Can't approve your own factor", "A second person has to sign this off — that is what the step is for. Use Switch User (account menu) to approve as someone else.", "err");
@@ -1201,7 +1386,7 @@ function vxApproveFactorForFormulas(code) {
    rejection recorded, rather than disappearing as if nothing happened —
    the factor can still be edited and re-submitted for approval later. */
 function vxRejectFactorForFormulas(code, note) {
-  const f = (VX.ratingFactors || []).find(x => x.code === code);
+  const f = vxFactorByCode(code);   // tenant-scoped, same reason as approve
   if (!f) return null;
   f.approvedForFormulas = false;
   f.formulaRejected = true;
@@ -1258,3 +1443,51 @@ function vxCell(row, col, raw) {
   if (raw || !col.r) return Array.isArray(v) ? v.join(" | ") : v;
   return col.r(row);
 }
+
+/* Reads a Product Studio export and reports what importing it would create.
+   Shared by tenants.html (onboard a new tenant) and products.html (import
+   into the active tenant) so the two previews cannot disagree about the same
+   file — they did: a second copy looked for `studios.covers` and
+   `studios.rating.groups`, neither of which exists, and silently previewed
+   "0 coverages · 0 factors" for a file that imports five of each. */
+function vxPreviewStudioExport(raw) {
+  const P = raw.product || {};
+  const collKey = raw.collectionsByVersion && Object.keys(raw.collectionsByVersion)[0];
+  const coll = collKey ? raw.collectionsByVersion[collKey] : {};
+  const covers = (raw.studios && raw.studios.coverage) || coll.covers || [];
+  const rating = (raw.studios && raw.studios.rating) || coll.ratingComponents || [];
+  const elig = (raw.studios && raw.studios.eligibility) || coll.eligibilityRules || [];
+  const formulas = (raw.studios && raw.studios.formulas) || coll.formulas || [];
+  const KNOWN = ["Commercial Trucking", "General Liability", "Commercial Property",
+    "Professional Liability (MPL)", "Cyber", "Workers' Compensation"];
+  const want = P.family || P.lineOfBusiness || "";
+  const matched = KNOWN.find(n => n.toLowerCase() === String(want).toLowerCase())
+    || KNOWN.find(n => n.toLowerCase() === String(P.lineOfBusiness || "").toLowerCase());
+  const byName = {}; covers.forEach(c => { if (c.name) byName[c.name] = c; });
+  const parents = covers.filter(c => c.name && !(c.conditionalOn && byName[c.conditionalOn]));
+  const children = covers.filter(c => c.name && c.conditionalOn && byName[c.conditionalOn]);
+  let factors = 0, tables = 0;
+  rating.forEach(g => (g.items || []).forEach(i => {
+    factors++;
+    if (i.table && i.table.data != null) tables++;
+  }));
+  return { P, matched, lobName: matched || want || "Imported Line", lobIsNew: !matched,
+    parents, children, factors, tables, elig: elig.length,
+    formulas: formulas.filter(f => f && f.cob && Array.isArray(f.tokens) && f.tokens.length).length };
+}
+
+/* A tenant sees its OWN coverage tree for a line it has customised or
+   uploaded (own rows only), and falls back to the shared/seed tree for a
+   line it has not touched — per line, not globally, so customising one
+   line does not hide the shared tree for every other line. Shared by
+   coverages.html (the grid) and formula-builder.html (the LOB/coverage
+   picker); a second copy of this exact logic is what let "New Formula"
+   default to VeriDex's own line instead of the active tenant's. */
+function vxVisibleCob() {
+  const tid = VX.activeTenantId;
+  const myLobs = new Set((VX.lobs || []).filter(l => l.tenantId === tid).map(l => l.name));
+  const ownedLobs = new Set(VX.cob.filter(c => c.tenantId === tid).map(c => c.lob));
+  return VX.cob.filter(c => myLobs.has(c.lob)
+    && (ownedLobs.has(c.lob) ? c.tenantId === tid : c.tenantId == null));
+}
+

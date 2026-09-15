@@ -97,7 +97,11 @@ const EL_CONDITIONS = {
    caller doesn't need to know that mapping. */
 function evaluateEligibility(lobCode, input) {
   const lobName = (VX.lobs.find(l => l.code === lobCode) || {}).name || lobCode;
-  const rules = (VX.eligibilityRules || []).filter(r => r.active && (r.lob === "All" || r.lob === lobName));
+  const tenantId = input.tenantId != null ? input.tenantId : VX.activeTenantId;
+  const rules = (VX.eligibilityRules || []).filter(r => r.active && (r.lob === "All" || r.lob === lobName)
+    && (r.tenantId == null || r.tenantId === tenantId)
+    && (!r.product || r.product === input.product)
+    && (!r.states || !r.states.length || r.states.includes(input.state)));
   const declines = [], refers = [], notEvaluable = [];
 
   rules.forEach(r => {

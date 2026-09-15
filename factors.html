@@ -7,20 +7,23 @@
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-grid.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-theme-quartz.css" rel="stylesheet">
-<link href="assets/css/app.css" rel="stylesheet">
+<link href="assets/css/app.css?v=20260912" rel="stylesheet">
+<link href="assets/css/workspace.css?v=20260912" rel="stylesheet">
+<script src="assets/js/tooltip-dictionary.js?v=20260912" defer></script>
+<script src="assets/js/ui-ux.js?v=20260912" defer></script>
 </head>
 <body><div id="vxApp"></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/dist/ag-grid-community.min.js"></script>
-<script src="assets/js/data.js"></script>
-<script src="assets/js/rate-data-full.js"></script>
-<script src="assets/js/rate-tables-registry.js"></script>
-<script src="assets/js/cosmos-model.js"></script>
-<script src="assets/js/tenant-setup.js"></script>
-<script src="assets/js/core.js"></script>
-<script src="assets/js/grid.js"></script>
-<script src="assets/js/engine.js"></script>
-<script src="assets/js/ag-grid-adapter.js"></script>
+<script src="assets/js/data.js?v=20260912"></script>
+<script src="assets/js/rate-data-full.js?v=20260912"></script>
+<script src="assets/js/rate-tables-registry.js?v=20260912"></script>
+<script src="assets/js/cosmos-model.js?v=20260912"></script>
+<script src="assets/js/tenant-setup.js?v=20260912"></script>
+<script src="assets/js/core.js?v=20260912"></script>
+<script src="assets/js/grid.js?v=20260912"></script>
+<script src="assets/js/engine.js?v=20260912"></script>
+<script src="assets/js/ag-grid-adapter.js?v=20260912"></script>
 <script>
 vxShell("Rating Factors", "Every factor the rating engine actually applies. || What drives it, which sheet it came from, and the range it can take.",
   [{ l: "Products & Rating" }, { l: "Rating Factors" }]);
@@ -46,7 +49,7 @@ const custom = tenantFactorRows.filter(f => f.custom).length;
 document.getElementById("vxBody").innerHTML = `
   <div class="row g-2 mb-3">
     <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">Factors in the engine</div>
-      <div class="val">${tenantFactorRows.length}</div><div class="dt flat">across ${new Set(tenantFactorRows.map(f => f.lob)).size} lines of business</div></div></div>
+      <div class="val">${tenantFactorRows.length}</div><div class="dt flat">across ${new Set(tenantFactorRows.map(f => f.lob)).size} coverage lines</div></div></div>
     <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">Verified</div>
       <div class="val" style="color:var(--good)">${verified}</div><div class="dt flat">matched to a filed workbook</div></div></div>
     <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">Approximated</div>
@@ -128,7 +131,13 @@ function factorChangeSummary(r) {
 function renderFormulaApprovals() {
   const host = document.getElementById("formulaApprovals");
   if (!host) return;
-  const pending = (VX.ratingFactors || []).filter(f => (f.custom || f.verified === undefined) && !f.approvedForFormulas);
+  /* This tenant's own factors only. Unfiltered, a reviewer saw every other
+     carrier's pending factors in their queue and could sign off on work that
+     was not theirs — and approving a code another tenant also uses landed on
+     the wrong row entirely (see vxFactorByCode in core.js). */
+  const pending = (VX.ratingFactors || []).filter(f =>
+    (f.custom || f.verified === undefined) && !f.approvedForFormulas
+    && (f.tenantId == null || f.tenantId === VX.activeTenantId));
   if (!pending.length) { host.innerHTML = ""; return; }
 
   const row = f => {
@@ -276,7 +285,7 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
     if (isNew) {
       return `<div class="vx-ai mb-3" style="padding:10px 14px;font-size:12.3px;line-height:1.6">
         <i class="fa-solid fa-circle-info me-1"></i>
-        Registers a new rating factor against a line of business.
+        Registers a new rating factor against a coverage line.
         <span class="hintdot" title="It stays recorded but unread until someone else approves it for Formula Builder AND its coverage runs a formula ending in RemainingFactors — check the factor's Path to Wired card after saving to see exactly which of those it's still missing.">It will be marked <b>Not wired</b></span>
         until that path is complete — not necessarily a code change.
       </div>`;
@@ -317,11 +326,38 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
   },
   cols: [
     { k: "name", l: "Rating Factor" },
-    { k: "lob", l: "Line of Business", r: r => vxJoinField(r.lob) },
-    { k: "defaultValue", l: "Default", r: r => r.defaultValue != null
-        ? `<b>${r.defaultValue}</b>`
-        : (r.rowCount ? '<span style="color:var(--text-mute)" title="No single default — the value is always looked up">from table</span>'
-                      : '<span class="vx-b red">none</span>') },
+    { k: "lob", l: "Coverage Line", r: r => vxJoinField(r.lob) },
+    { k: "defaultValue", l: "Default", r: r => {
+        /* A factor with a real table (every uploaded/imported one has one)
+           ignores this field entirely unless overrideValue is checked — the
+           table's own value is what actually prices a quote. Showing the
+           number in plain bold either way looked identical to "this is
+           live," so editing it appeared to silently do nothing: the number
+           on screen changed, the premium never did, with no visible reason
+           why. The badge makes that state visible on the grid itself, not
+           only inside the edit form's hint text. */
+        const hasTable = !!(typeof ENGINE !== "undefined" && ENGINE.customFactorTableInfo
+          && ENGINE.customFactorTableInfo({ ...r, overrideValue: false }));
+        /* The base premium's real block isn't a rate table at all — it's a
+           separate programParams row the importer wrote at upload time
+           (configuredBasePremium(), engine.js). hasTable is false for it (no
+           table exists to find), so this badge stayed silent for exactly the
+           one factor whose Default Value field was MOST likely to be edited
+           and MOST likely to look effective without being so. Same check
+           configuredBasePremium() itself makes, read here only to decide
+           what the badge says — not to price anything. */
+        const isBaseRow = /base premium/i.test(r.assignedTo || "") || /base/i.test(r.code || "");
+        const hasBaseParam = isBaseRow && (VX.programParams || []).some(p =>
+          (p.tenantId == null || p.tenantId === r.tenantId) && p.lob === r.lob && /base premium/i.test(p.param || ""));
+        if (r.defaultValue == null) {
+          return r.rowCount ? '<span style="color:var(--text-mute)" title="No single default — the value is always looked up">from table</span>'
+                             : '<span class="vx-b red">none</span>';
+        }
+        if (!hasTable && !hasBaseParam) return `<b>${r.defaultValue}</b>`;
+        return r.overrideValue
+          ? `<b>${r.defaultValue}</b> <span class="vx-b green" style="font-size:9px" title="Override checked — this value is used directly, the table (or imported base amount) is set aside">override</span>`
+          : `<span style="color:var(--text-mute)">${r.defaultValue}</span> <span class="vx-b amber" style="font-size:9px" title="${hasBaseParam ? "This tenant's imported base premium governs the actual premium, not this field, unless Override is checked" : "This factor has a rate table — its value governs the premium, not this field, unless Override is checked"}">${hasBaseParam ? "import governs" : "table governs"}</span>`;
+      } },
     { k: "rowCount", l: "Values / Rules", r: valuesLabel },
     { k: "minValue", l: "Range", sort: false, r: fmtRange },
     { k: "_source", l: "Source", sort: false, r: r => { const s = sourceLabel(r);
@@ -387,12 +423,12 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
       val: r => (r && r.code) || vxGenerateFactorCode(r && r.name, r && r.lob),
       readonly: (r, isNew) => isNew,
       hint: (r, isNew) => isNew
-        ? "Generated automatically from the name and line of business — upper snake case, guaranteed unique. This is what exports and the change log key on, so it isn't left to free text."
+        ? "Generated automatically from the name and coverage line — upper snake case, guaranteed unique. This is what exports and the change log key on, so it isn't left to free text."
         : "Short stable identifier, upper snake case (VEH_RADIUS). Used in exports and the change log, so it should not be renamed after quotes have used it." },
 
     { k: "_secWhere", l: "Where it applies", t: "section",
-      sub: "The line(s) of business, coverage(s) and scope(s) this factor is assigned to — pick more than one where the same factor genuinely applies across all of them." },
-    { k: "lob", l: "Line of Business", t: "dropdown", opts: vxLobNames(), placeholder: "No line of business selected",
+      sub: "The coverage line(s), coverage(s) and scope(s) this factor is assigned to — pick more than one where the same factor genuinely applies across all of them." },
+    { k: "lob", l: "Coverage Line", t: "dropdown", opts: vxLobNames(), placeholder: "No coverage line selected",
       hint: "The line(s) whose engine reads this factor. Selecting more than one applies the same definition across all of them. Changing this reloads the Coverage and Lookup Table lists below, and regenerates the Factor Code above (from whichever line is picked first)." },
     /* Re-renders when the LOB selection changes, so the list always leads
        with the chosen lines' own coverage tree rather than another line's. */
@@ -429,9 +465,10 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
        plain select. tableOptsFor() scopes the list to the chosen LOB plus
        its admin-defined tables, which for Trucking alone still runs past 20
        entries — too many to scan by eye once you're picking, not browsing. */
-    { k: "tableId", l: "Lookup Table", t: "combo", opts: r => tableOptsFor(r), dependsOn: "lob",
+    { k: "tableId", l: "Lookup Table", t: "combo", opts: r => tableOptsFor(r), dependsOn: ["lob", "kind"],
+      hideIf: (r, isNew) => (r && r.kind) !== "Lookup",
       searchPlaceholder: "Search by table name…",
-      hint: "Which rate table this factor reads. Only meaningful when Type is Lookup — leave as none for Constant or Computed." },
+      hint: "Which rate table this factor reads." },
     { k: "driver", l: "Driven by (which insured answer)",
       hint: "The question on the quote that selects the row, or that feeds a Computed formula — \"Radius of Operation\", \"Vehicle stated value\". Leave blank for a Constant; it is driven by nothing." },
     /* Picking "Computed" used to be a dead end — nowhere on this form asked
@@ -458,7 +495,9 @@ const grid = vxAgGrid({ el: "#grid", key: "ratingFactors", name: "Rating Factor"
       hideIf: (r, isNew) => (r && r.kind) !== "Computed",
       hint: "A short description if there's no formula attached above yet — e.g. \"Base Rate × Territory Factor × Increased Limits Factor\". Documentation only, same as the attached formula." },
     { k: "defaultValue", l: "Default Value", t: "number", step: "0.001", def: 1,
-      hint: "Applied on every quote (Constant), or as a fallback when a Lookup factor's table has no matching row. 1.000 is neutral — it changes no premium." },
+      hint: "Applied on every quote (Constant), or as a fallback when a Lookup factor's table has no matching row. 1.000 is neutral — it changes no premium. For a factor that has a rate table on an ADMITTED tenant, this field is not read unless \"Override table with Default Value\" below is checked — the table's own filed value governs instead. A non-admitted (surplus lines) tenant has nothing filed to defer to, so this always applies directly there regardless of the checkbox." },
+    { k: "overrideValue", l: "Override table with Default Value", t: "check", def: false,
+      hint: "Only matters for a factor that has a rate table on an ADMITTED tenant (an uploaded configuration's own factors often do). Unchecked, the table's filed value is what actually prices every quote — editing Default Value above changes nothing. Checked, Default Value is used directly and the table is set aside. A non-admitted (surplus lines) tenant's own Default Value always governs — there is no filed table to defer to, so this checkbox has nothing to do there." },
 
     { k: "_secRef", l: "Reference", t: "section",
       sub: "Where the value came from, for later audit." },
@@ -1071,7 +1110,7 @@ function formulaOptsFor(rec) {
   const none = [{ value: "", label: "— none —" }];
   const opt = f => ({ value: f.id, label: f.name });
   return none.concat(mine.map(opt))
-    .concat(rest.length ? [{ value: "", label: "── other lines of business ──" }] : [])
+    .concat(rest.length ? [{ value: "", label: "── other coverage lines ──" }] : [])
     .concat(rest.map(opt));
 }
 function formulaName(id) {
@@ -1394,7 +1433,5 @@ function persistCustom() {
 ["click", "change"].forEach(ev => document.addEventListener(ev, () => setTimeout(persistCustom, 200), true));
 
 </script>
-<script src="assets/js/tooltip-dictionary.js"></script>
-<script src="assets/js/column-tooltips.js"></script>
 </body>
 </html>

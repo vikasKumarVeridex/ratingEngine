@@ -5,7 +5,7 @@
 <title>Integration Guide — Administration | VeriDex</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
-<link href="assets/css/app.css" rel="stylesheet">
+<link href="assets/css/app.css?v=20260912" rel="stylesheet">
 <style>
 .ig-h{font-size:14px;font-weight:600;margin:0 0 4px;display:flex;align-items:center;gap:8px}
 .ig-step{display:flex;gap:14px;padding:14px 0;border-bottom:1px solid var(--border)}
@@ -43,19 +43,22 @@ pre.ig-code{background:var(--surface-2);border:1px solid var(--border);border-ra
   padding:12px 15px;margin:14px 0;font-size:12.6px;line-height:1.6}
 .ig-rule b{color:var(--bad)}
 </style>
+<link href="assets/css/workspace.css?v=20260912" rel="stylesheet">
+<script src="assets/js/tooltip-dictionary.js?v=20260912" defer></script>
+<script src="assets/js/ui-ux.js?v=20260912" defer></script>
 </head>
 <body><div id="vxApp"></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="assets/js/data.js"></script>
-<script src="assets/js/rate-data-full.js"></script>
-<script src="assets/js/cosmos-model.js"></script>
-<script src="assets/js/app-types.js"></script>
+<script src="assets/js/data.js?v=20260912"></script>
+<script src="assets/js/rate-data-full.js?v=20260912"></script>
+<script src="assets/js/cosmos-model.js?v=20260912"></script>
+<script src="assets/js/app-types.js?v=20260912"></script>
 <!-- engine + eligibility are loaded so the figures quoted below are read from
      the running module rather than hand-typed into the prose -->
-<script src="assets/js/engine.js"></script>
-<script src="assets/js/eligibility.js"></script>
-<script src="assets/js/tenant-setup.js"></script>
-<script src="assets/js/core.js"></script>
+<script src="assets/js/engine.js?v=20260912"></script>
+<script src="assets/js/eligibility.js?v=20260912"></script>
+<script src="assets/js/tenant-setup.js?v=20260912"></script>
+<script src="assets/js/core.js?v=20260912"></script>
 <script>
 vxShell("Integration Guide",
   "How other systems reach rating \u2014 and why none of them reach it directly. || Rating is an internal calculation service. Underwriting is its only caller.",
@@ -231,13 +234,13 @@ document.getElementById("vxBody").innerHTML = `
     <pre class="ig-code">// UNDERWRITING SERVICE ONLY \u2014 internal segment, service credential.
 // A call from a browser, CRM or portal is a defect, not an integration.
 
-// 1. Screen the risk before pricing it  (assets/js/eligibility.js)
-const elig = evaluateEligibility(lobCode, input);
-//    -> { declines[], refers[], notEvaluable[] }
-//    A decline must block the bind. A refer routes to an underwriter.
-
-// 2. Price it
+// 1. Calculate with shared eligibility evaluation (load eligibility.js).
 const result = ENGINE.rate(lobCode, input);
+const elig = result.eligibility;
+// result.underwriting: decision, complete, premiumIsIndicative
+// Decline blocks issuance. Refer or not_evaluated requires review.
+// This browser prototype returns an indicative premium even on decline.
+// result.ratingBasis states table/version limits; no immutable snapshot yet.
 
 // 3. Authority gate \u2014 UW's own step, not the engine's
 if (result.finalPremium > underwriter.authorityLimit) route.toReferral();
@@ -384,13 +387,13 @@ const trace = ENGINE.trace(result);     // ${E ? E.trace(E.rate("TRUCK", { state
       Claims posts <b>incurred losses</b> and <b>claim counts</b> back against the bound quote. That is what turns a
       quote record into loss experience, which drives
       <a href="loss-runs.html">Loss Run Analytics</a>, the experience mod on the next renewal, and rate-action
-      indications by state, carrier, MGA and broker.
+      indications by state, carrier, MGU and broker.
       <br><br>Without this feed the platform can price new business but can never tell you whether the price was right.
     </div>
     <div class="ig-flow mt-2">
       <div class="ig-box"><b>Claims</b><span>incurredLosses, claims</span></div>
       <i class="fa-solid fa-arrow-right ig-arrow"></i>
-      <div class="ig-box"><b>Loss runs</b><span>LR vs target by state / MGA</span></div>
+      <div class="ig-box"><b>Loss runs</b><span>LR vs target by state / MGU</span></div>
       <i class="fa-solid fa-arrow-right ig-arrow"></i>
       <div class="ig-box core"><b>Next version</b><span>factor changes, rate action</span></div>
     </div>

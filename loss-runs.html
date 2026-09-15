@@ -5,21 +5,24 @@
 <title>Loss Run Analytics — Main | VeriDex</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
-<link href="assets/css/app.css" rel="stylesheet">
+<link href="assets/css/app.css?v=20260912" rel="stylesheet">
 <style>
 .lrbar{height:6px;border-radius:4px;background:var(--surface-3);overflow:hidden;min-width:60px}
 .lrbar i{display:block;height:100%;border-radius:4px}
 .lrtabs .nav-link{cursor:pointer}
 </style>
+<link href="assets/css/workspace.css?v=20260912" rel="stylesheet">
+<script src="assets/js/tooltip-dictionary.js?v=20260912" defer></script>
+<script src="assets/js/ui-ux.js?v=20260912" defer></script>
 </head>
 <body><div id="vxApp"></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="assets/js/data.js"></script>
-<script src="assets/js/cosmos-model.js"></script>
-<script src="assets/js/tenant-setup.js"></script>
-<script src="assets/js/core.js"></script>
-<script src="assets/js/grid.js"></script>
+<script src="assets/js/data.js?v=20260912"></script>
+<script src="assets/js/cosmos-model.js?v=20260912"></script>
+<script src="assets/js/tenant-setup.js?v=20260912"></script>
+<script src="assets/js/core.js?v=20260912"></script>
+<script src="assets/js/grid.js?v=20260912"></script>
 <script>
 vxShell("Loss Run Analytics", "Earned premium vs. incurred losses by state and county. || Shows which lines need a rate action, and who already changed a rating factor in response.",
   [{ l: "Overview" }, { l: "Loss Run Analytics" }]);
@@ -44,7 +47,7 @@ const Q = VX.quotes;
    which would leave the ratios computed off the wrong base. */
 /* `f` narrows the underlying QUOTES before the rollup, so loss ratios are
    computed off the filtered base. Filtering rolled-up rows instead would
-   leave every ratio calculated against the whole book — e.g. "MGA = Anchor"
+   leave every ratio calculated against the whole book — e.g. "MGU = Anchor"
    would show Anchor's states but everyone's loss ratio. */
 function rollup(groupFn, f) {
   f = f || {};
@@ -54,7 +57,7 @@ function rollup(groupFn, f) {
     (!f.state   || q.state   === f.state) &&
     (!f.lob     || q.lob     === f.lob) &&
     (!f.carrier || q.carrier === f.carrier) &&
-    (!f.mga     || q.mga     === f.mga) &&
+    (!f.mgu     || q.mgu     === f.mgu) &&
     (!f.broker  || q.broker  === f.broker));
   src.forEach(q => {
     const key = groupFn(q);
@@ -83,11 +86,11 @@ const LOB_OPTS = [...new Set(byState.map(r => r.topLob))].sort();
 const STATUS_OPTS  = [...new Set(Q.map(q => q.status))].filter(Boolean).sort();
 const STATE_OPTS   = [...new Set(Q.map(q => q.state))].filter(Boolean).sort();
 const CARRIER_OPTS = [...new Set(Q.map(q => q.carrier))].filter(Boolean).sort();
-const MGA_OPTS     = [...new Set(Q.map(q => q.mga))].filter(Boolean).sort();
-/* Brokers appointed to one MGA — the Broker filter only appears once an MGA
+const MGU_OPTS     = [...new Set(Q.map(q => q.mgu))].filter(Boolean).sort();
+/* Brokers appointed to one MGU — the Broker filter only appears once an MGU
    is chosen, and lists just that wholesaler's retail agencies. */
-function brokersFor(mga) {
-  return [...new Set(Q.filter(q => !mga || q.mga === mga).map(q => q.broker))].filter(Boolean).sort();
+function brokersFor(mgu) {
+  return [...new Set(Q.filter(q => !mgu || q.mgu === mgu).map(q => q.broker))].filter(Boolean).sort();
 }
 /* Paging state per tab — these tables run to 50+ rows and were a single
    scroll box with no sense of how far through you were. */
@@ -156,12 +159,12 @@ document.getElementById("vxBody").innerHTML = `
   <div class="vx-card vx-anim mb-3" style="padding:12px 16px">
     <div class="d-flex align-items-center gap-2 flex-wrap">
       <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-mute)">Scope</span>
-      <select class="form-select form-select-sm" id="pgLob" style="width:auto"><option value="">All lines of business</option>
+      <select class="form-select form-select-sm" id="pgLob" style="width:auto"><option value="">All coverages</option>
         ${LOB_OPTS.map(l => `<option>${l}</option>`).join("")}</select>
       <select class="form-select form-select-sm" id="pgCarrier" style="width:auto"><option value="">All reinsurers</option>
         ${CARRIER_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
-      <select class="form-select form-select-sm" id="pgMga" style="width:auto"><option value="">All MGAs</option>
-        ${MGA_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
+      <select class="form-select form-select-sm" id="pgMgu" style="width:auto"><option value="">All MGUs</option>
+        ${MGU_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
       <select class="form-select form-select-sm" id="pgBroker" style="width:auto;display:none"><option value="">All brokers</option></select>
       <select class="form-select form-select-sm" id="pgStatus" style="width:auto"><option value="">All quote statuses</option>
         ${STATUS_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
@@ -202,7 +205,7 @@ document.getElementById("vxBody").innerHTML = `
     </div>
     <div class="col-lg-6">
       <div class="vx-card vx-anim" style="height:100%">
-        <h2>Loss Ratio by Line of Business</h2>
+        <h2>Loss Ratio by Coverage</h2>
         <div class="sub">Each bar's target line is that LOB's real or illustrative Target Loss Ratio</div>
         <canvas id="cLob" height="220"></canvas>
       </div>
@@ -226,7 +229,7 @@ document.getElementById("vxBody").innerHTML = `
         <div class="vx-tools mb-2"><div class="l">
           <div class="vx-search" style="max-width:230px"><i class="fa-solid fa-magnifying-glass"></i>
             <input class="form-control form-control-sm" id="stq" placeholder="Search state / province..." style="padding-left:32px"></div>
-          <select class="form-select form-select-sm" id="stLob" style="width:auto"><option value="">All lines of business</option>
+          <select class="form-select form-select-sm" id="stLob" style="width:auto"><option value="">All coverages</option>
             ${LOB_OPTS.map(l => `<option>${l}</option>`).join("")}</select>
           <select class="form-select form-select-sm" id="stAct" style="width:auto"><option value="">Any rate action</option>
             <option value="up">Increase indicated</option><option value="flat">On target</option><option value="down">Room to decrease</option></select>
@@ -234,8 +237,8 @@ document.getElementById("vxBody").innerHTML = `
             ${STATUS_OPTS.map(s => `<option>${s}</option>`).join("")}</select>
           <select class="form-select form-select-sm" id="stCarrier" style="width:auto"><option value="">All reinsurers</option>
             ${CARRIER_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
-          <select class="form-select form-select-sm" id="stMga" style="width:auto"><option value="">All MGAs</option>
-            ${MGA_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
+          <select class="form-select form-select-sm" id="stMgu" style="width:auto"><option value="">All MGUs</option>
+            ${MGU_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
           <select class="form-select form-select-sm" id="stBroker" style="width:auto;display:none"><option value="">All brokers</option></select>
           <button class="btn btn-outline-secondary btn-sm" id="stClr"><i class="fa-solid fa-filter-circle-xmark me-1"></i>Clear</button>
           <span id="stCount" style="font-size:11.5px;color:var(--text-mute);align-self:center"></span>
@@ -253,7 +256,7 @@ document.getElementById("vxBody").innerHTML = `
         <div class="vx-tools mb-2"><div class="l">
           <div class="vx-search" style="max-width:230px"><i class="fa-solid fa-magnifying-glass"></i>
             <input class="form-control form-control-sm" id="ctq" placeholder="Search county..." style="padding-left:32px"></div>
-          <select class="form-select form-select-sm" id="ctLob" style="width:auto"><option value="">All lines of business</option>
+          <select class="form-select form-select-sm" id="ctLob" style="width:auto"><option value="">All coverages</option>
             ${LOB_OPTS.map(l => `<option>${l}</option>`).join("")}</select>
           <select class="form-select form-select-sm" id="ctAct" style="width:auto"><option value="">Any rate action</option>
             <option value="up">Increase indicated</option><option value="flat">On target</option><option value="down">Room to decrease</option></select>
@@ -263,8 +266,8 @@ document.getElementById("vxBody").innerHTML = `
             ${STATE_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
           <select class="form-select form-select-sm" id="ctCarrier" style="width:auto"><option value="">All reinsurers</option>
             ${CARRIER_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
-          <select class="form-select form-select-sm" id="ctMga" style="width:auto"><option value="">All MGAs</option>
-            ${MGA_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
+          <select class="form-select form-select-sm" id="ctMgu" style="width:auto"><option value="">All MGUs</option>
+            ${MGU_OPTS.map(x => `<option>${x}</option>`).join("")}</select>
           <select class="form-select form-select-sm" id="ctBroker" style="width:auto;display:none"><option value="">All brokers</option></select>
           <button class="btn btn-outline-secondary btn-sm" id="ctClr"><i class="fa-solid fa-filter-circle-xmark me-1"></i>Clear</button>
           <span id="ctCount" style="font-size:11.5px;color:var(--text-mute);align-self:center"></span>
@@ -357,30 +360,30 @@ function filterRows(all, q, lob, act) {
 }
 
 /* Collect the quote-level filters for a tab, and reveal the Broker picker
-   only once an MGA is chosen — a broker list spanning every wholesaler is
+   only once an MGU is chosen — a broker list spanning every wholesaler is
    not a useful control, and the appointment is what makes it meaningful. */
 function chainFilters(pfx) {
   const val = id => { const el = document.getElementById(pfx + id); return el ? el.value : ""; };
-  const mga = val("Mga");
+  const mgu = val("Mgu");
   const bEl = document.getElementById(pfx + "Broker");
   if (bEl) {
-    const show = !!mga;
+    const show = !!mgu;
     bEl.style.display = show ? "" : "none";
-    if (show && bEl.dataset.mga !== mga) {
-      bEl.dataset.mga = mga;
+    if (show && bEl.dataset.mgu !== mgu) {
+      bEl.dataset.mgu = mgu;
       const keep = bEl.value;
-      const opts = brokersFor(mga);
-      bEl.innerHTML = `<option value="">All brokers under ${mga}</option>`
+      const opts = brokersFor(mgu);
+      bEl.innerHTML = `<option value="">All brokers under ${mgu}</option>`
         + opts.map(b => `<option>${b}</option>`).join("");
       bEl.value = opts.includes(keep) ? keep : "";
     }
-    if (!show) { bEl.value = ""; bEl.dataset.mga = ""; }
+    if (!show) { bEl.value = ""; bEl.dataset.mgu = ""; }
   }
   return { status: val("Status"), state: val("State"), lob: val("Lob"),
-           carrier: val("Carrier"), mga, broker: bEl ? bEl.value : "" };
+           carrier: val("Carrier"), mgu, broker: bEl ? bEl.value : "" };
 }
 function activeChain(f) {
-  return [f.status && f.status + " quotes", f.state, f.lob, f.carrier, f.mga, f.broker]
+  return [f.status && f.status + " quotes", f.state, f.lob, f.carrier, f.mgu, f.broker]
     .filter(Boolean).join(" · ");
 }
 
@@ -389,7 +392,7 @@ function renderState() {
   const act = document.getElementById("stAct").value;
   const f = chainFilters("st");
   // any quote-level filter re-runs the rollup so ratios use the filtered base
-  const dirty = f.status || f.state || f.lob || f.carrier || f.mga || f.broker;
+  const dirty = f.status || f.state || f.lob || f.carrier || f.mgu || f.broker;
   const all = dirty ? rollup(x => x.state, f).sort((a, b) => b.lr - a.lr) : byState;
   const rows = filterRows(all, q, "", act);
   const chain = activeChain(f);
@@ -406,7 +409,7 @@ function renderCounty() {
   const q = (document.getElementById("ctq").value || "").toLowerCase().trim();
   const act = document.getElementById("ctAct").value;
   const f = chainFilters("ct");
-  const dirty = f.status || f.state || f.lob || f.carrier || f.mga || f.broker;
+  const dirty = f.status || f.state || f.lob || f.carrier || f.mgu || f.broker;
   const all = dirty
     ? rollup(x => x.county ? x.county + ", " + x.state : null, f).sort((a, b) => b.lr - a.lr)
     : byCounty;
@@ -445,20 +448,20 @@ function renderChanges(q) {
 /* Filter wiring — every control on a tab re-renders that tab's table, and
    resets it to page 1: staying on page 4 of a freshly-filtered 12-row result
    would show an empty table. */
-["stq","stLob","stAct","stStatus","stCarrier","stMga","stBroker"].forEach(id => {
+["stq","stLob","stAct","stStatus","stCarrier","stMgu","stBroker"].forEach(id => {
   const el = document.getElementById(id);
   el[id === "stq" ? "oninput" : "onchange"] = () => { PAGE.st = 1; renderState(); };
 });
 document.getElementById("stClr").onclick = () => {
-  ["stq","stLob","stAct","stStatus","stCarrier","stMga","stBroker"].forEach(id => { const e=document.getElementById(id); if(e) e.value=""; });
+  ["stq","stLob","stAct","stStatus","stCarrier","stMgu","stBroker"].forEach(id => { const e=document.getElementById(id); if(e) e.value=""; });
   PAGE.st = 1; renderState();
 };
-["ctq","ctLob","ctAct","ctStatus","ctState","ctCarrier","ctMga","ctBroker"].forEach(id => {
+["ctq","ctLob","ctAct","ctStatus","ctState","ctCarrier","ctMgu","ctBroker"].forEach(id => {
   const el = document.getElementById(id);
   el[id === "ctq" ? "oninput" : "onchange"] = () => { PAGE.ct = 1; renderCounty(); };
 });
 document.getElementById("ctClr").onclick = () => {
-  ["ctq","ctLob","ctAct","ctStatus","ctState","ctCarrier","ctMga","ctBroker"].forEach(id => { const e=document.getElementById(id); if(e) e.value=""; });
+  ["ctq","ctLob","ctAct","ctStatus","ctState","ctCarrier","ctMgu","ctBroker"].forEach(id => { const e=document.getElementById(id); if(e) e.value=""; });
   PAGE.ct = 1; renderCounty();
 };
 document.getElementById("fcq").oninput = e => renderChanges(e.target.value);
@@ -536,7 +539,7 @@ document.addEventListener("vx-theme", drawCharts);
    --------------------------------------------------------------------------- */
 function pageScope() {
   const v = id => { const el = document.getElementById(id); return el ? el.value : ""; };
-  return { lob: v("pgLob"), carrier: v("pgCarrier"), mga: v("pgMga"), broker: v("pgBroker"), status: v("pgStatus") };
+  return { lob: v("pgLob"), carrier: v("pgCarrier"), mgu: v("pgMgu"), broker: v("pgBroker"), status: v("pgStatus") };
 }
 
 function renderHeadline() {
@@ -545,7 +548,7 @@ function renderHeadline() {
     (!f.status  || q.status  === f.status) &&
     (!f.lob     || q.lob     === f.lob) &&
     (!f.carrier || q.carrier === f.carrier) &&
-    (!f.mga     || q.mga     === f.mga) &&
+    (!f.mgu     || q.mgu     === f.mgu) &&
     (!f.broker  || q.broker  === f.broker));
   const prem = qs.reduce((a, q) => a + q.premium, 0);
   const inc  = qs.reduce((a, q) => a + q.incurredLosses, 0);
@@ -553,7 +556,7 @@ function renderHeadline() {
   const st   = rollup(q => q.state, f);
   const up   = st.filter(x => x.gap > 0.08 && x.quotes >= 3);
   const down = st.filter(x => x.gap < -0.15 && x.quotes >= 3);
-  const scope = [f.lob, f.carrier, f.mga, f.broker, f.status && f.status + " quotes"].filter(Boolean).join(" \u00b7 ");
+  const scope = [f.lob, f.carrier, f.mgu, f.broker, f.status && f.status + " quotes"].filter(Boolean).join(" \u00b7 ");
 
   const el = document.getElementById("lrStats");
   if (el) el.innerHTML = `
@@ -578,8 +581,8 @@ function applyScopeToTabs() {
   const f = pageScope();
   [["st", renderState], ["ct", renderCounty]].forEach(([p, fn]) => {
     const set = (sfx, val) => { const el = document.getElementById(p + sfx); if (el && el.value !== val) el.value = val; };
-    set("Lob", f.lob); set("Carrier", f.carrier); set("Mga", f.mga); set("Status", f.status);
-    // the broker list is built lazily per MGA, so refresh it before setting
+    set("Lob", f.lob); set("Carrier", f.carrier); set("Mgu", f.mgu); set("Status", f.status);
+    // the broker list is built lazily per MGU, so refresh it before setting
     chainFilters(p);
     set("Broker", f.broker);
     try { fn(); } catch (e) { /* tab not built yet */ }
@@ -587,29 +590,29 @@ function applyScopeToTabs() {
 }
 
 function onScopeChange() {
-  // Broker only makes sense under a chosen MGA - same rule the tab filters use
-  const mga = document.getElementById("pgMga").value;
+  // Broker only makes sense under a chosen MGU - same rule the tab filters use
+  const mgu = document.getElementById("pgMgu").value;
   const b = document.getElementById("pgBroker");
   if (b) {
-    b.style.display = mga ? "" : "none";
-    if (!mga) b.value = "";
-    else if (b.dataset.mga !== mga) {
-      b.dataset.mga = mga;
-      b.innerHTML = `<option value="">All brokers under ${mga}</option>`
-        + brokersFor(mga).map(x => `<option>${x}</option>`).join("");
+    b.style.display = mgu ? "" : "none";
+    if (!mgu) b.value = "";
+    else if (b.dataset.mgu !== mgu) {
+      b.dataset.mgu = mgu;
+      b.innerHTML = `<option value="">All brokers under ${mgu}</option>`
+        + brokersFor(mgu).map(x => `<option>${x}</option>`).join("");
     }
   }
   renderHeadline();
   applyScopeToTabs();
 }
 
-["pgLob", "pgCarrier", "pgMga", "pgBroker", "pgStatus"].forEach(id => {
+["pgLob", "pgCarrier", "pgMgu", "pgBroker", "pgStatus"].forEach(id => {
   const el = document.getElementById(id);
   if (el) el.onchange = onScopeChange;
 });
 const pgClr = document.getElementById("pgClr");
 if (pgClr) pgClr.onclick = () => {
-  ["pgLob", "pgCarrier", "pgMga", "pgBroker", "pgStatus"].forEach(id => {
+  ["pgLob", "pgCarrier", "pgMgu", "pgBroker", "pgStatus"].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = "";
   });
   onScopeChange();
@@ -617,7 +620,5 @@ if (pgClr) pgClr.onclick = () => {
 renderHeadline();
 
 </script>
-<script src="assets/js/tooltip-dictionary.js"></script>
-<script src="assets/js/column-tooltips.js"></script>
 </body>
 </html>

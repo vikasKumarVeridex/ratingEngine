@@ -7,17 +7,20 @@
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-grid.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-theme-quartz.css" rel="stylesheet">
-<link href="assets/css/app.css" rel="stylesheet">
+<link href="assets/css/app.css?v=20260912" rel="stylesheet">
+<link href="assets/css/workspace.css?v=20260912" rel="stylesheet">
+<script src="assets/js/tooltip-dictionary.js?v=20260912" defer></script>
+<script src="assets/js/ui-ux.js?v=20260912" defer></script>
 </head>
 <body><div id="vxApp"></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/dist/ag-grid-community.min.js"></script>
-<script src="assets/js/data.js"></script>
-<script src="assets/js/cosmos-model.js"></script>
-<script src="assets/js/tenant-setup.js"></script>
-<script src="assets/js/core.js"></script>
-<script src="assets/js/grid.js"></script>
-<script src="assets/js/ag-grid-adapter.js"></script>
+<script src="assets/js/data.js?v=20260912"></script>
+<script src="assets/js/cosmos-model.js?v=20260912"></script>
+<script src="assets/js/tenant-setup.js?v=20260912"></script>
+<script src="assets/js/core.js?v=20260912"></script>
+<script src="assets/js/grid.js?v=20260912"></script>
+<script src="assets/js/ag-grid-adapter.js?v=20260912"></script>
 <script>
 vxShell("Fees", "A fixed dollar amount, or a percentage of a chosen basis. || Percentage fees can be capped with a minimum and maximum.",
   [{ l: "Pricing & Taxes" }, { l: "Fees" }]);
@@ -71,7 +74,7 @@ vxAgGrid({ el:"#grid", key:"fees", name:"Fee", size:12,
     {k:"active",l:"Status",r:r=>'<span class="vx-b '+(r.active?"green":"gray")+'">'+(r.active?"Active":"Inactive")+'</span>'}],
   form:[
     {k:"name",l:"Fee Name"},{k:"code",l:"Fee Code"},
-    {k:"lob",l:"Line of Business",t:"select",opts:["All"].concat(vxLobNames())},
+    {k:"lob",l:"Coverage",t:"select",opts:["All"].concat(vxLobNames())},
     {k:"valueType",l:"Fee Type",t:"select",opts:["Fixed","Percent"]},
     {k:"value",l:"Value  (dollars if Fixed · percent if Percent)",t:"number",step:"0.01"},
     {k:"percentOf",l:"Percent Applied To  (Percent fees only)",t:"select",opts:BASES},
@@ -84,8 +87,49 @@ vxAgGrid({ el:"#grid", key:"fees", name:"Fee", size:12,
   filters:[{k:"valueType",l:"Type",opts:["Fixed","Percent"]},
            {k:"lob",l:"LOB",opts:["All"].concat(vxLobNames())},
            {k:"chargeType",l:"Charged",opts:CHARGE}],
-  extraView:[{k:"basis",l:"Description"}]
+  extraView:[{k:"basis",l:"Description"}],
+  /* Without this, an added or edited fee existed only in memory — correct
+     on screen right up until the next navigation, then gone, because the
+     tenant-partitioning pass in data.js rebuilds D.fees from the original
+     seed on every load and nothing here ever told it about a change. Same
+     delta shape coverages.html already persists for its own tenant-owned
+     collection. */
+  onAfterSave:(rec,isNew)=>{
+    let d;
+    try { d = JSON.parse(localStorage.getItem("vxFeesDelta") || "null"); } catch (e) {}
+    d = d || { added: [], edited: {}, deleted: [] };
+    d.added = d.added || []; d.edited = d.edited || {}; d.deleted = d.deleted || [];
+    if (isNew) {
+      if (!rec.tenantId) rec.tenantId = VX.activeTenantId;
+      d.added.push({ ...rec });
+    } else {
+      d.edited[rec.id] = { ...(d.edited[rec.id] || {}), ...rec };
+    }
+    localStorage.setItem("vxFeesDelta", JSON.stringify(d));
+  }
 });
+
+/* Deletion isn't a vxAgGrid onAfterSave hook — it's a generic row action
+   the grid engine handles itself via API.remove, same reason tenants.html
+   wraps it for its own tenant-owned collection: without this, a deleted
+   fee "worked" for the rest of the session and reappeared on the next
+   reload, the seed clone winning back over a delete that only ever
+   happened in memory. */
+(() => {
+  const orig = API.remove.bind(API);
+  API.remove = (key, id, ...rest) => orig(key, id, ...rest).then(res => {
+    if (key === "fees") {
+      let d;
+      try { d = JSON.parse(localStorage.getItem("vxFeesDelta") || "null"); } catch (e) {}
+      d = d || { added: [], edited: {}, deleted: [] };
+      d.added = (d.added || []).filter(r => String(r.id) !== String(id));
+      delete (d.edited || {})[id];
+      d.deleted = [...new Set([...(d.deleted || []), id])];
+      localStorage.setItem("vxFeesDelta", JSON.stringify(d));
+    }
+    return res;
+  });
+})();
 </script>
 </body>
 </html>

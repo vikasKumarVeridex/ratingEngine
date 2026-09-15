@@ -40,7 +40,15 @@ function vxAgGrid(opt) {
   const stStoreKey = "vxAgGridState:" + key;
   let restored = {};
   try { restored = JSON.parse(sessionStorage.getItem(stStoreKey) || "{}"); } catch (e) {}
-  const st = { q: restored.q || "", filters: restored.filters || {}, hidden: restored.hidden || [] };
+  // Start with the main fields. Saved column choices always win; every field
+  // remains available in Table options > Columns and record details.
+  const important = new Set(['name', 'code', 'lob', 'coverage', 'product', 'version', 'value', 'defaultValue', 'status', 'active']);
+  const initial = cols.filter(c => important.has(c.k)).slice(0, 6);
+  for (const c of cols) { if (initial.length >= 6) break; if (!initial.includes(c)) initial.push(c); }
+  const statusColumn = cols.find(c => c.k === 'status' || c.k === 'active');
+  if (statusColumn && !initial.includes(statusColumn)) initial[initial.length - 1] = statusColumn;
+  const defaultHidden = cols.filter(c => !initial.includes(c)).map(c => c.k);
+  const st = { q: restored.q || "", filters: restored.filters || {}, hidden: restored.hidden || defaultHidden };
   const persistState = () => { try { sessionStorage.setItem(stStoreKey, JSON.stringify({ q: st.q, filters: st.filters, hidden: st.hidden })); } catch (e) {} };
 
   const root = typeof opt.el === "string" ? document.querySelector(opt.el) : opt.el;
@@ -96,7 +104,7 @@ function vxAgGrid(opt) {
       ${bulk.map((b, bi) => `<button class="btn btn-outline-secondary btn-sm" data-ba="${bi}"><i class="fa-solid ${b.i}"></i> ${b.t}</button>`).join("")}
       <button class="btn btn-link btn-sm" id="${id}selclear">Clear</button>
     </div>` : ""}
-    <div id="${id}grid" class="ag-theme-quartz vx-ag" style="height:${Math.min(pageSize, 12) * 42 + 130}px;width:100%"></div>`;
+    <div id="${id}grid" class="ag-theme-quartz vx-ag" style="height:${Math.min(pageSize, 12) * 48 + 130}px;width:100%"></div>`;
 
   /* ---------- cell renderers / editors, derived from the same cols/form the caller already wrote for vxGrid ---------- */
   function fieldDef(k) { return (opt.form || []).find(f => f.k === k); }
@@ -106,7 +114,13 @@ function vxAgGrid(opt) {
     const def = {
       field: c.k, headerName: c.l, sortable: c.sort !== false, resizable: true, filter: false,
       hide: st.hidden.includes(c.k),
-      headerTooltip: vxColHeaderTooltip(c.l),
+      // Every column below supplies its own renderer, and editable columns
+      // name their editor explicitly, so AG Grid's type inference has no job
+      // here. Left on, it inspects the raw value and warns on any array or
+      // object field (a product's `cob`/`states`, a tenant's `lobs`) that it
+      // cannot format — a warning about display it is not doing.
+      cellDataType: false,
+      // Contextual help is rendered beside the heading by ui-ux.js.
       cellRenderer: c.r ? (p => c.r(p.data) ?? '<span style="color:var(--text-mute)">—</span>') : (p => p.value ?? '<span style="color:var(--text-mute)">—</span>'),
     };
     if (c.editable && !opt.readOnly && f) {
@@ -127,28 +141,27 @@ function vxAgGrid(opt) {
     return def;
   }
 
+  function secondaryActions(rec) {
+    const items = [];
+    if (!opt.readOnly && !opt.noClone) items.push({ label: "Clone", run: () => act("clone", rec) });
+    if (!opt.noHist) items.push({ label: "Version history", run: () => act("hist", rec) });
+    (opt.rowActions || []).forEach(ra => items.push({ label: ra.t, run: () => ra.fn(rec) }));
+    if (!opt.readOnly && !opt.noDelete) items.push({ label: "Delete", danger: true, run: () => act("del", rec) });
+    return items;
+  }
   function actionsHtml(rec) {
-    const b = [];
-    b.push(`<button data-a="view" title="View details"><i class="fa-solid fa-eye"></i></button>`);
-    if (!opt.readOnly) {
-      b.push(`<button data-a="edit" title="Edit"><i class="fa-solid fa-pen"></i></button>`);
-      if (!opt.noClone) b.push(`<button data-a="clone" title="Clone"><i class="fa-solid fa-copy"></i></button>`);
-    }
-    if (!opt.noHist) b.push(`<button data-a="hist" title="Version history"><i class="fa-solid fa-clock-rotate-left"></i></button>`);
-    (opt.rowActions || []).forEach((ra, ri) => b.push(`<button data-ra="${ri}" title="${ra.t}"><i class="fa-solid ${ra.i}"></i></button>`));
-    if (!opt.readOnly && !opt.noDelete) b.push(`<button data-a="del" class="del" title="Delete"><i class="fa-solid fa-trash"></i></button>`);
-    return `<div class="vx-ra">${b.join("")}</div>`;
+    return `<div class="vx-ra">
+      <button type="button" data-a="view" title="View details" aria-label="View details"><i class="fa-solid fa-eye" aria-hidden="true"></i></button>
+      ${opt.readOnly ? "" : '<button type="button" data-a="edit" title="Edit" aria-label="Edit"><i class="fa-solid fa-pen" aria-hidden="true"></i></button>'}
+      ${secondaryActions(rec).length ? '<button type="button" data-a="more" aria-label="More row actions" aria-haspopup="menu" aria-expanded="false"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i></button>' : ""}
+    </div>`;
   }
 
   const columnDefs = [];
   if (bulk.length) columnDefs.push({ headerCheckboxSelection: true, checkboxSelection: true, width: 42, pinned: "left", sortable: false, filter: false, resizable: false });
   cols.forEach(c => columnDefs.push(colDef(c)));
-  const btnCount = 1                                             // view
-    + (opt.readOnly ? 0 : 1)                                     // edit
-    + (opt.readOnly || opt.noClone ? 0 : 1)                      // clone
-    + (opt.noHist ? 0 : 1)                                       // history
-    + (opt.rowActions || []).length
-    + (opt.readOnly || opt.noDelete ? 0 : 1);                    // delete
+  const btnCount = 1 + (opt.readOnly ? 0 : 1)
+    + ((!opt.readOnly && (!opt.noClone || !opt.noDelete)) || !opt.noHist || (opt.rowActions || []).length ? 1 : 0);
   const actionsWidth = 22 + btnCount * 32;
   /* width AND maxWidth, not just minWidth: with only a minimum set, AG Grid
      falls back to its 200px default column width, which left two icon buttons
@@ -158,7 +171,7 @@ function vxAgGrid(opt) {
     cellClass: "vx-ra-cell", cellRenderer: p => actionsHtml(p.data) });
 
   const gridOptions = {
-    columnDefs, rowData: [],
+    columnDefs, rowData: [], rowHeight: 48, headerHeight: 44,
     pagination: true, paginationPageSize: pageSize, paginationPageSizeSelector: false,
     rowSelection: bulk.length ? "multiple" : undefined, suppressRowClickSelection: true,
     animateRows: true, domLayout: "normal",
@@ -186,7 +199,8 @@ function vxAgGrid(opt) {
       if (e.colDef.field !== "_actions") return;
       const t = e.event.target.closest("[data-a],[data-ra]");
       if (!t) return;
-      if (t.dataset.a) act(t.dataset.a, e.data);
+      if (t.dataset.a === "more") window.vxUX.showActions(t, secondaryActions(e.data));
+      else if (t.dataset.a) act(t.dataset.a, e.data);
       else opt.rowActions[+t.dataset.ra].fn(e.data);
     },
     onSelectionChanged: () => {
@@ -356,7 +370,7 @@ function vxAgGrid(opt) {
          dropped by the renderer. A function hint lets the same field explain
          itself differently on Add vs. Edit. */
       const hintText = typeof f.hint === "function" ? f.hint(cur, isNew) : f.hint;
-      const hint = hintText ? `<div style="font-size:10.8px;color:var(--text-dim);margin-top:3px;line-height:1.45">${hintText}</div>` : "";
+      const hint = hintText ? `<div data-field-help style="font-size:10.8px;color:var(--text-dim);margin-top:3px;line-height:1.45">${hintText}</div>` : "";
       const wrap = inner => `<div class="col-md-${f.w || 6}${lk ? " vx-fld-locked" : ""}${ro ? " vx-fld-auto" : ""}" data-fw="${f.k}">${inner}${hint}</div>`;
       if (f.t === "tiles") {
         const o = resolve(f.opts, cur);
@@ -434,7 +448,7 @@ function vxAgGrid(opt) {
                 <input class="form-check-input" type="checkbox" data-fm="${f.k}" value="${val}" id="${id}m${f.k}${i}" ${sel.map(String).includes(String(val)) ? "checked" : ""}>
                 <label class="form-check-label" for="${id}m${f.k}${i}">${lab}</label></div>`; }).join("")
               : `<div style="font-size:12px;color:var(--text-mute)">${f.empty || "Nothing to choose from yet."}</div>`}
-          </div>${f.hint ? `<div style="font-size:10.8px;color:var(--text-dim);margin-top:3px">${f.hint}</div>` : ""}</div>`;
+          </div>${hint}</div>`;
       }
       /* Single-select combobox — a closed control, same as `select`, but the
          search box lives INSIDE the opened panel instead of sitting as its
@@ -510,8 +524,11 @@ function vxAgGrid(opt) {
                     <input class="form-check-input" type="checkbox" data-fm="${f.k}" value="${val}" ${sel.includes(String(val)) ? "checked" : ""}>
                     <span>${lab}</span></label>`; }).join("")}
               </div>
+              <div class="vx-dd-foot">
+                <button type="button" class="btn btn-primary btn-sm" data-dddone="${f.k}">Done</button>
+              </div>
             </div>
-          </div>${f.hint ? `<div style="font-size:10.8px;color:var(--text-dim);margin-top:3px">${f.hint}</div>` : ""}</div>`;
+          </div>${hint}</div>`;
       }
       /* Parent/child checkbox tree — mirrors the real coverage hierarchy (a
          primary coverage carrying child coverages) instead of flattening
@@ -561,8 +578,8 @@ function vxAgGrid(opt) {
                     <span>${c}</span></label>`).join("")}
                 </div>
               </div>`; }).join("")
-              : `<div style="font-size:12px;color:var(--text-mute);padding:6px 4px">No coverages defined for this line of business yet.</div>`}
-          </div>${f.hint ? `<div style="font-size:10.8px;color:var(--text-dim);margin-top:3px">${f.hint}</div>` : ""}</div>`;
+              : `<div style="font-size:12px;color:var(--text-mute);padding:6px 4px">No coverages defined for this coverage line yet.</div>`}
+          </div>${hint}</div>`;
       }
       if (f.t === "textarea") return `<div class="col-md-12${lk ? " vx-fld-locked" : ""}" data-fw="${f.k}"><label>${f.l}</label>
         <textarea class="form-control form-control-sm" rows="2" data-f="${f.k}">${v}</textarea>${hint}</div>`;
@@ -594,10 +611,12 @@ function vxAgGrid(opt) {
     const headerHtml = opt.formHeader ? (opt.formHeader(rec, isNew) || "") : "";
 
     vxModal(titleText,
-      `${headerHtml}<div class="row g-3" data-vxflds>${inputs}</div>
-       <div class="vx-ai mt-3"><span class="tag"><i class="fa-solid fa-wand-magic-sparkles"></i>AI Validation</span>
+      `${headerHtml}<div class="row g-3" data-vxflds>${inputs}</div>`
+      /* AI Validation banner — commented out per request, not deleted:
+      + `<div class="vx-ai mt-3"><span class="tag"><i class="fa-solid fa-wand-magic-sparkles"></i>AI Validation</span>
        No conflicting effective-date ranges detected. Factor values fall within the expected statistical range for this ${name.toLowerCase()} type.
-       ${isNew ? "This will be created in the current draft version." : "Changes create a new revision; the prior value stays queryable for in-force policies."}</div>`,
+       ${isNew ? "This will be created in the current draft version." : "Changes create a new revision; the prior value stays queryable for in-force policies."}</div>`
+      */,
       /* `Save & Add Another` keeps the dialog open and reopens it empty, so
          entering a run of records is one continuous action instead of
          re-clicking Add between each. Offered on Add only — there is no
@@ -731,6 +750,16 @@ function vxAgGrid(opt) {
         };
       });
       modal.querySelectorAll("[data-ddpanel]").forEach(p => p.onclick = e => e.stopPropagation());
+      // Multi-select panels stay open across checkbox clicks so several
+      // options can be picked in a row — but that leaves no visible way to
+      // close one once you're done, short of knowing to click outside it.
+      // Done just closes the panel; the checkboxes underneath already wrote
+      // the selection as each was clicked.
+      modal.querySelectorAll("[data-dddone]").forEach(b => b.onclick = e => {
+        e.preventDefault(); e.stopPropagation();
+        const dd = modal.querySelector(`[data-dd="${b.dataset.dddone}"]`);
+        if (dd) dd.classList.remove("on");
+      });
       if (!modal.__ddOutside) {
         modal.__ddOutside = true;
         modal.addEventListener("click", () => modal.querySelectorAll("[data-dd]").forEach(x => x.classList.remove("on")));
@@ -866,7 +895,18 @@ function vxAgGrid(opt) {
         const deps = Array.isArray(f.dependsOn) ? f.dependsOn : [f.dependsOn];
         deps.forEach(depKey => {
           const srcs = [...modal.querySelectorAll(`[data-f="${depKey}"]`), ...modal.querySelectorAll(`[data-fm="${depKey}"]`)];
-          srcs.forEach(src => src.addEventListener("change", () => {
+          srcs.forEach(src => {
+          // wire() re-runs after every dependsOn-triggered re-render (below),
+          // and a source like the Type tiles is never itself replaced — so
+          // without this guard, each re-render re-added another "change"
+          // listener onto the SAME persistent node, and every one of those
+          // fired (and called wire() again) on the next click: the listener
+          // count, and the visible lag/flicker from repeatedly re-rendering
+          // and re-syncing, compounded with every field the user touched.
+          src.__vxDepWired = src.__vxDepWired || new Set();
+          if (src.__vxDepWired.has(f.k)) return;
+          src.__vxDepWired.add(f.k);
+          src.addEventListener("change", () => {
           sync();
           // the dependency changed, so a stale selection no longer applies —
           // skipped for a field with its own `val`, which recomputes instead
@@ -898,7 +938,8 @@ function vxAgGrid(opt) {
             }
           }
           wire();
-          }));
+          });
+          });
         });
       });
     }

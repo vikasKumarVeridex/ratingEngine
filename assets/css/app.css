@@ -200,6 +200,18 @@ a:hover{text-decoration:underline}
   display:grid;place-items:center;color:var(--color-panel);font-weight:800;font-size:17px;flex:none}
 .vx-brand b{display:block;font-size:15px;line-height:1.15;color:var(--color-panel)}
 .vx-brand span{font-size:10.5px;color:var(--side-text-dim)}
+/* The brand's own flex row (.vx-brand) never gave its text child min-width:0
+   — the classic flex-overflow gotcha where a child defaults to
+   min-width:auto and refuses to shrink below its content's natural width. A
+   long tenant name plus an inline "back to admin" link on the same line
+   could overflow the 240px sidebar in ways that left the link positioned
+   outside the visible viewport entirely (measured, not assumed: a real
+   click landed at a negative x-coordinate). Truncated with an ellipsis
+   instead, and the logout link moved to its own line below, so it never
+   shares horizontal space with a name of unknown length. */
+.vx-brand-tenant{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.vx-brand-logout{display:block;margin-top:2px;color:var(--color-link);text-decoration:none;font-weight:600;font-size:10.5px}
+.vx-brand-logout:hover{text-decoration:underline}
 .vx-nav{padding:10px 12px 80px}
 .vx-nav-grp{display:flex;align-items:center;justify-content:space-between;width:100%;
   font:inherit;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
@@ -392,6 +404,7 @@ a:hover{text-decoration:underline}
    need this since a checked box already says so. */
 .vx-dd-opt.sel{background:var(--primary-soft);color:var(--primary);font-weight:600}
 .vx-dd-opt-hd{padding:6px 8px 3px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-mute)}
+.vx-dd-foot{padding:8px 11px;border-top:1px solid var(--border);background:var(--surface-2);display:flex;justify-content:flex-end}
 
 /* ---------- Collapsible parent/child checkbox tree (form field) ---------- */
 .vx-tree-grp{border-bottom:1px solid var(--border)}

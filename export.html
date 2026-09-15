@@ -5,21 +5,24 @@
 <title>Export Configuration — Administration | VeriDex</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
-<link href="assets/css/app.css" rel="stylesheet">
+<link href="assets/css/app.css?v=20260912" rel="stylesheet">
+<link href="assets/css/workspace.css?v=20260912" rel="stylesheet">
+<script src="assets/js/tooltip-dictionary.js?v=20260912" defer></script>
+<script src="assets/js/ui-ux.js?v=20260912" defer></script>
 </head>
 <body><div id="vxApp"></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="assets/js/data.js"></script>
-<script src="assets/js/cosmos-model.js"></script>
-<script src="assets/js/tenant-setup.js"></script>
-<script src="assets/js/core.js"></script>
-<script src="assets/js/grid.js"></script>
+<script src="assets/js/data.js?v=20260912"></script>
+<script src="assets/js/cosmos-model.js?v=20260912"></script>
+<script src="assets/js/tenant-setup.js?v=20260912"></script>
+<script src="assets/js/core.js?v=20260912"></script>
+<script src="assets/js/grid.js?v=20260912"></script>
 <script>
 vxShell("Export Configuration", "Export any part of the rating configuration. || For offline review, regulatory filing, backup, or promotion to another environment.",
   [{ l: "Administration" }, { l: "Export Configuration" }]);
 
 const MODULES = [
-  ["products","Products",VX.products.length],["lobs","Lines of Business",VX.lobs.length],
+  ["products","Products",VX.products.length],["lobs","Coverage Lines",VX.lobs.length],
   ["cob","Coverages / Class of Business",VX.cob.length],["industryClasses","Industry Classes (NAICS)",VX.industryClasses.length],
   ["ratingFactors","Rating Factors",VX.ratingFactors.length],["baseRates","Base Rate Tables",VX.baseRates.length],
   ["lookupTables","Lookup Tables",VX.lookupTables.length],["versions","Rating Versions",VX.versions.length],
@@ -58,7 +61,7 @@ document.getElementById("vxBody").innerHTML = `
         <option>Active versions only</option><option>All versions (full history)</option>
         ${[...new Set(VX.versions.map(v => v.version))].slice(0, 6).map(v => `<option>${v}</option>`).join("")}</select></div>
       <div class="mb-3"><label>Scope</label><select class="form-select form-select-sm" id="scope">
-        <option>All lines of business</option>${vxLobNames().map(n => `<option>${n}</option>`).join("")}</select></div>
+        <option>All coverages</option>${vxLobNames().map(n => `<option>${n}</option>`).join("")}</select></div>
       <div class="mb-3"><label>Purpose</label><select class="form-select form-select-sm" id="purp">
         <option>Offline review</option><option>Regulatory filing packet</option>
         <option>Environment promotion (Sandbox → Prod)</option><option>Backup / archive</option></select></div>

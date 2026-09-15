@@ -3,9 +3,7 @@
    platform can actually verify, reusing checks already proven elsewhere
    this session rather than inventing a new "AI risk score":
      - factors with no lookup table and no default value
-     - discounts/surcharges beyond what engine.js actually applies
-       (the cap documented on discounts.html/surcharges.html — at most the
-       first 2 active discounts / first active surcharge matching a LOB)
+     - active credits/debits (evaluated by condition, with no positional cap)
      - Draft versions carrying untested formulas (the same check
        versions.html's readinessCell already makes)
      - eligibility rules with no matching quote-form field (evaluable:false)
@@ -27,17 +25,9 @@ function computeHealth(lobName) {
 
   const lobDiscounts = VX.discounts.filter(d => d.active && (d.lob === lobName || d.lob === "All"));
   const lobSurcharges = VX.surcharges.filter(s => s.active && (s.lob === lobName || s.lob === "All"));
-  const overDiscounts = Math.max(0, lobDiscounts.length - 2);
-  const overSurcharges = Math.max(0, lobSurcharges.length - 1);
-  if (overDiscounts || overSurcharges) {
-    score -= 10;
-    const parts = [];
-    if (overDiscounts) parts.push(`${overDiscounts} discount${overDiscounts === 1 ? "" : "s"} beyond the 2 the engine applies`);
-    if (overSurcharges) parts.push(`${overSurcharges} surcharge${overSurcharges === 1 ? "" : "s"} beyond the 1 the engine applies`);
-    checks.push({ label: "Discount/surcharge cap exceeded", status: "warn", detail: parts.join("; "), fixHref: "discounts.html" });
-  } else if (lobDiscounts.length || lobSurcharges.length) {
-    checks.push({ label: "Discounts & surcharges within the engine's applied cap", status: "ok",
-      detail: `${lobDiscounts.length} discount(s), ${lobSurcharges.length} surcharge(s) active`, fixHref: "discounts.html" });
+  if (lobDiscounts.length || lobSurcharges.length) {
+    checks.push({ label: "Credits and debits checked against submission conditions", status: "ok",
+      detail: `${lobDiscounts.length} discount(s), ${lobSurcharges.length} surcharge(s) active. No positional cap; unmet or unknown conditions are reported on the quote.`, fixHref: "discounts.html" });
   }
 
   const lobProducts = VX.products.filter(p => p.lob === lobName).map(p => p.name);

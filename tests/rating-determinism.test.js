@@ -289,9 +289,13 @@ console.log("\n7b. Trucking: only the real filed formula remains");
   /* Was 9,347 until the trailer/power-unit corrections: the sample fleet
      carries a $35,000 trailer that TIV counted as covered but the premium
      never rated, while TrailerPhysDamFactor discounted the power unit for
-     having it. Rating what is actually covered raised this deliberately. */
+     having it. Rating what is actually covered raised this deliberately.
+     Was 10,717 until the stamping fee fix (engine.js assemble()): TX's own
+     real, already-seeded 0.15% stamping fee (VX.taxes) was never actually
+     charged on surplus-lines business — this sample tenant's default paper
+     — so every non-admitted TX quote was quietly short by its amount. */
   check("the real formula rates to its baseline",
-    base.finalPremium === 10717, `got ${base.finalPremium}`);
+    base.finalPremium === 10730, `got ${base.finalPremium}`);
 }
 
 /* 7ba. A trailer is a rated unit but not a POWER unit, and an attached

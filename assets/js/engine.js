@@ -6,7 +6,18 @@
 
 const ENGINE = (() => {
 
+  // Request context is synchronous and restored after every call, including errors.
+  let ratingInput = null;
+  const ratingTenant = () => ratingInput && ratingInput.tenantId != null
+    ? ratingInput.tenantId : VX.activeTenantId;
+
   const find = (arr, fn, fb) => arr.find(fn) || fb || arr[0];
+
+  /* Several factor fields (lob, coverage) are multi-select and hold an array,
+     but a single-valued row stores a bare string. Comparing one with === is
+     the bug that made an approved factor invisible to the formula builder, so
+     every read of those fields goes through here. */
+  const asFieldArr = v => Array.isArray(v) ? v : (v ? [v] : []);
 
   /* ==========================================================================
      Factor traces
@@ -105,10 +116,10 @@ const ENGINE = (() => {
     const lob = (VX.lobs || []).find(l => l.name === lobName);
     if (lob && lob.licenceBasis === "Admitted") return true;          // 1. statutory
     if (productName) {
-      const p = (VX.products || []).find(x => x.name === productName);
+      const p = (VX.products || []).filter(ofTenant).find(x => sameProduct(x.name, productName));
       if (p && p.licenceBasis) return p.licenceBasis === "Admitted";  // 2. product paper
     }
-    const tid = tenantId != null ? tenantId : VX.activeTenantId;
+    const tid = tenantId != null ? tenantId : ratingTenant();
     const t = (VX.tenants || []).find(x => x.id === tid);
     return !!(t && t.nonAdmitted === false);                          // 3. carrier licence
   }
@@ -118,13 +129,61 @@ const ENGINE = (() => {
     return ((VX.taxes || []).find(t => t.state === st) || { surplusTax: 2 }).surplusTax / 100;
   }
 
+  /* Whether a coverage's own premium belongs in the taxable base — Coverages
+     (coverages.html) carries a Taxable flag per row, defaulting to true (so
+     a coverage nobody has touched taxes exactly as it always did). A CHILD
+     coverage's own flag is never read: its premium already rolls into its
+     PARENT's group before any of this runs (assemble() groups by name, and
+     a child was never its own group to begin with), so it is the PARENT's
+     Taxable setting that decides it — reading the child's own would let a
+     child silently make its own tax call independent of the coverage it
+     is actually billed under. Unknown coverage (no VX.cob row — a built-in
+     filed line's group name, which was never meant to have one) stays
+     taxable, the same default every existing quote already priced under. */
+  function coverageTaxable(groupName, lobName) {
+    const mine = (VX.cob || []).filter(ofTenant).filter(c => sameText(c.lob, lobName));
+    const row = mine.find(c => sameText(c.name, groupName));
+    if (!row) return true;
+    const effective = row.parentCobId ? (mine.find(c => c.id === row.parentCobId) || row) : row;
+    return effective.taxable !== false;
+  }
+
+  /* A product name is typed or exported by more than one source on this
+     platform — a manual Add Product form, several JSON export shapes, a
+     re-upload of the same config months apart — and nobody typing
+     "Commercial Trucking Auto" into a form intends a different product than
+     one already on file as "commercial trucking auto". A strict === here
+     let exactly that happen: rating carried the product string one route
+     produced (lower-cased, in the case actually found), the version this
+     tenant had just published carried the string its own import used
+     (title case), the two never matched, and resolution fell through to
+     "no version has ever taken effect" and picked the nearest stub instead
+     of the real, live, Published filing sitting right there under a
+     differently-cased name for the same product.
+
+     The same drift, and the same fix, turned out to apply well beyond
+     product names — a product's own .lob string, a coverage's .lob, and a
+     factor's own coverage string are all typed or exported independently
+     from the same source data and routinely disagree only in case. Each
+     site that discovered this (configuredRoute, configuredRate,
+     coverageTaxable) had grown its own byte-identical trim+lowercase
+     closure before being consolidated here — which is exactly the
+     failure mode a shared helper exists to prevent: a future fix to the
+     comparison (Unicode case-folding, say) applied to one copy and missed
+     in the others would quietly reintroduce this same class of bug in
+     just the copy nobody remembered to touch. `sameProduct` keeps its own
+     name at call sites naming a product specifically, for readability. */
+  const normText = s => String(s || "").trim().toLowerCase();
+  const sameText = (a, b) => !!a && !!b && normText(a) === normText(b);
+  const sameProduct = sameText;
+
   /* A product may pin a transaction type to a specific version — new
      business on the latest filing while renewals stay on the prior one, for
      instance. Unset means "resolve by date", which is the normal case. */
   const TXN_KEY = { "New Business": "new", "Renewal": "renewal", "Endorsement": "endorsement" };
   function productVersionOverride(productName, policyType) {
     if (!productName || !policyType) return null;
-    const p = (VX.products || []).find(x => x.name === productName);
+    const p = (VX.products || []).filter(ofTenant).find(x => sameProduct(x.name, productName));
     const key = TXN_KEY[policyType];
     const label = p && p.versionByTransaction && key ? p.versionByTransaction[key] : "";
     return label || null;
@@ -133,8 +192,8 @@ const ENGINE = (() => {
   function resolveRatingVersion(lobName, asOf, productName, policyType) {
     /* Date resolution needs an effective date; a version without one cannot
        be placed on a timeline. An explicit PIN does not — see below. */
-    const dateable = (VX.versions || []).filter(v => v.lob === lobName && v.effectiveStart
-      && (!productName || v.product === productName));
+    const dateable = (VX.versions || []).filter(ofTenant).filter(v => v.lob === lobName && v.effectiveStart
+      && (!productName || sameProduct(v.product, productName)));
     const all = dateable;
 
     /* An explicit per-transaction pin beats date resolution — that is the
@@ -150,8 +209,8 @@ const ENGINE = (() => {
        falls through, because there is nothing to honour. */
     const pinned = productVersionOverride(productName, policyType);
     if (pinned) {
-      const everyVersion = (VX.versions || []).filter(v => v.lob === lobName
-        && (!productName || v.product === productName));
+      const everyVersion = (VX.versions || []).filter(ofTenant).filter(v => v.lob === lobName
+        && (!productName || sameProduct(v.product, productName)));
       const rec = everyVersion.find(v => v.version === pinned);
       if (rec) {
         const live = rec.status === "Published"
@@ -1465,6 +1524,19 @@ const ENGINE = (() => {
   }
 
   function evalTokens(tokens, vars) {
+    if (!Array.isArray(tokens) || !tokens.length) throw new Error("Formula needs tokens");
+    const operators = new Set(["+", "-", "*", "/", "×", "÷", "−", "^", "(", ")", ",", "MIN", "MAX", "ROUND", "ABS"]);
+    tokens.forEach(t => {
+      if (!t || !["var", "op", "num", "fn"].includes(t.t)) throw new Error("Invalid formula token");
+      if (t.t === "var") {
+        if (t.v !== REMAINING && (!Object.prototype.hasOwnProperty.call(vars, t.v)
+          || typeof vars[t.v] !== "number" || !Number.isFinite(vars[t.v])))
+          throw new Error("missing or non-numeric value for " + t.v);
+      } else if (!operators.has(t.v)
+        && !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(String(t.v))) {
+        throw new Error("Unsupported formula token: " + t.v);
+      }
+    });
     const js = tokens.map(t => {
       if (t.t === "var" && t.v === REMAINING) {
         return "(" + remainingProduct(tokens, vars).value + ")";
@@ -1548,12 +1620,93 @@ const ENGINE = (() => {
      same way. Returns null for anything else (a real filed table has no
      generic row shape to read here, and a non-Lookup factor has no table at
      all) — callers fall back to defaultValue themselves. */
+  /* A factor imported from a Product Studio export carries its rate table in
+     the export itself, landing in VX.tenantRateTables. That table was never
+     read: only admin-built "lt:"-prefixed lookup tables were, so an imported
+     factor fell through to its flat `amount` — which these exports set to a
+     placeholder 1 precisely BECAUSE the table holds the real numbers. Every
+     uploaded factor therefore priced at x1.0000 and moved no premium at all,
+     while the platform displayed the table's rows as if they were in use.
+
+     Rows are {value, factor} pairs; the factor column is the last one, the
+     same convention the lookup-table branch below uses. */
+  function importedFactorTableInfo(f) {
+    if (!f || !f.tableId || typeof VX === "undefined") return null;
+    /* tenantRateTables is exclusively tenant-owned — "each tenant's own
+       isolated copy" per its own definition (cosmos-model.js) — so a
+       shared/no-tenant factor (f.tenantId == null) has no table of its own
+       in here to find, and must not read anyone else's. The old
+       `f.tenantId == null || x.tenantId === f.tenantId` short-circuited to
+       true on the FIRST clause whenever f.tenantId was null, matching
+       whichever tenant's table happened to come first with a matching
+       factorCode — and factorCode collisions across tenants are not rare
+       here: auto-generated codes like "RAT-FACTOR-001" repeat across every
+       tenant onboarded from a similarly-shaped export. A shared factor
+       could therefore surface an arbitrary other tenant's proprietary rate
+       data. Requires an actual tenant match now, both sides. */
+    if (f.tenantId == null) return null;
+    const t = (VX.tenantRateTables || []).find(x =>
+      x.factorCode === f.code && x.tenantId === f.tenantId);
+    if (!t || !Array.isArray(t.data) || !t.data.length) return null;
+    const rows = t.data.map(r => {
+      const keys = Object.keys(r);
+      const valueKey = keys[keys.length - 1];
+      return { l: String(r.value != null ? r.value : keys[0] + ": " + r[keys[0]]), v: +r[valueKey] };
+    }).filter(r => isFinite(r.v));
+    if (!rows.length) return null;
+    return { rows, base: rows.reduce((a, r) => a + r.v, 0) / rows.length,
+             tableName: t.sourceSheet || t.factorName || f.name };
+  }
+
   function customFactorTableInfo(f) {
+    /* A table-backed factor's rate table always won over its own Default
+       Value field, with no way to change that — editing Default Value on
+       Rating Factors visibly saved, but every caller of this function reads
+       the table's average instead, so the edit had zero effect on any
+       quote, silently. `defaultValue` cannot simply take priority whenever
+       it's set either: every import writes a placeholder defaultValue of 1
+       alongside the real table specifically BECAUSE the table holds the
+       real numbers (see importedFactorTableInfo above) — treating "present"
+       as "the user wants this instead" would have made ×1 replace every
+       already-imported factor's real value. `overrideValue` is the explicit
+       signal instead (Rating Factors' Edit form): checked, this factor's
+       table is set aside and Default Value is used directly, everywhere
+       this function is the source of truth. */
+    if (f && f.overrideValue) return null;
+    /* A filed table is what "admitted" MEANS — the carrier rates strictly
+       off the rates it filed with the state, which is exactly why an
+       admitted factor's table wins over its own Default Value unless
+       someone explicitly overrides it above. A non-admitted (surplus
+       lines) tenant is not filing anything: its own Default Value IS its
+       real, proprietary rate, uploaded table or not, with no override
+       checkbox needed to say so — the table stays visible for reference
+       (View rows in Rate Tables) but never governs a non-admitted tenant's
+       own premium. Goes through the SAME isAdmitted() precedence every
+       other admitted/non-admitted decision on this platform uses (statutory
+       LOB override tested first, then tenant licence — no specific product
+       to check here, since a Rating Factor is not itself tied to one) —
+       reading only the tenant's own nonAdmitted flag directly, as this once
+       did, disagreed with isAdmitted() for any tenant writing a
+       statutorily-admitted line (Workers' Compensation) on an otherwise
+       non-admitted licence: the quote itself charges no surplus-lines tax
+       on that line (correctly, per isAdmitted()), while this function would
+       have bypassed its filed table anyway, pricing a statutorily admitted
+       line off an unfiled Default Value. Checked across every LOB the
+       factor names — one statutorily-admitted line among them is enough to
+       keep the table governing, the safer of the two ways to disagree with
+       a filed-rate requirement. */
+    if (f && f.tenantId != null) {
+      const lobs = asFieldArr(f.lob);
+      const admittedOnAny = lobs.length ? lobs.some(lobName => isAdmitted(lobName, f.tenantId)) : isAdmitted(null, f.tenantId);
+      if (!admittedOnAny) return null;
+    }
+    const imported = importedFactorTableInfo(f);
+    if (imported) return imported;
     if (!f || f.kind !== "Lookup" || typeof f.tableId !== "string" || f.tableId.slice(0, 3) !== "lt:") return null;
     if (typeof VX === "undefined") return null;
-    const table = (VX.lookupTables || []).find(t => t.id === +f.tableId.slice(3));
+    const table = (VX.lookupTables || []).filter(ofTenant).find(t => t.id === +f.tableId.slice(3));
     if (!table || !table.columns || !table.columns.length) return null;
-    const rawRows = typeof VX.lookupRowsAsOf === "function" ? VX.lookupRowsAsOf(table, VX.referenceDate) : (table.data || []);
+    const rawRows = typeof VX.lookupRowsAsOf === "function" ? VX.lookupRowsAsOf(table, resolveRatingAsOf(ratingInput || {}).asOf) : (table.data || []);
     const valueCol = table.columns[table.columns.length - 1].name;
     const keyCols = table.columns.slice(0, -1).map(c => c.name);
     const rows = rawRows.map(r => ({ l: keyCols.map(k => `${k}: ${r[k]}`).join(", ") || table.name, v: +r[valueCol] }))
@@ -1584,11 +1737,10 @@ const ENGINE = (() => {
   function approvedCustomFactorVars(lobName, cobKey) {
     if (typeof VX === "undefined" || !VX.ratingFactors) return {};
     const coverage = cobKey === "__ACCOUNT__" || cobKey === "__ACCOUNT_PD__" ? "Account Level" : cobKey;
-    const asArr = v => Array.isArray(v) ? v : (v ? [v] : []);
     const out = {};
-    VX.ratingFactors.forEach(f => {
+    VX.ratingFactors.filter(ofTenant).forEach(f => {
       if (!(f.custom || f.verified === undefined) || !f.approvedForFormulas || !f.code) return;
-      if (!asArr(f.lob).includes(lobName) || !asArr(f.coverage).includes(coverage)) return;
+      if (!asFieldArr(f.lob).includes(lobName) || !asFieldArr(f.coverage).includes(coverage)) return;
       let v = null;
       const tinfo = customFactorTableInfo(f);
       if (tinfo) v = tinfo.base;
@@ -1599,10 +1751,28 @@ const ENGINE = (() => {
   }
 
   function applySavedFormula(lobName, cobKey, varMap, defaultValue, context) {
-    const tid = (typeof VX !== "undefined") ? VX.activeTenantId : null;
-    const f = (typeof VX !== "undefined" && VX.savedFormulas || [])
-      .find(x => x.status === "Active" && x.lob === lobName && x.cob === cobKey
-        && (x.tenantId == null || tid == null || x.tenantId === tid));
+    const tid = (typeof VX !== "undefined") ? ratingTenant() : null;
+    const input = ratingInput || {};
+    const asOf = resolveRatingAsOf(input).asOf;
+    const selection = input.product
+      ? resolveRatingVersion(lobName, asOf, input.product, input.policyType) : null;
+    const candidates = (VX.savedFormulas || []).filter(x =>
+      x.status === "Active" && x.lob === lobName && x.cob === cobKey
+      && (x.tenantId == null || x.tenantId === tid)
+      && (!x.states || !x.states.length || x.states.includes(input.state))
+      && (!x.effectiveStart || x.effectiveStart <= asOf)
+      && (!x.effectiveEnd || x.effectiveEnd >= asOf)
+      // No-product calls retain the existing sandbox route. With a product,
+      // attachments must match the actual selected version, never array order.
+      && (!input.product || !(x.attachments || []).length ||
+        (selection.rec && !selection.ambiguous && x.attachments.some(a =>
+          sameProduct(a.product, input.product) && a.ratingVersion === selection.rec.version))));
+    // Tenant-owned formulas take precedence over explicitly shared defaults.
+    const owned = candidates.filter(x => x.tenantId === tid);
+    const applicable = owned.length ? owned : candidates;
+    const f = applicable.length === 1 ? applicable[0] : null;
+    const conflict = applicable.length > 1
+      ? "Multiple active formulas match this coverage and rating context." : null;
     // Approved custom factors fill gaps only — never override a value the
     // engine itself explicitly computed and passed in as varMap.
     varMap = Object.assign({}, approvedCustomFactorVars(lobName, cobKey), varMap || {});
@@ -1615,23 +1785,23 @@ const ENGINE = (() => {
     if (!f) {
       calcLogPush({ lob: lobName, coverage: cobKey, context: context || null,
         mode: "default", formulaName: null, expression: null, substituted: null,
-        vars, result: defaultValue });
-      return { value: defaultValue, ratedBy: { mode: "default" } };
+        failed: !!conflict, error: conflict, vars, result: defaultValue });
+      return { value: defaultValue, ratedBy: { mode: "default", error: conflict } };
     }
     try {
       const value = evalTokens(f.tokens, varMap);
       calcLogPush({ lob: lobName, coverage: cobKey, context: context || null,
-        mode: "formula", formulaName: f.name,
+        mode: "formula", formulaId: f.id, formulaName: f.name,
         expression: f.tokens.map(t => t.v).join(" "),
         substituted: substituteTokens(f.tokens, varMap),
         vars, result: value });
       return { value, ratedBy: { mode: "formula", name: f.name, updated: f.updated,
-        version: (f.attachments && f.attachments[0] && f.attachments[0].ratingVersion) || null } };
+        version: selection && selection.rec ? selection.rec.version : null } };
     } catch (e) {
       // Never let a bad saved formula break a quote — fall back and say why.
       calcLogPush({ lob: lobName, coverage: cobKey, context: context || null,
         mode: "default", formulaName: f.name, failed: true, error: e.message,
-        expression: f.tokens.map(t => t.v).join(" "), substituted: null,
+        expression: Array.isArray(f.tokens) ? f.tokens.map(t => t.v).join(" ") : null, substituted: null,
         vars, result: defaultValue });
       return { value: defaultValue, ratedBy: { mode: "default", error: e.message } };
     }
@@ -1644,8 +1814,8 @@ const ENGINE = (() => {
      Rows without a tenantId are treated as shared, which keeps this safe for
      any collection that hasn't been partitioned. */
   function ofTenant(row) {
-    const tid = (typeof VX !== "undefined") ? VX.activeTenantId : null;
-    return row.tenantId == null || tid == null || row.tenantId === tid;
+    const tid = (typeof VX !== "undefined") ? ratingTenant() : null;
+    return row.tenantId == null || row.tenantId === tid;
   }
 
   /* ==========================================================================
@@ -1802,7 +1972,25 @@ const ENGINE = (() => {
       .filter(f => !(f.code === "FEE_SLFILE" && admitted))
       .filter(ofTenant);
     o.__admitted = admitted;
-    const preTax = Math.round(afterAdj * taxPct);
+
+    /* What share of the rated premium is actually taxable — per-coverage,
+       via coverageTaxable() above, not a flat yes/no for the whole quote. A
+       coverage's account/driver-factor and discount/surcharge adjustments
+       aren't tracked per-coverage in this engine (those are quote-level
+       numbers), so the taxable GROUPS' share of raw coverage premium is
+       taken as the taxable share of the fully-adjusted premium too — an
+       approximation, but an exact one whenever every coverage is taxable
+       (the untouched default), since the fraction is then exactly 1 and
+       every existing quote's tax is unchanged to the cent. Computed here,
+       ahead of preTax/BASIS below, so a fee priced as a percent of
+       "Premium + Taxes" sees the SAME tax the quote is actually charged —
+       computing it after (as originally written) left preTax using the
+       full, un-reduced tax while the real `tax` a few lines down used the
+       coverage-shrunk one, silently overcharging that one fee basis. */
+    const taxableCoverage = groups.filter(g => coverageTaxable(g.name, lob)).reduce((a, g) => a + g.subtotal, 0);
+    const taxableFraction = coverage > 0 ? taxableCoverage / coverage : 1;
+
+    const preTax = Math.round(Math.round(afterAdj * taxableFraction) * taxPct);
     const BASIS = {
       "Premium Before Fees": afterAdj,
       "Coverage Premium": coverage,
@@ -1833,7 +2021,7 @@ const ENGINE = (() => {
 
     // taxable fees are taxed alongside premium
     const taxableFees = feeLines.filter(f => f.taxable).reduce((a, f) => a + f.amt, 0);
-    const taxBase = afterAdj + taxableFees;
+    const taxBase = Math.round(afterAdj * taxableFraction) + taxableFees;
     const tax = Math.round(taxBase * taxPct);
 
     /* County / municipal tax.
@@ -1859,7 +2047,22 @@ const ENGINE = (() => {
        a fact. The quote says so instead, and the screens surface it. */
     const countyUnknown = !!countyName && !countyRow;
 
-    let final = afterAdj + fees + tax + countyTax;
+    /* Stamping fee — a real surplus-lines charge (remitted to the state's
+       stamping office, distinct from premium tax) that VX.taxes has carried
+       a real, deterministic per-state rate for since it was seeded, with a
+       comment saying it belongs in the total — but nothing here ever read
+       it. A quote for a state whose stamping fee is genuinely 0% (most of
+       them) is unaffected; one in AZ/FL/MI/NV/TX/etc. was quietly under-
+       charged by the fee's own rate every time. Same basis as state tax and
+       county tax (premium plus taxable fees), so all three agree on what is
+       being taxed, and gated on admitted status the same way surplus-lines
+       tax and the SL filing fee already are — an admitted carrier owes no
+       surplus-lines stamping fee. */
+    const taxRow = (VX.taxes || []).find(t => t.state === state);
+    const stampingFeePct = admitted ? 0 : ((taxRow && taxRow.stampingFee) || 0);
+    const stampingFee = stampingFeePct ? Math.round(taxBase * stampingFeePct / 100) : 0;
+
+    let final = afterAdj + fees + tax + countyTax + stampingFee;
     const minApplied = final < o.minRule;
     if (minApplied) final = o.minRule;
 
@@ -1893,7 +2096,7 @@ const ENGINE = (() => {
       /* Every version on file for this line, so a caller with no active one
          can see what it could rate on instead. */
       available: (VX.versions || [])
-        .filter(v => v.lob === lob && v.effectiveStart)
+        .filter(ofTenant).filter(v => v.lob === lob && v.effectiveStart)
         .map(v => ({ version: v.version, product: v.product, status: v.status,
                      effectiveStart: v.effectiveStart, effectiveEnd: v.effectiveEnd || null })),
     };
@@ -1920,6 +2123,7 @@ const ENGINE = (() => {
       discounts, surcharges, discountTotal: dTot, surchargeTotal: sTot, creditsSkipped,
       fees, feeLines, taxPct, tax, taxBase,
       countyTax, countyRate, countyName: countyRow ? countyName : null, countyUnknown, countyRequested: countyName,
+      stampingFee, stampingFeePct, taxableFraction,
       minApplied, minRule: o.minRule, finalPremium: final,
       feeDetail: applicable, taxDetail: VX.taxes.find(t => t.state === state),
     };
@@ -1960,15 +2164,301 @@ const ENGINE = (() => {
     return out;
   }
 
+  /* ==========================================================================
+     Config-driven rater.
+
+     Every calculator above is a hand-written chain for one of this platform's
+     own filed programs: trucking() applies ~42 steps (dashcam, heavy farm,
+     tort limitation, NAICS...) read from shared reference tables. Because
+     ENGINE.rate() dispatched on LOB CODE alone, a tenant that uploaded a
+     five-factor configuration was rated on all 42 of VeriDex's steps —
+     measured, not assumed: three tenants owning 49, 3 and 5 factors each
+     produced a byte-identical 42-factor trace, including factors that appear
+     nowhere in their own configuration.
+
+     A tenant's premium must be a function of that tenant's own configuration.
+     So an uploaded product rates HERE instead: only the factors that arrived
+     in its configuration, and nothing else.
+
+     What this deliberately does NOT do is re-implement trucking() from
+     uploaded data. An uploaded configuration carries no territory table, no
+     ILF curve and no per-vehicle exposure model, so inventing one would be
+     fabricating rating basis the file never supplied. The model is exactly
+     what the file describes and no more:
+
+         coverage premium = program base premium x that coverage's factors
+
+     Each coverage rates off the same program base, which is why the base
+     appears as a visible row in every group rather than being folded in
+     silently — a reader has to be able to see that it was counted once per
+     coverage. Downstream (credits, fees, taxes, minimum premium, version
+     resolution) is assemble(), shared with every other calculator, so an
+     uploaded product is taxed and audited exactly like a filed one. */
+  /* The base premium a configured product supplies for a line, for a given
+     tenant. Pulled out of configuredRate() so it has exactly one definition —
+     Formula Builder needs the same number to offer BasePremium as a real,
+     inspectable rating variable rather than a token a formula author has to
+     already know exists and type in blind; a second, hand-copied version of
+     this same base/baseParam/baseFactor logic is exactly the kind of drift
+     that has repeatedly cost real formulas real premium this session. */
+  function configuredBasePremium(tid, lobName) {
+    const mine = (VX.ratingFactors || []).filter(f =>
+      f.tenantId === tid && asFieldArr(f.lob).includes(lobName) && f.active !== false);
+    const baseFactor = mine.find(f => /base premium/i.test(f.assignedTo || "") || /base/i.test(f.code || ""));
+    /* An explicit edit on the base factor's OWN row — Rating Factors' Edit
+       form, Override checked — wins over the imported programParams
+       snapshot. Without this, editing the base factor and checking
+       Override (the exact mechanism that correctly overrides a regular
+       factor's table) had no effect at all: this function checked
+       programParams FIRST and unconditionally, so the imported "Base
+       Premium (Uploaded)" row always won regardless of what was edited or
+       overridden on the factor row the UI actually exposes for editing —
+       confirmed by reproduction, editing the base factor to 6000 with
+       Override checked, and the rated premium still showing the original
+       4800. Same override signal every other table-backed factor already
+       respects, applied to the one factor whose real source wasn't even a
+       table. */
+    if (baseFactor && baseFactor.overrideValue && baseFactor.defaultValue != null) {
+      return { value: +baseFactor.defaultValue, factor: baseFactor, source: null };
+    }
+    const baseParam = (VX.programParams || []).filter(p => p.tenantId == null || p.tenantId === tid)
+      .find(p => p.lob === lobName && /base premium/i.test(p.param || ""));
+    if (baseParam) return { value: +baseParam.value, factor: baseFactor || null, source: baseParam.param };
+    if (baseFactor && baseFactor.defaultValue != null) return { value: +baseFactor.defaultValue, factor: baseFactor, source: null };
+    return { value: null, factor: baseFactor || null, source: null };
+  }
+
+  function configuredRate(lobCode, lobName, i) {
+    const tid = ratingTenant();
+    const st = i.state || "TX";
+    const mine = (VX.ratingFactors || []).filter(f =>
+      f.tenantId === tid && asFieldArr(f.lob).includes(lobName) && f.active !== false);
+
+    /* The base premium the configuration named. programParams carries the row
+       the importer wrote; the factor row is the fallback when a configuration
+       supplied a base factor without a program parameter. */
+    const baseInfo = configuredBasePremium(tid, lobName);
+    const baseFactor = baseInfo.factor;
+    const base = baseInfo.value;
+    const baseSource = baseInfo.source;
+
+    /* Factors group by the coverage they were assigned to on import. The base
+       row itself is not a coverage group. */
+    /* Only this tenant's real coverages form premium groups. An export's
+       rating section headings ("RISK FACTORS", "BASE PREMIUM") are not
+       coverages, and a factor filed under one has not been attached to
+       anything yet — pricing a group for it would invent a coverage the
+       tenant never bought. Those are collected separately and reported. */
+    /* Trimmed, case-insensitive against the coverage's own .lob — the same
+       drift risk as configuredRoute() above: a product's .lob and a
+       coverage's .lob are written independently from the same export and
+       can differ only in case without being different lines. A strict ===
+       here silently emptied `covers` on that drift, and every one of this
+       tenant's factors fell to `unattached` — recorded, approved, reported
+       Live by configuredRoute(), yet never actually reaching a premium
+       group. Matching case-insensitively keeps what "wired" reports and
+       what configuredRate() actually prices in agreement. */
+    /* Keyed by the NORMALIZED name, valued with the coverage's own canonical
+       (VX.cob) casing — a factor's own `coverage` string can carry different
+       casing than the cob row it means (the same independently-typed drift
+       configuredRoute() already normalizes past), so the lookup below has to
+       match case-insensitively too, and group factors under the coverage's
+       real name rather than whatever casing happened to land on the factor. */
+    const coverCanon = new Map((VX.cob || [])
+      .filter(c => c.tenantId === tid && sameText(c.lob, lobName)).map(c => [normText(c.name), c.name]));
+    const byCover = {};
+    const unattached = [];
+    mine.forEach(f => {
+      if (f === baseFactor) return;
+      /* Coverage is genuinely multi-select — a factor can legitimately name
+         more than one (a fleet-wide safety score priced into both Auto
+         Liability and Physical Damage, say), and the Formula Builder palette
+         already treats it that way: customVarsForCob checks membership
+         across the whole array, so the factor shows as Live under every
+         coverage it names. Reading only the first coverage here silently
+         priced it into just one of them — the platform reported it live and
+         available on a second coverage's formula while its multiplier never
+         actually reached that coverage's premium. Applied to every named
+         coverage it genuinely has, not only the first. */
+      const cobs = asFieldArr(f.coverage).filter(g => g && !/base premium/i.test(g));
+      const named = cobs.length ? cobs : [f.assignedTo || ""];
+      let matchedAny = false;
+      named.forEach(g => {
+        if (!g || /base premium/i.test(g)) return;
+        const canon = coverCanon.get(normText(g));
+        if (!canon) return;
+        matchedAny = true;
+        (byCover[canon] = byCover[canon] || []).push(f);
+      });
+      if (!matchedAny) unattached.push(f);
+    });
+
+    const COLORS = ["var(--cat-1)", "var(--cat-2)", "var(--cat-3)", "var(--cat-4)", "var(--cat-5)"];
+    const groups = [];
+    Object.keys(byCover).forEach((cover, gi) => {
+      const factors = [trace({
+        label: "Program Base Premium", value: base == null ? 0 : base, kind: "money",
+        driver: "Uploaded configuration", table: baseSource,
+        note: "Defined by this tenant's uploaded configuration, applied per coverage.",
+      })];
+      let mult = 1;
+      /* The variables a formula for THIS coverage can legitimately name: the
+         program base, plus this coverage's own configured factors by code.
+         Building it here is what lets a configured formula and the plain
+         base x factors default agree — a formula of
+         "BasePremium x RemainingFactors" evaluates to exactly the default.
+         Nothing from the platform's filed chain is in scope, so a formula
+         that names one (BaseLossCost, ILF, LCM) fails loudly and the quote
+         falls back, rather than silently borrowing another tenant's rate. */
+      const vars = { BasePremium: base || 0 };
+      byCover[cover].forEach(f => {
+        // A configured factor may carry an uploaded rate table; when it does,
+        // customFactorTableInfo resolves the value from the table rather than
+        // the flat default, the same way a formula-fed factor does.
+        const tinfo = customFactorTableInfo(f);
+        const v = tinfo ? tinfo.base : (f.defaultValue != null ? +f.defaultValue : 1);
+        if (!isFinite(v)) return;
+        mult *= v;
+        if (f.code) vars[f.code] = v;
+        factors.push(trace({
+          label: f.name, value: v, kind: "x", driver: f.driver || null,
+          table: f.tableId || null, base: 1,
+          note: f.approvedForFormulas ? null : "Configured but not yet approved.",
+        }));
+      });
+      // A saved formula for this coverage, if the configuration carried one,
+      // governs over the plain product — same precedence as every other LOB.
+      const r = applySavedFormula(lobName, cover, vars,
+        Math.round((base || 0) * mult), "configured");
+      groups.push({ name: cover, icon: "fa-sliders", color: COLORS[gi % COLORS.length],
+        subtotal: Math.round(r.value), factors, ratedBy: r.ratedBy });
+    });
+
+    /* A configuration with a base premium but no coverage factors still has a
+       premium — it is the base. Reported as one group rather than as zero. */
+    if (!groups.length && base != null) {
+      groups.push({ name: lobName, icon: "fa-sliders", color: COLORS[0], subtotal: Math.round(base),
+        factors: [trace({ label: "Program Base Premium", value: base, kind: "money",
+          driver: "Uploaded configuration",
+          note: "No coverage-level factors are configured for this product yet." })] });
+    }
+
+    const units = Array.isArray(i.vehicles) ? i.vehicles.length : (+i.units || 1);
+    const drivers = Array.isArray(i.drivers) ? i.drivers.length : (+i.drivers || 0);
+    const out = assemble(lobName, groups, 1, surplusTaxFor(lobName, st, i.tenantId, i.product), st, {
+      input: i, units, drivers, surchargedDrivers: 0, locations: 1,
+      acctLabel: "Not configured", minRule: 0,
+      version: "uploaded-configuration",
+      formula: "Program Base Premium x configured factors, per coverage",
+    });
+    /* Factors the configuration carries but has not attached to a coverage.
+       They are in the tenant's data and visible on the Factors page, so a
+       quote that silently ignored them would look like the platform lost
+       them. Named here instead, with why they did not price. */
+    out.unattachedFactors = unattached.map(f => ({
+      code: f.code, name: f.name, group: f.assignedTo || null,
+      reason: "Not attached to a coverage in the uploaded configuration — not priced.",
+    }));
+    return out;
+  }
+
+  /* Does this quote's product rate from an uploaded configuration rather than
+     one of this platform's own filed programs? Keyed on the product, not the
+     tenant: a tenant may hold both. */
+  function configuredProduct(input, lobCode) {
+    if (!input || !input.product || typeof VX === "undefined") return null;
+    // Read the tenant off the input, not off ratingTenant() — this is called
+    // before ratingInput is set, so ratingTenant() would answer for whatever
+    // tenant is merely active in the UI rather than the one being rated.
+    const tid = input.tenantId != null ? input.tenantId : VX.activeTenantId;
+    const p = (VX.products || []).find(x => sameProduct(x.name, input.product)
+      && (x.tenantId == null || x.tenantId === tid));
+    if (!p) return null;
+    /* Two ways a product ends up rating through here rather than one of the
+       6 built-in filed calculators: it was uploaded (p.imported), or it was
+       built entirely BY HAND — Add Product, Add Coverage, Add Rating Factor
+       — on a line this platform has no built-in calculator for at all
+       (MAP[lobCode] is undefined). Without the second clause, a tenant that
+       never uploaded anything had no path to a premium whatsoever: not the
+       built-in chain, since none exists for a line they made up themselves,
+       and not this one either, since only .imported products were ever
+       admitted — confirmed by reproduction, "No rating calculator
+       registered for LOB ..." thrown for a fully, correctly configured
+       tenant that simply built its product by hand instead of uploading
+       it. A manually-built product on one of the platform's OWN real lines
+       (lobCode in MAP) still uses that line's real built-in chain, exactly
+       as before — this only opens the door for a genuinely new line. */
+    if (p.imported || (lobCode && !MAP[lobCode])) return p;
+    return null;
+  }
+  function usesConfiguredRater(input, lobCode) { return !!configuredProduct(input, lobCode); }
+
   const MAP = { TRUCK: trucking, MPL: mpl, PROP: property, GL: gl, CYBER: cyber, WC: workersComp };
+  // LOB code -> the display name uploaded factors and formulas are stored under.
+  const LOB_NAME = { TRUCK: "Commercial Trucking", MPL: "Professional Liability (MPL)",
+    PROP: "Commercial Property", GL: "General Liability", CYBER: "Cyber", WC: "Workers' Compensation" };
   return {
     rate: (lobCode, input) => {
+      if (!input || typeof input !== "object" || Array.isArray(input))
+        throw new Error("Rating input must be an object");
       const fn = MAP[lobCode];
-      if (!fn) throw new Error("No rating calculator registered for LOB " + lobCode);
+      /* A configured product supplies its own rating basis, so it does not
+         need this platform to have a filed calculator for its line. That
+         matters: an export whose family is "Transportation" or "Commercial
+         Auto" creates a line this platform has no built-in chain for, and
+         refusing to rate it here would have made a fully configured product
+         unquotable purely because of what its line is called. The built-in
+         calculators still require one. */
+      const usesConfig = usesConfiguredRater(input, lobCode);
+      if (!fn && !usesConfig) throw new Error("No rating calculator registered for LOB " + lobCode);
       /* One log per quote — reset here, at the single entry point, so steps
          from a previous quote can never leak into this one's walkthrough. */
+      const previous = ratingInput;
+      ratingInput = input;
       calcLogReset();
-      return fn(input);
+      try {
+        const eligibility = typeof evaluateEligibility === "function"
+          ? evaluateEligibility(lobCode, input) : null;
+        /* An uploaded product rates on its own configuration, not on this
+           platform's filed chain for the line — see configuredRate(). */
+        const cfgProduct = configuredProduct(input, lobCode);
+        const configured = !!cfgProduct;
+        // The product's own line name, so a configured product on a line this
+        // platform has no built-in chain for still resolves its factors.
+        const result = configured
+          ? configuredRate(lobCode, cfgProduct.lob || LOB_NAME[lobCode] || lobCode, input)
+          : fn(input);
+        result.eligibility = eligibility;
+        result.underwriting = {
+          decision: eligibility && eligibility.declines.length ? "decline"
+            : !eligibility ? "not_evaluated"
+            : eligibility.refers.length || eligibility.notEvaluable.length || result.formulaFailures.length
+              ? "refer" : "approve",
+          complete: !!eligibility && !eligibility.notEvaluable.length && !result.formulaFailures.length,
+          premiumIsIndicative: true,
+        };
+        result.ratingBasis = {
+          tenantId: ratingTenant(), product: input.product || null,
+          /* "built-in" specifically means VeriDex's own filed calculator ran
+             — saying so for a CONFIGURED product's default (no-formula)
+             fallback was actively wrong: no built-in calculator exists for
+             that product's line at all, and the word next to
+             raterType:"uploaded-configuration" read as a direct
+             contradiction in a real quote's own JSON. */
+          execution: configured
+            ? (result.usedSavedFormula ? "saved-formula" : "configured-default-no-formula-matched")
+            : (result.usedSavedFormula ? "saved-formula-and-built-in" : "built-in"),
+          versionSelection: "metadata-and-formula-attachments",
+          /* Says plainly which chain produced this premium. A configured
+             quote used only this tenant's own uploaded factors; a built-in
+             quote used this platform's shared filed tables. */
+          raterType: configured ? "uploaded-configuration" : "built-in-filed-program",
+          rateData: configured ? "tenant-uploaded-configuration-only"
+            : lobCode === "TRUCK" ? "shared-tables-with-partial-effective-dating" : "shared-reference-tables",
+          immutableSnapshot: false,
+        };
+        return result;
+      } finally { ratingInput = previous; }
     },
     /* The formula builder's "Evaluate Formula" button used to run its own,
        simpler evaluator: it substituted variables and handed the string to
@@ -1986,7 +2476,7 @@ const ENGINE = (() => {
       const all = ENGINE_TRACE(r).filter(t => t.kind === "x");
       const top = all.slice().sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact)).slice(0, 3);
       return {
-        summary: `The ${r.lob} premium of ${vxMoney(r.finalPremium)} was produced by rating version ${r.version} for ${r.state}.`,
+        summary: `The ${r.lob} indicative premium is ${vxMoney(r.finalPremium)} for ${r.state}, labelled version ${r.version}. Shared tables and the recorded formula steps produced this calculation; the label is not an immutable rate snapshot.`,
         formula: r.formula,
         drivers: top.map(t => `${t.label} (${t.value.toFixed(3)}×) in the ${t.group} chain ${t.value > 1 ? "added" : "saved"} about ${vxMoney(Math.abs(t.impact))}` +
           (t.driver ? ` — driven by ${t.driver} = "${t.input}"` : "")),
@@ -1998,6 +2488,7 @@ const ENGINE = (() => {
         version: (() => {
           const rv = r.ratingVersion;
           if (!rv) return `Labelled rating version ${r.version}.`;
+          if (rv.pinnedTo) return `${rv.pinnedTo} is pinned to ${rv.version}. ${rv.pinnedWarning || "The product transaction setting selected this version."}`;
           if (rv.resolved) {
             return `Rating version ${rv.version} (${rv.status}, effective ${rv.effectiveStart}${rv.effectiveEnd ? " to " + rv.effectiveEnd : " onward"}) was selected because the rating date ${rv.asOf} falls inside its effective window. That date is the ${rv.asOfBasis}.`;
           }
@@ -2036,7 +2527,44 @@ const ENGINE = (() => {
       { lob: "Workers' Compensation", cob: "Workers' Compensation" },
     ],
     runsFormula: (lob, cob) => ENGINE.FORMULA_HOOKS.some(h => h.lob === lob && h.cob === cob),
+    /* The other route to a premium: an uploaded product's own coverage,
+       priced by configuredRate() rather than by one of the built-in
+       calculators above. FORMULA_HOOKS is a fixed list of this platform's
+       OWN filed (lob, cob) pairs — it has no way to know about a coverage a
+       tenant uploaded, so every one of that tenant's factors reported
+       "Not wired" regardless of whether it was actually moving the premium
+       (which, per configuredRate(), it was). Routed here instead: real if
+       the named tenant owns an uploaded product on this line and this is a
+       real coverage of theirs, not a fixed list this platform has to keep
+       in sync by hand. */
+    configuredRoute(tenantId, lob, cov) {
+      if (tenantId == null || typeof VX === "undefined") return false;
+      /* Same two-part rule as configuredProduct() above: imported, or built
+         by hand on a line with no built-in calculator at all. Without the
+         second half, a factor a tenant added through the plain Add Rating
+         Factor form — never uploaded, correctly approved, correctly
+         attached to a real coverage — could never show as Live: this
+         function required p.imported, and a hand-built product never has
+         that flag, so every one of its factors reported "Not wired"
+         regardless of how correctly it was actually configured. */
+      /* Trimmed, case-insensitive — a coverage's own .lob and a product's own
+         .lob describe the same import and are typed/exported independently
+         (a product record built from the export's product-level LOB field,
+         a coverage record built from its own coverage-level entry), so they
+         can drift in case without being different lines. The same is true
+         of a coverage's own name against the factor's recorded coverage
+         string. A strict === on either turned an otherwise fully approved,
+         correctly attached factor into a permanent "Not wired" with nothing
+         on screen explaining why — the same class of bug already found and
+         fixed for product-name matching in resolveRatingVersion(). */
+      const isBuiltInLine = Object.values(LOB_NAME).some(n => sameText(n, lob));
+      const hasProduct = (VX.products || []).some(p =>
+        p.tenantId === tenantId && sameText(p.lob, lob) && (p.imported || !isBuiltInLine));
+      if (!hasProduct) return false;
+      return (VX.cob || []).some(c => c.tenantId === tenantId && sameText(c.lob, lob) && sameText(c.name, cov));
+    },
     customFactorTableInfo,
+    configuredBasePremium,
     /* The single, canonical answer to "is this approved custom Rating Factor
        actually affecting a premium right now" — used by both Rating Factors
        (the Path to Wired card and status badges) and Formula Builder (the
@@ -2046,15 +2574,54 @@ const ENGINE = (() => {
        folded into varMap, honoured by RemainingFactors. */
     factorIsLive(f) {
       if (!f || !f.approvedForFormulas) return { live: false, reason: !f ? "missing" : "notApproved" };
-      const asArr = v => Array.isArray(v) ? v : (v ? [v] : []);
-      const lobs = asArr(f.lob), covs = asArr(f.coverage);
+        /* The base premium row genuinely has no single coverage — configuredRate()
+         (further down this file) applies it to every one of a configured
+         product's coverages by name, not through the per-coverage routing
+         every other factor needs. Without this, it reported "Not wired" here
+         on Rating Factors while the Formula Builder palette (a separate code
+         path, varSource() in formula-builder.html) already correctly showed
+         it Live — the same factor contradicting itself between two screens,
+         for a value that is, provably, in every quote. Live whenever
+         approved and this tenant has a real configured base for the line —
+         the same check configuredBasePremium() itself uses to decide
+         whether there is a real number to apply in the first place. */
+      const isBaseRow = /base premium/i.test(f.assignedTo || "") || /base/i.test(f.code || "");
+      if (isBaseRow && f.tenantId != null) {
+        for (const lob of asFieldArr(f.lob)) {
+          if (ENGINE.configuredBasePremium(f.tenantId, lob).value != null) return { live: true, lob, coverage: null, configuredBase: true };
+        }
+      }
+      const lobs = asFieldArr(f.lob), covs = asFieldArr(f.coverage);
       let sawRoute = false, sawFormula = false;
       for (const lob of lobs) {
         for (const cov of covs) {
-          if (!ENGINE.runsFormula(lob, cov)) continue;
+          const builtInRoute = ENGINE.runsFormula(lob, cov);
+          const configRoute = !builtInRoute && ENGINE.configuredRoute(f.tenantId, lob, cov);
+          if (!builtInRoute && !configRoute) continue;
           sawRoute = true;
+          /* A configured product's coverage prices EVERY approved factor
+             attached to it unconditionally — configuredRate() (engine.js)
+             passes Math.round(base * mult), the base times every one of
+             them multiplied in directly, as the DEFAULT it falls back to
+             even with no formula at all. An approved, correctly-attached
+             factor on a configured product is therefore already live the
+             moment it is approved — requiring a separately-authored formula
+             on top of that, the same bar a BUILT-IN filed line genuinely
+             needs, reported "Not wired" for a factor that was, provably,
+             already moving every quote. A built-in line still needs its own
+             real formula — its calculators do not have this same
+             always-multiply-approved-factors fallback. */
+          if (configRoute) return { live: true, lob, coverage: cov, configuredDefault: true };
+          /* Scoped to THIS factor's own tenant. Two tenants can both use the
+             lob/cob names "Commercial Auto"/"Auto Liability" (one export
+             onboarded twice, say), each with its own Active formula — an
+             unscoped find() would pick up whichever tenant's formula sits
+             first in the array and could report a factor "Live" (or not)
+             based on a stranger's formula rather than its own. Rows with no
+             tenantId are this platform's own shared, built-in formulas. */
           const af = (typeof VX !== "undefined" && VX.savedFormulas || [])
-            .find(x => x.status === "Active" && x.lob === lob && x.cob === cov);
+            .find(x => x.status === "Active" && x.lob === lob && x.cob === cov
+              && (x.tenantId == null || x.tenantId === f.tenantId));
           if (!af) continue;
           sawFormula = true;
           if ((af.tokens || []).some(t => t.t === "var" && t.v === REMAINING)) {

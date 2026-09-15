@@ -7,17 +7,20 @@
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-grid.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-theme-quartz.css" rel="stylesheet">
-<link href="assets/css/app.css" rel="stylesheet">
+<link href="assets/css/app.css?v=20260912" rel="stylesheet">
+<link href="assets/css/workspace.css?v=20260912" rel="stylesheet">
+<script src="assets/js/tooltip-dictionary.js?v=20260912" defer></script>
+<script src="assets/js/ui-ux.js?v=20260912" defer></script>
 </head>
 <body><div id="vxApp"></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/dist/ag-grid-community.min.js"></script>
-<script src="assets/js/data.js"></script>
-<script src="assets/js/cosmos-model.js"></script>
-<script src="assets/js/tenant-setup.js"></script>
-<script src="assets/js/core.js"></script>
-<script src="assets/js/grid.js"></script>
-<script src="assets/js/ag-grid-adapter.js"></script>
+<script src="assets/js/data.js?v=20260912"></script>
+<script src="assets/js/cosmos-model.js?v=20260912"></script>
+<script src="assets/js/tenant-setup.js?v=20260912"></script>
+<script src="assets/js/core.js?v=20260912"></script>
+<script src="assets/js/grid.js?v=20260912"></script>
+<script src="assets/js/ag-grid-adapter.js?v=20260912"></script>
 <script>
 vxShell("State Management", "State availability and filing status. || Controls which states are included in each rater build.", [{l:"Geography"},{l:"State Management"}]);
 document.getElementById("vxBody").innerHTML = `
@@ -38,7 +41,7 @@ vxAgGrid({ el:"#grid", key:"states", name:"State",
       {k:"counties",l:"Counties",r:r=>r.counties
         ? '<a href="counties.html?state='+r.abv+'"><span class="vx-b blue">'+r.counties+'</span></a>'
         : '<span class="vx-b gray">None</span>'},
-      {k:"lobs",l:"Lines of Business",sort:false,r:r=>(r.lobNames||[]).length
+      {k:"lobs",l:"Coverages",sort:false,r:r=>(r.lobNames||[]).length
         ? r.lobNames.map(n=>'<span class="vx-b cyan me-1">'+(n==="All"?"All lines":n.replace(" (MPL)",""))+'</span>').join("")
         : '<span class="vx-b gray">None configured</span>'},
       {k:"included",l:"In Rater",editable:true,r:r=>'<span class="vx-b '+(r.included?"green":"gray")+'">'+(r.included?"Yes":"No")+'</span>'}],

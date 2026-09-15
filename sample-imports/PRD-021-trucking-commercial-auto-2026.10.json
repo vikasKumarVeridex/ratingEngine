@@ -1,0 +1,105 @@
+{
+  "schema": "insurance-product-studio-product-v1",
+  "exportedAt": "2026-09-11T05:34:23.774Z",
+  "productId": "PRD-021",
+  "version": "2026.10",
+  "status": "draft",
+  "product": {
+    "id": "PRD-021",
+    "name": "Trucking Commercial Auto",
+    "family": "Transportation",
+    "version": "2026.10",
+    "status": "draft",
+    "effectiveFrom": "2026-08-01",
+    "effectiveTo": null,
+    "owner": "Anika Sharma",
+    "lastModifiedBy": "Anika Sharma",
+    "segment": "Commercial Lines",
+    "productType": "Commercial Auto",
+    "lineOfBusiness": "Commercial Auto",
+    "businessType": "New",
+    "carrier": "Veridex Insurance",
+    "code": "TRA-2026-001",
+    "description": "New product configuration.",
+    "jurisdictions": ["CA", "TX"],
+    "lastModified": "11-Sept-2026",
+    "lastModifiedAt": "2026-09-11T05:21:46.855Z"
+  },
+  "studios": {
+    "coverage": [
+      {
+        "availability": "mandatory",
+        "id": "COV-mtwiex2b-d547",
+        "name": "Auto Liability",
+        "code": "COV-AL",
+        "type": "Commercial Auto Liability",
+        "conditionalOn": ""
+      },
+      {
+        "availability": "optional",
+        "id": "COV-mtwiex2e-2670",
+        "name": "Physical Damage",
+        "code": "COV-PD",
+        "type": "First Party — Property Damage",
+        "conditionalOn": ""
+      }
+    ],
+    "rating": [
+      {
+        "group": "BASE PREMIUM",
+        "templateId": "motor-truck",
+        "items": [
+          { "id": "RAT-BR-GUI", "name": "Starting price", "type": "base", "status": "done",
+            "value": "$5000/yr", "amount": "5000", "configured": true }
+        ]
+      },
+      {
+        "group": "Auto Liability",
+        "items": [
+          { "id": "RAT-FACTOR-001", "name": "Years in Business Factor", "type": "factor", "status": "done",
+            "coverage": "Auto Liability", "coverageId": "COV-mtwiex2b-d547",
+            "riskAttribute": "Years in Business", "ratingMethod": "table", "amount": 1,
+            "table": { "id": "yearsInBusinessTable", "sourceSheet": "Years in Business",
+              "data": [{ "value": "must be more than 5", "factor": 1.4 }] }, "configured": true },
+          { "id": "RAT-FACTOR-002", "name": "Operating Radius Factor", "type": "factor", "status": "done",
+            "coverage": "Auto Liability", "coverageId": "COV-mtwiex2b-d547",
+            "riskAttribute": "Operating Radius", "ratingMethod": "table", "amount": 1,
+            "table": { "id": "operatingRadiusTable", "sourceSheet": "Operating Radius",
+              "data": [{ "value": "operating radius must be 100", "factor": 1.5 }] }, "configured": true },
+          { "id": "RAT-FACTOR-004", "name": "Hazardous Materials Factor", "type": "factor", "status": "done",
+            "coverage": "Auto Liability", "coverageId": "COV-mtwiex2b-d547",
+            "riskAttribute": "Hazardous Materials", "ratingMethod": "table", "amount": 1,
+            "table": { "id": "hazardousMaterialsTable", "sourceSheet": "Hazardous Materials",
+              "data": [{ "value": "must to be informed", "factor": 1.7 }] }, "configured": true }
+        ]
+      },
+      {
+        "group": "Physical Damage",
+        "items": [
+          { "id": "RAT-FACTOR-003", "name": "Fleet Size Factor", "type": "factor", "status": "done",
+            "coverage": "Physical Damage", "coverageId": "COV-mtwiex2e-2670",
+            "riskAttribute": "Fleet Size", "ratingMethod": "table", "amount": 1,
+            "table": { "id": "fleetSizeTable", "sourceSheet": "Fleet Size",
+              "data": [{ "value": "must be greater than 5", "factor": 1.8 }] }, "configured": true }
+        ]
+      }
+    ],
+    "formulas": [
+      { "name": "Commercial Auto — Auto Liability", "cob": "Auto Liability", "status": "Active",
+        "tokens": ["BasePremium", "RemainingFactors"], "expression": "BasePremium × RemainingFactors" },
+      { "name": "Commercial Auto — Physical Damage", "cob": "Physical Damage", "status": "Active",
+        "tokens": ["BasePremium", "RemainingFactors"], "expression": "BasePremium × RemainingFactors" }
+    ],
+    "eligibility": [
+      { "id": "ELG-001", "name": "Years in Business Eligibility", "status": "active", "outcomeType": "hard",
+        "description": "Declines new ventures under 5 years old." },
+      { "id": "ELG-002", "name": "Operating Radius Eligibility", "status": "active", "outcomeType": "soft",
+        "description": "Refers long-haul operations for underwriting review." },
+      { "id": "ELG-003", "name": "Fleet Size Eligibility", "status": "active", "outcomeType": "hard",
+        "description": "Declines fleets of 6 or more power units." },
+      { "id": "ELG-004", "name": "Hazardous Materials Eligibility", "status": "active", "outcomeType": "hard",
+        "description": "Declines hazmat operations." }
+    ]
+  },
+  "pricing": { "basePremium": 5000 }
+}

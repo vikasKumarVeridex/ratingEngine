@@ -13,6 +13,7 @@
     "Area":           { d: "Subsystem of the Rating Engine that was touched (Factors, Rate Tables, Versions, Formulas, Tenants).", w: "Lets compliance officers filter activity to a single concern without reviewing the whole tenant log." },
     "Action":         { d: "Verb describing the change: Create, Update, Publish, Rollback, Deprecate, Import.", w: "Standardised vocabulary so SIEM rules and approval workflows can pattern-match safely." },
 
+    "Created by": { d: "User recorded as the creator of this rating configuration.", w: "Identifies the author for review and follow-up." },
     /* factors.html */
     "Factor":         { d: "A named rating variable (e.g. driver_age, territory, class_code) consumed by the rating pipeline.", w: "Factors are the atomic inputs of premium calculation; their catalog is versioned and audited." },
     "Change":         { d: "Magnitude and direction of the value change vs. the previously published version (e.g. +0.05, -10%).", w: "Helps reviewers quantify expected premium impact before approval and release." },
@@ -64,7 +65,7 @@
 
     /* loss-runs.html */
     "State / Province": { d: "Jurisdiction code for the geographic rollup.", w: "Used to enforce per-state rate-filing boundaries and reporting cadences." },
-    "Primary LOB":    { d: "Line of business that drives the bulk of premium and losses for this segment.", w: "Used to route the experience mod to the correct actuarial team." },
+    "Primary LOB":    { d: "Coverage that drives the bulk of premium and losses for this segment.", w: "Used to route the experience mod to the correct actuarial team." },
     "Quotes":         { d: "Count of bound + non-bound quotes in the selected period.", w: "Exposure base for loss-ratio calculations." },
     "Loss Ratio vs Target": { d: "Actual loss ratio divided by the filed target loss ratio, expressed as a percentage.", w: "Above 100% signals a portfolio drift that should trigger a rate review." },
     "Trend":          { d: "Direction (up/down/flat) of the loss ratio across the last four periods.", w: "Quick visual cue for portfolio health." },
@@ -81,11 +82,6 @@
     "Premium":        { d: "Total bound written premium in the selected window.", w: "Tied to revenue recognition and to carrier statements." },
     "LOB":            { d: "Line of business the factor belongs to (Trucking, GL, Property, MPL, Cyber).", w: "Drives segmentation in every analytics view." },
     "Impact":         { d: "Average change in premium attributable to this factor across all filtered quotes.", w: "Drives the factor-impact prioritisation backlog." },
-
-    /* ai-assistant.html */
-    "Attribute":      { d: "The rating input the assistant proposes to change.", w: "Restrict edits to one attribute per proposal so review remains atomic." },
-    "Current":        { d: "Existing authoritative value.", w: "Baseline against which the proposal is evaluated." },
-    "Proposed":       { d: "Suggested value the assistant would set.", w: "Carries an evidence trail back to the source data." },
 
     /* glossary.html */
     "Variable":       { d: "Token available inside the formula DSL.", w: "Mirrors the left rail of the formula builder; click-through for examples." },
@@ -134,7 +130,7 @@
 
     /* factors.html — main grid headers not already covered above */
     "Rating Factor":  { d: "The factor's display name, written as an underwriter would say it (e.g. \"Radius of Operation Factor\").", w: "Shown in the rating trace on a quote, so it is what an underwriter sees when explaining a price." },
-    "Line of Business": { d: "The line whose engine reads this factor (Commercial Trucking, General Liability, Cyber, etc.).", w: "Factors are LOB-scoped; a factor never applies outside the line it is registered against." },
+    "Coverage Line":  { d: "The line whose engine reads this factor (Commercial Trucking, General Liability, Cyber, etc.).", w: "Factors are scoped to their coverage line; a factor never applies outside the line it is registered against." },
     "Values / Rules": { d: "How many distinct outcomes this factor can produce — a lookup factor's row count, or 1 for a fixed value.", w: "A quick read on how much of the factor's behaviour lives in a table versus a single number." },
     "Coverage":       { d: "The coverage this factor prices — its position in the Factor → Assigned To chain.", w: "Distinct from Scope: Coverage is WHAT the factor prices, Scope is WHAT it varies by." },
     "Coverage Type":  { d: "Which specific coverage within the policy this row's limit applies to (e.g. per-person vs. per-accident).", w: "The same limit menu can list several coverage types that are not interchangeable." },

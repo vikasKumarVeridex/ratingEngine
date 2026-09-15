@@ -5,7 +5,7 @@
 <title>Sandbox Quote Generation — Main | VeriDex</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
-<link href="assets/css/app.css" rel="stylesheet">
+<link href="assets/css/app.css?v=20260912" rel="stylesheet">
 <style>
 .lobcard{border:2px solid var(--border);border-radius:12px;padding:16px;cursor:pointer;transition:.16s;background:var(--surface);height:100%}
 .lobcard:hover{border-color:var(--primary);transform:translateY(-2px);box-shadow:var(--shadow)}
@@ -43,18 +43,21 @@
 .fbar{height:5px;border-radius:3px;background:var(--surface-3);overflow:hidden;min-width:52px}
 .fbar i{display:block;height:100%;border-radius:3px}
 </style>
+<link href="assets/css/workspace.css?v=20260912" rel="stylesheet">
+<script src="assets/js/tooltip-dictionary.js?v=20260912" defer></script>
+<script src="assets/js/ui-ux.js?v=20260912" defer></script>
 </head>
 <body><div id="vxApp"></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="assets/js/data.js"></script>
-<script src="assets/js/rate-data-full.js"></script>
-<script src="assets/js/cosmos-model.js"></script>
-<script src="assets/js/app-types.js"></script>
-<script src="assets/js/tenant-setup.js"></script>
-<script src="assets/js/core.js"></script>
-<script src="assets/js/grid.js"></script>
-<script src="assets/js/engine.js"></script>
-<script src="assets/js/eligibility.js"></script>
+<script src="assets/js/data.js?v=20260912"></script>
+<script src="assets/js/rate-data-full.js?v=20260912"></script>
+<script src="assets/js/cosmos-model.js?v=20260912"></script>
+<script src="assets/js/app-types.js?v=20260912"></script>
+<script src="assets/js/tenant-setup.js?v=20260912"></script>
+<script src="assets/js/core.js?v=20260912"></script>
+<script src="assets/js/grid.js?v=20260912"></script>
+<script src="assets/js/engine.js?v=20260912"></script>
+<script src="assets/js/eligibility.js?v=20260912"></script>
 <script>
 vxShell("Sandbox Quote Generation", "Pick a product, fill in the details, get a premium. || A sandbox for exercising the rating engine — each product shows only its own questions.",
   [{ l: "Main" }, { l: "Sandbox Quote Generation" }]);
@@ -306,7 +309,7 @@ function newVehicle(n) {
 function vehicleDetail(x, i) {
   const inherit = `<option value="">Use account value</option>`;
   const f = (lbl, name, inner, hint) => `<div class="col-md-3 mb-2"><label style="font-size:10.5px">${lbl}</label>${inner}
-    ${hint ? `<small class="d-block" style="font-size:9.8px;color:var(--text-mute);line-height:1.3">${hint}</small>` : ""}</div>`;
+    ${hint ? `<small data-field-help class="d-block" style="font-size:9.8px;color:var(--text-mute);line-height:1.3">${hint}</small>` : ""}</div>`;
   const selV = (name, opts, cur, withInherit) => `<select class="form-select form-select-sm V" data-i="${i}" data-f="${name}">
     ${withInherit ? inherit : ""}${opts.map(([v, l]) => `<option value="${v}" ${String(v) === String(cur) ? "selected" : ""}>${l}</option>`).join("")}</select>`;
   const numV = (name, cur, w) => `<input type="number" class="form-control form-control-sm V" data-i="${i}" data-f="${name}" value="${cur}" style="${w || ""}">`;
@@ -1015,7 +1018,7 @@ function questions(mode) {
 
 function questionsInner() {
   const v = S.v;
-  const hintHtml = hint => hint ? `<small class="d-block" style="font-size:10.5px;color:var(--text-mute);margin-top:2px;line-height:1.35">${hint}</small>` : "";
+  const hintHtml = hint => hint ? `<small data-field-help class="d-block" style="font-size:10.5px;color:var(--text-mute);margin-top:2px;line-height:1.35">${hint}</small>` : "";
   const sel = (k, label, arr, def, hint) => {
     if (v[k] === undefined) v[k] = def;
     return `<div class="col-md-4"><label>${label}</label>
@@ -1122,7 +1125,7 @@ function questionsInner() {
         <div class="col-md-4" id="renewalEligWrap" style="${(v.policyType||"New Business")==="Renewal"?"":"display:none"}">
           <label>Eligible for Renewal Discount?</label>
           <select class="form-select form-select-sm F" data-k="renewalEligible">${opt([["no","No"],["yes","Yes"]], v.renewalEligible || "no")}</select>
-          <small class="d-block" style="font-size:10.5px;color:var(--text-mute);margin-top:2px;line-height:1.35">Requires prior-term loss ratio under 50%, no more than 2 cancellations, and no unreported units or drivers.</small></div>
+          <small data-field-help class="d-block" style="font-size:10.5px;color:var(--text-mute);margin-top:2px;line-height:1.35">Requires prior-term loss ratio under 50%, no more than 2 cancellations, and no unreported units or drivers.</small></div>
       </div></div></div>
       <div class="grp"><h3><i class="fa-solid fa-clipboard-check" style="color:var(--cat-1)"></i>Account-Level Credits / Debits</h3>
         <div class="bd"><div class="sub" style="margin-top:-6px">Auto Liability and Physical Damage each compute their own Account-Level Factor from these answers, clamped 0.85×&ndash;1.50× — separately, not one shared value. <span class="hintdot" title="Each is a banded selection in the source rater, not a free number. &quot;No Inspections&quot; and &quot;No Loss Data&quot; are real answers, not zero.">Banded, not free-form.</span></div>
@@ -1404,7 +1407,7 @@ function renderQuoteContext() {
     <div class="vx-ctxbar">
       <div class="seg meta"><label>Tenant</label><div class="val">${vxTenant().name}</div></div>
       <i class="fa-solid fa-chevron-right vx-ctx-sep"></i>
-      <div class="seg"><label>Line of Business</label>
+      <div class="seg"><label>Coverage</label>
         <select class="form-select form-select-sm" id="qLob">
           ${avail.map(l => `<option value="${l.k}" ${l.k === S.lob ? "selected" : ""}>${l.n}</option>`).join("")}
         </select></div>
@@ -1467,11 +1470,13 @@ function render() {
             <datalist id="uwNames">${(VX.users || []).filter(u => u.role === "Underwriter").map(u => `<option value="${u.name}">`).join("")}</datalist></div>
           <div class="col-md-5"><label>Underwriter Manager</label><input class="form-control form-control-sm" id="underwriterManager" list="uwmNames" value="${S.underwriterManager || ""}" placeholder="Who reviews this account if it's referred">
             <datalist id="uwmNames">${(VX.users || []).filter(u => u.role === "Underwriter Manager").map(u => `<option value="${u.name}">`).join("")}</datalist>
-            <small class="d-block" style="font-size:10.5px;color:var(--text-mute);margin-top:2px">Clears any quote an eligibility rule has referred (see Roles) — distinct from the day-to-day Underwriter above.</small></div>
+            <small data-field-help class="d-block" style="font-size:10.5px;color:var(--text-mute);margin-top:2px">Clears any quote an eligibility rule has referred (see Roles) — distinct from the day-to-day Underwriter above.</small></div>
         </div></div>
       </div>
-      <div class="grp"><h3><i class="fa-solid fa-user-tie" style="color:var(--primary)"></i>Broker Info</h3>
+      <div class="grp"><h3><i class="fa-solid fa-user-tie" style="color:var(--primary)"></i>Broker &amp; MGU Info</h3>
         <div class="bd"><div class="row g-3">
+          <div class="col-md-4"><label>MGU / Wholesaler</label><input class="form-control form-control-sm F" data-k="mgu" list="mguNames" value="${S.v.mgu || ""}" placeholder="Which MGU this rating is placed through">
+            <datalist id="mguNames">${[...new Set((VX.quotes || []).map(q => q.mgu))].filter(Boolean).map(m => `<option value="${m}">`).join("")}</datalist></div>
           <div class="col-md-4"><label>Producing Agency</label><input class="form-control form-control-sm F" data-k="brokerAgency" value="${S.v.brokerAgency || ""}"></div>
           <div class="col-md-4"><label>Producer / Agent Name</label><input class="form-control form-control-sm F" data-k="brokerAgent" value="${S.v.brokerAgent || ""}"></div>
           <div class="col-md-4"><label>Agency Code / NPN</label><input class="form-control form-control-sm F" data-k="brokerAgencyCode" value="${S.v.brokerAgencyCode || ""}"></div>
@@ -1803,8 +1808,16 @@ async function calc() {
        total with no local tax in it. The engine charges it now; this just
        tells it which county, the same way it is told which state. */
     S.v.county = S.county || null;
+    /* The product and tenant this quote is being written on. The context bar
+       has always let a user pick a product, but the engine was never told
+       which one, so everything the engine keys off the product was dead from
+       this screen: rating-version resolution, admitted-vs-surplus-lines
+       basis, and — the reason this was found — whether the product rates on
+       its own uploaded configuration or on the platform's filed chain. */
+    S.v.product = S.product || null;
+    S.v.tenantId = VX.activeTenantId;
     S.res = ENGINE.rate(S.lob, S.v);
-    S.elig = evaluateEligibility(S.lob, S.v);
+    S.elig = S.res.eligibility;
     vxToast("Premium calculated", LOBS.find(l => l.k === S.lob).n + " — " + vxMoney(S.res.finalPremium), "ok");
   } catch (e) { vxToast("Rating error", e.message, "err"); }
   if (b) { b.disabled = false; b.innerHTML = '<i class="fa-solid fa-bolt me-1"></i>Recalculate Premium'; }
@@ -2220,7 +2233,7 @@ function truckFactorTabs(r) {
   const acctPanel = () => {
     const liabLines = r.accountFactorLines || [];
     const pdLines = r.pdAccountFactorLines || [];
-    if (!liabLines.length && !pdLines.length) return `<div class="vx-empty" style="padding:20px"><i class="fa-solid fa-sliders"></i>No account-level factor applies to this line of business.</div>`;
+    if (!liabLines.length && !pdLines.length) return `<div class="vx-empty" style="padding:20px"><i class="fa-solid fa-sliders"></i>No account-level factor applies to this coverage.</div>`;
     return `<div class="sub">One policy-level credit/debit set per coverage, applied to every unit.</div>
       ${liabLines.length ? acctTable("Auto Liability \u2014 Account-Level Factor", liabLines, r.accountFactor) : ""}
       ${pdLines.length ? acctTable("Physical Damage \u2014 Account-Level Factor", pdLines, r.pdAccountFactor) : ""}`;
@@ -2401,6 +2414,7 @@ function paint() {
       <div style="font-size:11px;color:var(--text-mute);font-weight:650;text-transform:uppercase;letter-spacing:.04em">Annual Premium</div>
       <div style="font-size:34px;font-weight:800;margin:5px 0;letter-spacing:-.02em">${vxMoney(r.finalPremium)}</div>
       <div style="font-size:12px;color:var(--text-dim)">${r.lob} · ${r.state}${county ? " · " + county : ""}</div>
+      ${(S.v.mgu || S.v.brokerAgency) ? `<div style="font-size:11px;color:var(--text-mute);margin-top:3px" title="Who this rating is placed through">${[S.v.mgu, S.v.brokerAgency].filter(Boolean).join(" · ")}</div>` : ""}
       ${r.minApplied ? '<div class="vx-b amber mt-2">Minimum premium applied</div>' : ""}
       <div class="d-flex gap-2 mt-3"><button class="btn btn-primary btn-sm w-100" onclick="issue()" ${declined ? "disabled title=\"Resolve the decline above first\"" : ""}><i class="fa-solid fa-file-lines me-1"></i>Generate Quote</button></div>
     </div>
@@ -2526,6 +2540,7 @@ function issue() {
       <div style="width:48px;height:48px;border-radius:13px;background:rgba(18,160,106,.13);color:var(--good);display:grid;place-items:center;margin:0 auto 10px;font-size:20px"><i class="fa-solid fa-file-circle-check"></i></div>
       <h4 style="font-size:16px;margin:0 0 3px">Q-2026-${10500 + Math.floor(Math.random() * 400)}</h4>
       <div style="color:var(--text-dim);font-size:13px">${S.insName || "Lonestar Freight LLC"} · ${r.lob} · ${r.state}</div>
+      ${(S.v.mgu || S.v.brokerAgency) ? `<div style="color:var(--text-mute);font-size:11.5px;margin-top:2px">${[S.v.mgu, S.v.brokerAgency].filter(Boolean).join(" · ")}</div>` : ""}
       <div style="font-size:25px;font-weight:800;margin-top:9px">${vxMoney(r.finalPremium)}</div>
       ${r.minApplied ? '<div class="vx-b amber mt-1">Minimum premium applied</div>' : ""}
     </div>

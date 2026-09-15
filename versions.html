@@ -7,19 +7,22 @@
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-grid.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-theme-quartz.css" rel="stylesheet">
-<link href="assets/css/app.css" rel="stylesheet">
+<link href="assets/css/app.css?v=20260912" rel="stylesheet">
+<link href="assets/css/workspace.css?v=20260912" rel="stylesheet">
+<script src="assets/js/tooltip-dictionary.js?v=20260912" defer></script>
+<script src="assets/js/ui-ux.js?v=20260912" defer></script>
 </head>
 <body><div id="vxApp"></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/dist/ag-grid-community.min.js"></script>
-<script src="assets/js/data.js"></script>
-<script src="assets/js/cosmos-model.js"></script>
-<script src="assets/js/tenant-setup.js"></script>
-<script src="assets/js/engine-pipelines.js"></script>
-<script src="assets/js/engine-flowchart.js"></script>
-<script src="assets/js/core.js"></script>
-<script src="assets/js/grid.js"></script>
-<script src="assets/js/ag-grid-adapter.js"></script>
+<script src="assets/js/data.js?v=20260912"></script>
+<script src="assets/js/cosmos-model.js?v=20260912"></script>
+<script src="assets/js/tenant-setup.js?v=20260912"></script>
+<script src="assets/js/engine-pipelines.js?v=20260912"></script>
+<script src="assets/js/engine-flowchart.js?v=20260912"></script>
+<script src="assets/js/core.js?v=20260912"></script>
+<script src="assets/js/grid.js?v=20260912"></script>
+<script src="assets/js/ag-grid-adapter.js?v=20260912"></script>
 <script>
 vxShell("Rating Versions", "Each version is a complete rating engine for a product. || Carries its effective window, rate lock date, attached formulas, and exactly which factors were added, changed or removed.",
   [{ l: "Products & Rating" }, { l: "Rating Versions" }]);
@@ -227,7 +230,17 @@ document.getElementById("vxBody").innerHTML = `
   </div>
   <div class="vx-card vx-anim"><div id="grid"></div></div>`;
 
-function attachedFormulas(r) { return (VX.savedFormulas || []).filter(f => (f.attachments || []).some(a => a.product === r.product && a.ratingVersion === r.version)); }
+/* Matched on product name + version label alone, with no tenant check —
+   two tenants very often carry the SAME version label ("2026.10" is what
+   most Product Studio exports default to) and can also carry a
+   same-named product, so a version genuinely holding 2 formulas showed a
+   third or fourth that actually belonged to a different tenant entirely.
+   Rows with no tenantId are this platform's own shared, built-in formulas
+   and stay matchable by everyone, same convention used everywhere else a
+   tenant-owned collection is read. */
+function attachedFormulas(r) { return (VX.savedFormulas || []).filter(f =>
+  (f.tenantId == null || f.tenantId === r.tenantId)
+  && (f.attachments || []).some(a => a.product === r.product && a.ratingVersion === r.version)); }
 
 function formulasCell(r) {
   const n = attachedFormulas(r).length;
@@ -240,7 +253,10 @@ function formulasCell(r) {
    versions, and this attaches versions' formulas here. Same
    VX.savedFormulas[].attachments records either way; nothing new is stored. */
 function manageFormulas(r) {
-  const eligible = (VX.savedFormulas || []).filter(f => f.lob === r.lob);
+  // Same tenant scoping as attachedFormulas() above — offering another
+  // tenant's formula as something to attach would let a click here create
+  // exactly the cross-tenant attachment that caused the miscount.
+  const eligible = (VX.savedFormulas || []).filter(f => f.lob === r.lob && (f.tenantId == null || f.tenantId === r.tenantId));
   if (!eligible.length) {
     vxModal(`Formulas — ${r.version}`,
       `<div class="vx-empty" style="padding:18px"><i class="fa-solid fa-square-root-variable"></i>
@@ -252,7 +268,7 @@ function manageFormulas(r) {
   vxModal(`Formulas attached to ${r.version}`, `
     <div style="font-size:12.3px;color:var(--text-dim);margin-bottom:10px">
       <b>${r.product}</b> · ${r.lob} · <span class="vx-b ${r.status === "Published" ? "green" : "amber"}">${r.status}</span><br>
-      Tick every formula this rating version should execute. Only ${r.lob} formulas are listed — a formula rates one line of business.
+      Tick every formula this rating version should execute. Only ${r.lob} formulas are listed — a formula rates one coverage line.
     </div>
     <div style="max-height:300px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:10px 12px">
       ${eligible.map(f => `<div class="form-check">
@@ -290,7 +306,9 @@ function lobOfProduct(productName) {
 function formulaOpts(cur) {
   const lob = (cur && cur.lob) || lobOfProduct(cur && cur.product);
   if (!lob) return [];
-  return (VX.savedFormulas || []).filter(f => f.lob === lob).map(f => ({
+  // Same tenant scoping as attachedFormulas()/manageFormulas() above.
+  const tid = (cur && cur.tenantId != null) ? cur.tenantId : VX.activeTenantId;
+  return (VX.savedFormulas || []).filter(f => f.lob === lob && (f.tenantId == null || f.tenantId === tid)).map(f => ({
     value: f.id,
     label: `${f.name} — ${f.scope === "Account" ? "Account level" : f.cob}` +
            (f.tested ? " · tested" : " · untested"),
@@ -305,7 +323,11 @@ function formulaOpts(cur) {
 function saveFormulaAttachments(rec) {
   const chosen = (rec._formulas || []).map(String);
   const lob = rec.lob || lobOfProduct(rec.product);
-  (VX.savedFormulas || []).filter(f => f.lob === lob).forEach(f => {
+  // Same tenant scoping as the read sites above — without it, saving this
+  // form could add or remove an attachment on a formula that belongs to a
+  // different tenant entirely.
+  const tid = rec.tenantId != null ? rec.tenantId : VX.activeTenantId;
+  (VX.savedFormulas || []).filter(f => f.lob === lob && (f.tenantId == null || f.tenantId === tid)).forEach(f => {
     f.attachments = f.attachments || [];
     const at = a => a.product === rec.product && a.ratingVersion === rec.version;
     const want = chosen.includes(String(f.id));
@@ -456,7 +478,7 @@ function acctFactorSection(rec) {
 function viewEngine(rec) {
   const attached = attachedFormulas(rec);
   const pipeline = ENGINE_PIPELINES[rec.lob];
-  const prod = VX.products.find(p => p.name === rec.product);
+  const prod = VX.products.find(p => String(p.name || "").trim().toLowerCase() === String(rec.product || "").trim().toLowerCase());
   const fmtExpr = f => f.tokens && f.tokens.length ? f.tokens.map(t => t.v).join(" ") : "(empty)";
 
   vxModal(`Rating Engine — ${rec.product} · ${rec.version}`, `
@@ -523,7 +545,7 @@ function viewFormulaDetail(fid, engineRec) {
     vxModal(`Formula — ${f.name}`, `
       <div class="row g-3 mb-3">
         <div class="col-md-6"><label>Scope</label><div style="font-size:13px">${f.scope === "Class of Business" ? `Class of Business — <b>${f.cob}</b>` : "Account Level — applies once across the policy"}</div></div>
-        <div class="col-md-6"><label>Line of Business</label><div style="font-size:13px">${f.lob}</div></div>
+        <div class="col-md-6"><label>Coverage</label><div style="font-size:13px">${f.lob}</div></div>
         <div class="col-md-6"><label>Rating Engines</label><div style="font-size:13px">${(f.attachments || []).length ? f.attachments.map(a => `${a.ratingVersion} <span style="color:var(--text-mute)">(${a.product})</span>`).join("<br>") : '<span style="color:var(--text-mute)">Unattached</span>'}</div></div>
         <div class="col-md-6"><label>Status</label><div><span class="vx-b ${f.status==="Active"?"green":"amber"}">${f.status}</span></div></div>
         <div class="col-md-6"><label>Tested</label><div>${f.tested
@@ -636,7 +658,15 @@ function applyPublish(rec) {
   // matches savedFormulas on status === "Active", so this must stay "Active".
   const attached = attachedFormulas(rec);
   attached.forEach(f => f.status = "Active");
-  const prod = VX.products.find(p => p.name === rec.product);
+  // Trimmed, case-insensitive — a product's own name and the product string
+  // recorded on its version can drift in case (typed once by hand, imported
+  // once from an export) without being a different product. A strict ===
+  // here meant Publish silently never flipped the PRODUCT record to Active,
+  // so products.html kept showing "Draft" for a product whose version was,
+  // in fact, Published and actively rating quotes — the exact contradiction
+  // a reader has no way to resolve from the screen alone.
+  const normP = s => String(s || "").trim().toLowerCase();
+  const prod = VX.products.find(p => normP(p.name) === normP(rec.product));
   if (prod && !startsInFuture) { prod.version = rec.version; prod.status = "Active"; prod.updated = today; }
   return { startsInFuture, retired: retired.map(v => v.version), attachedCount: attached.length };
 }
@@ -751,8 +781,8 @@ const grid = vxAgGrid({ el:"#grid", key:"versions", name:"Rating Version", size:
       dependsOn:"product",clearOnChange:false,
       val:r=>attachedFormulas(r).map(f=>f.id),
       opts:formulaOpts,
-      empty:"No formulas exist for this product's line of business yet — build one in Formulas.",
-      hint:"A formula rates on the version it is attached to. Only formulas for this product's line of business are listed."},
+      empty:"No formulas exist for this product's coverage line yet — build one in Formulas.",
+      hint:"A formula rates on the version it is attached to. Only formulas for this product's coverage line are listed."},
     {k:"notes",l:"Notes",t:"textarea"}],
   filters:[{k:"status",l:"Status",opts:VVER_ORDER},{k:"lob",l:"LOB",opts:vxLobNames()}],
   extraView:[{k:"notes",l:"Notes"},{k:"createdOn",l:"Created On"}],
@@ -857,7 +887,5 @@ v.changes);
       }}], "modal-xl");
 }
 </script>
-<script src="assets/js/tooltip-dictionary.js"></script>
-<script src="assets/js/column-tooltips.js"></script>
 </body>
 </html>

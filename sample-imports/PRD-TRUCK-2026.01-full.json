@@ -18,7 +18,7 @@
     "productType": "Commercial Trucking",
     "lineOfBusiness": "Commercial Trucking",
     "carrier": "Sample Test Carrier",
-    "mga": ["Sample MGA"],
+    "mgu": ["Sample MGU"],
     "code": "COM-2026-901",
     "description": "Sample product export for testing tenant onboarding via Upload Configuration. Coverage tree, eligibility rules and factor names are real (mirrored from this platform's own Commercial Trucking seed data); this file's own product/carrier identity is a placeholder for import testing.",
     "jurisdictions": ["TX", "OK", "GA", "FL", "AZ"],

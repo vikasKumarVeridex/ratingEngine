@@ -38,8 +38,8 @@
      groups them. `actions` lists only what genuinely applies: you cannot
      "publish" a ZIP code, and pretending you can makes the matrix noise. */
   const RESOURCES = [
-    { g: "Configuration", k: "lobs",       l: "Lines of Business", actions: ["view", "create", "edit", "delete"] },
-    { g: "Configuration", k: "coverages",  l: "Coverages",         actions: ["view", "create", "edit", "delete"] },
+    { g: "Configuration", k: "lobs",       l: "Coverage Line",     actions: ["view", "create", "edit", "delete"] },
+    { g: "Configuration", k: "coverages",  l: "Class of Business", actions: ["view", "create", "edit", "delete"] },
     { g: "Configuration", k: "products",   l: "Products",          actions: ["view", "create", "edit", "delete", "publish"] },
     { g: "Configuration", k: "units",      l: "Unit Configuration", actions: ["view", "create", "edit", "delete"] },
     { g: "Configuration", k: "versions",   l: "Rating Versions",   actions: ["view", "create", "edit", "delete", "publish", "approve"] },
@@ -77,7 +77,7 @@
   const ATTRIBUTES = [
     { k: "tenantId",  l: "Tenant",          src: "record", type: "id",
       d: "The tenant partition the record belongs to." },
-    { k: "lob",       l: "Line of Business", src: "record", type: "list",
+    { k: "lob",       l: "Coverage",         src: "record", type: "list",
       d: "The LOB of the record being acted on." },
     { k: "state",     l: "State",           src: "record", type: "list",
       d: "The state a filing, rate or quote applies to." },

@@ -44,7 +44,7 @@
         detail: states.length ? `${states.length} state${states.length === 1 ? "" : "s"} licensed` : "No states selected",
         fix: "tenants.html", fixLabel: "Select states" },
 
-      { id: "lobs", required: true, label: "Lines of business",
+      { id: "lobs", required: true, label: "Coverage lines",
         why: "Which lines this tenant sells. Everything below is scoped to these.",
         done: lobs.length > 0,
         detail: lobs.length ? [...new Set(lobs.map(l => l.name))].join(", ") : "No lines enabled",

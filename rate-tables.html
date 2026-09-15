@@ -5,7 +5,7 @@
 <title>Rate Tables — Rating | VeriDex</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
-<link href="assets/css/app.css" rel="stylesheet">
+<link href="assets/css/app.css?v=20260912" rel="stylesheet">
 <style>
 .rtlist{max-height:calc(100vh - 250px);overflow-y:auto}
 .rtitem{border:1px solid var(--border);border-radius:9px;padding:8px 11px;margin-bottom:6px;cursor:pointer;transition:.12s;background:var(--surface)}
@@ -22,16 +22,19 @@ tr.neutral{background:var(--surface-2)}
 .rtmeta .k{font-size:9.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--text-mute);display:block;margin-bottom:3px}
 .rtmeta .v{font-size:12.5px;font-weight:600;line-height:1.35}
 </style>
+<link href="assets/css/workspace.css?v=20260912" rel="stylesheet">
+<script src="assets/js/tooltip-dictionary.js?v=20260912" defer></script>
+<script src="assets/js/ui-ux.js?v=20260912" defer></script>
 </head>
 <body><div id="vxApp"></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="assets/js/data.js"></script>
-<script src="assets/js/rate-data-full.js"></script>
-<script src="assets/js/rate-tables-registry.js"></script>
-<script src="assets/js/cosmos-model.js"></script>
-<script src="assets/js/tenant-setup.js"></script>
-<script src="assets/js/core.js"></script>
-<script src="assets/js/grid.js"></script>
+<script src="assets/js/data.js?v=20260912"></script>
+<script src="assets/js/rate-data-full.js?v=20260912"></script>
+<script src="assets/js/rate-tables-registry.js?v=20260912"></script>
+<script src="assets/js/cosmos-model.js?v=20260912"></script>
+<script src="assets/js/tenant-setup.js?v=20260912"></script>
+<script src="assets/js/core.js?v=20260912"></script>
+<script src="assets/js/grid.js?v=20260912"></script>
 <script>
 vxShell("Rate Tables", "The rate tables the engine reads when it calculates. || Every row, exactly as rated.",
   [{ l: "Products & Rating" }, { l: "Rate Tables" }]);
@@ -50,9 +53,9 @@ document.getElementById("vxBody").innerHTML = `
       <div class="col-lg-4">
         <div class="vx-card vx-anim">
           <h2>Rate Tables <span class="vx-b blue">${RATE_TABLES.length}</span></h2>
-          <div class="sub">Grouped by line of business</div>
+          <div class="sub">Grouped by coverage</div>
           <input class="form-control form-control-sm mb-2" id="rtq" placeholder="Search tables or factors...">
-          <select class="form-select form-select-sm mb-2" id="rtLob"><option value="">All Lines of Business</option></select>
+          <select class="form-select form-select-sm mb-2" id="rtLob"><option value="">All Coverages</option></select>
           <div class="rtlist" id="rtList"></div>
         </div>
       </div>
@@ -146,7 +149,7 @@ document.getElementById("rtq").oninput = e => renderList(e.target.value);
 /* LOB filter — the list otherwise groups every line's tables together with
    no way to isolate one, which gets unwieldy once several LOBs are on file. */
 const rtLobs = [...new Set(RATE_TABLES.map(t => t.lob))].sort();
-document.getElementById("rtLob").innerHTML = `<option value="">All Lines of Business</option>`
+document.getElementById("rtLob").innerHTML = `<option value="">All Coverages</option>`
   + rtLobs.map(l => `<option value="${l}">${l}</option>`).join("");
 document.getElementById("rtLob").onchange = () => renderList(document.getElementById("rtq").value);
 
@@ -171,7 +174,5 @@ if (deepLinked) {
   vxToast("Table selected", currentTable.name + " — opened from the factor you clicked", "ok");
 }
 </script>
-<script src="assets/js/tooltip-dictionary.js"></script>
-<script src="assets/js/column-tooltips.js"></script>
 </body>
 </html>
