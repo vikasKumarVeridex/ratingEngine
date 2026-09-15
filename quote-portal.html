@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" style="background-color:#1A1D23">
+<html lang="en" style="background-color:#1B2635">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sandbox Quote Generation — Main | VeriDex</title>
@@ -262,7 +262,7 @@ function coverageTree(lobName, color) {
         ${fields.length ? `<div class="sec"><div class="lbl">Limits &amp; Deductibles</div>
           <div class="row g-3">${fields.map(f => covFieldHtml(f[0], f[1], f[2], f[3])).join("")}</div></div>` : ""}
         <div class="sec"><div class="lbl">Classes of business included${g ? " — factor &amp; premium share" : ""}</div>
-          <table class="vx-t covkids"><tbody>
+          <table class="vx-t vdx-table covkids"><tbody>
             ${kids.map(k => {
               const on = st.kids.includes(k.id);
               const share = (g && on) ? g.subtotal * (k.factor || 0.1) / wt : null;
@@ -353,7 +353,7 @@ function vehicleSchedule() {
   return unitErrorBanner() + `<div class="grp"><h3><i class="fa-solid fa-truck-front" style="color:var(--cat-1)"></i>
       Vehicle Schedule <span class="vx-b blue">${S.v.vehicles.length} units</span>
       <button class="btn btn-primary btn-sm ms-auto" onclick="addVeh()"><i class="fa-solid fa-plus me-1"></i>Add Vehicle</button></h3>
-    <div class="bd"><div class="vx-tw"><table class="vx-t">
+    <div class="bd"><div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table">
       <thead><tr><th>#</th><th>Description</th><th>VIN</th><th>Vehicle Class</th><th>Model Yr</th><th>Value</th>
         <th>Trailers</th><th>Annual Miles</th><th>Garaged</th><th></th></tr></thead>
       <tbody>${S.v.vehicles.map((x, i) => `<tr>
@@ -486,7 +486,7 @@ function trailerSchedule() {
   return `<div class="grp"><h3><i class="fa-solid fa-trailer" style="color:var(--cat-1)"></i>
       Trailer Schedule <span class="vx-b blue">${S.v.trailers.length} trailer${S.v.trailers.length === 1 ? "" : "s"}</span>
       <button class="btn btn-primary btn-sm ms-auto" onclick="addTrl()"><i class="fa-solid fa-plus me-1"></i>Add Trailer</button></h3>
-    <div class="bd">${S.v.trailers.length ? `<div class="vx-tw"><table class="vx-t">
+    <div class="bd">${S.v.trailers.length ? `<div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table">
       <thead><tr><th>#</th><th>VIN</th><th>Trailer Type</th><th>Model Yr</th><th>Stated Value</th><th>Attached To</th><th></th></tr></thead>
       <tbody>${S.v.trailers.map((t, i) => `<tr>
         <td><b>${t.n}</b></td>
@@ -500,7 +500,7 @@ function trailerSchedule() {
           ${veh.map(v => `<option value="${v.n}" ${+v.n === +t.unit ? "selected" : ""}>Unit ${v.n}</option>`).join("")}</select></td>
         <td><button class="btn btn-outline-secondary btn-sm" onclick="delTrl(${i})"><i class="fa-solid fa-xmark"></i></button></td>
       </tr>`).join("")}</tbody></table></div>`
-      : `<div class="vx-empty" style="padding:18px"><i class="fa-solid fa-trailer"></i>No trailers scheduled. Tractors need one to rate a complete combination.</div>`}
+      : `<div class="vx-empty vdx-empty" style="padding:18px"><i class="fa-solid fa-trailer"></i>No trailers scheduled. Tractors need one to rate a complete combination.</div>`}
       <div style="font-size:11.5px;color:var(--text-mute);margin-top:7px">
         Each trailer is titled separately and carries its own VIN. Its type applies the Semitrailer Physical Damage
         factor to the unit it is attached to, and its stated value is added to that unit's APD basis.
@@ -535,7 +535,7 @@ function driverSchedule() {
       Driver Schedule <span class="vx-b blue">${S.v.drivers.length} drivers</span>
       ${surch ? `<span class="vx-b amber">${surch} surcharged</span>` : ""}
       <button class="btn btn-primary btn-sm ms-auto" onclick="addDrv()"><i class="fa-solid fa-plus me-1"></i>Add Driver</button></h3>
-    <div class="bd"><div class="vx-tw"><table class="vx-t">
+    <div class="bd"><div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table">
       <thead><tr><th>#</th><th>Driver Name</th><th>Age</th><th>Licence State</th><th>CDL Exp (yrs)</th>
         <th>Violations / Accidents (36 mo)</th><th>Violation Type</th><th>Violation Class</th><th>Class Factor</th><th></th></tr></thead>
       <tbody>${S.v.drivers.map((d, i) => {
@@ -588,7 +588,7 @@ function garagekeepersSchedule() {
       Garagekeepers' Insurance <span class="vx-b amber">${S.v.gkl.length} location${S.v.gkl.length === 1 ? "" : "s"}</span>
       <button class="btn btn-primary btn-sm ms-auto" onclick="addGkl()"><i class="fa-solid fa-plus me-1"></i>Add Location</button></h3>
     <div class="bd"><div class="sub" style="margin-top:-6px">Covers customer vehicles in the insured's care, custody and control — a repair shop or terminal, not the insured's own fleet.</div>
-    <div class="vx-tw"><table class="vx-t">
+    <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table">
       <thead><tr><th>#</th><th>State</th><th>Coverage</th><th>Max Limit</th><th>Collision</th><th>Comprehensive</th><th></th></tr></thead>
       <tbody>${S.v.gkl.map((x, i) => `<tr>
         <td><b>${x.n}</b></td>
@@ -629,7 +629,7 @@ function locationSchedule(scopeNote) {
       Locations <span class="vx-b blue">${S.v.locations.length} location${S.v.locations.length === 1 ? "" : "s"}</span>
       <button class="btn btn-primary btn-sm ms-auto" onclick="addLoc()"><i class="fa-solid fa-plus me-1"></i>Add Location</button></h3>
     <div class="bd">${scopeNote ? `<div class="sub" style="margin-top:-6px">${scopeNote}</div>` : ""}
-    <div class="vx-tw"><table class="vx-t">
+    <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table">
       <thead><tr><th>#</th><th>Address</th><th>City</th><th>State</th><th>ZIP</th><th></th></tr></thead>
       <tbody>${S.v.locations.map((x, i) => `<tr>
         <td><b>${x.n}</b></td>
@@ -672,7 +672,7 @@ function classCodeSchedule() {
       Class Codes <span class="vx-b blue">${S.v.glClassCodes.length} class${S.v.glClassCodes.length === 1 ? "" : "es"}</span>
       <button class="btn btn-primary btn-sm ms-auto" onclick="addClassCode()"><i class="fa-solid fa-plus me-1"></i>Add Class Code</button></h3>
     <div class="bd"><div class="sub" style="margin-top:-6px">Real submission field (gl_class_codes) is a schedule, not a single class. Premium below rates off the first row's class; total exposure is the sum of every row.</div>
-    <div class="vx-tw"><table class="vx-t">
+    <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table">
       <thead><tr><th>#</th><th>Class of Business</th><th>Exposure Basis</th><th>Exposure Amount ($)</th><th></th></tr></thead>
       <tbody>${S.v.glClassCodes.map((x, i) => `<tr>
         <td><b>${x.n}</b>${i === 0 ? ' <span class="vx-b green" style="font-size:9px">rates premium</span>' : ""}</td>
@@ -707,7 +707,7 @@ function wcExposureSchedule() {
       Exposures <span class="vx-b blue">${S.v.wcExposures.length} class${S.v.wcExposures.length === 1 ? "" : "es"}</span>
       <button class="btn btn-primary btn-sm ms-auto" onclick="addWcExposure()"><i class="fa-solid fa-plus me-1"></i>Add Class Code</button></h3>
     <div class="bd"><div class="sub" style="margin-top:-6px">Real submission field (wc_exposures_data_capture) — every row prices independently off its own class code and payroll; the premium below is the sum of every row, then Experience Mod and Schedule Credit apply once to the total.</div>
-    <div class="vx-tw"><table class="vx-t">
+    <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table">
       <thead><tr><th>#</th><th>Class Code</th><th>Payroll ($)</th><th>Rate / $100</th><th></th></tr></thead>
       <tbody>${S.v.wcExposures.map((x, i) => {
         const cls = VX.wcClassRates.find(c => c.classCode === x.classCode) || VX.wcClassRates[0];
@@ -878,7 +878,7 @@ function renderFactorChain() {
   if (!el) return;
 
   if (!S.res) {
-    el.innerHTML = `<div class="vx-empty" style="padding:26px"><i class="fa-solid fa-spinner fa-spin"></i>
+    el.innerHTML = `<div class="vx-empty vdx-empty" style="padding:26px"><i class="fa-solid fa-spinner fa-spin"></i>
       Rating this risk to resolve its factors…</div>`;
     if (!_factorChainPending) {
       _factorChainPending = true;
@@ -910,7 +910,7 @@ function renderFactorChain() {
         <span style="margin-left:auto;font-weight:600">${vxMoney(g.subtotal)}</span>
       </div>
       <div class="fx-body" style="display:${open ? "" : "none"};padding:11px 13px">
-      <div class="vx-tw"><table class="vx-t">
+      <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table">
         <thead><tr><th>Rating factor</th><th>Driven by</th><th>Your answer</th><th>Matched rule</th>
           <th style="text-align:right">Applied</th><th style="text-align:right">Default</th><th style="text-align:right">Effect</th></tr></thead>
         <tbody>${(g.factors || []).map(f => {
@@ -1055,7 +1055,7 @@ function questionsInner() {
     return `<div class="grp"><h3><i class="fa-solid fa-box" style="color:var(--cat-4)"></i>
         Commodities Hauled <span class="vx-b blue">${S.v.cargoCommodities.length} selected</span></h3>
       <div class="bd"><div class="sub" style="margin-top:-6px">Check every commodity this fleet hauls. A mix rates the whole Cargo charge off the single highest classification factor among coverable commodities selected — see the Cargo tab on the Premium page for the breakdown.</div>
-      <div class="vx-tw" style="max-height:280px;overflow:auto"><table class="vx-t">
+      <div class="vx-tw vdx-table-wrapper" style="max-height:280px;overflow:auto"><table class="vx-t vdx-table">
         <thead><tr><th></th><th>Commodity</th><th>Max Value ($)</th><th>Avg Value ($)</th><th>% of Load</th></tr></thead>
         <tbody>${VX.truckCargoCommodities.map(c => {
           const row = S.v.cargoCommodities.find(x => x.code === c.code);
@@ -1131,13 +1131,13 @@ function questionsInner() {
         <div class="bd"><div class="sub" style="margin-top:-6px">Auto Liability and Physical Damage each compute their own Account-Level Factor from these answers, clamped 0.85×&ndash;1.50× — separately, not one shared value. <span class="hintdot" title="Each is a banded selection in the source rater, not a free number. &quot;No Inspections&quot; and &quot;No Loss Data&quot; are real answers, not zero.">Banded, not free-form.</span></div>
         <div class="row g-3">
         ${sel("yearsInBusiness","Years in Business",VX.truckAcctBizExp.map(b=>[b.yearsInBusiness,String(b.yearsInBusiness)]),5,"A New Venture also forfeits the safety, out-of-service and loss-frequency credits below.")}
-        ${sel("carrierSafetyRating","FMCSA Carrier Safety Rating",["Satisfactory","None","Conditional","Unsatisfactory"],"Satisfactory","Unsatisfactory is a hard decline, not just a debit.")}
+        ${sel("carrierSafetyRating","FMCSA Safety Rating",["Satisfactory","None","Conditional","Unsatisfactory"],"Satisfactory","Unsatisfactory is a hard decline, not just a debit.")}
         ${sel("fmcsaAlerts","FMCSA Alerts on File",[[0,"0"],[1,"1"],[2,"2"],[3,"3"],["4+","4+"]],0,"Open compliance alerts from the FMCSA SAFER system.")}
-        ${sel("oosVehiclesBand","Vehicle Out-of-Service Rate",VX.truckAcctOOS.vehicles.map(b=>[b.band,b.band]),"<=10%","As a share of roadside vehicle inspections.")}
-        ${sel("oosDriversBand","Driver Out-of-Service Rate",VX.truckAcctOOS.drivers.map(b=>[b.band,b.band]),"<=4%","Driver bands are tighter than vehicle bands.")}
-        ${sel("lossFreqBand","Loss Frequency, Trailing 3yr",VX.truckAcctLossFreqBands.map(b=>[b,b]),">24% and <=26%","Credit and debit both scale with fleet size — the same band is worth more on a large fleet.")}
+        ${sel("oosVehiclesBand","Vehicle OOS Rate",VX.truckAcctOOS.vehicles.map(b=>[b.band,b.band]),"<=10%","Vehicle out-of-service rate, as a share of roadside vehicle inspections.")}
+        ${sel("oosDriversBand","Driver OOS Rate",VX.truckAcctOOS.drivers.map(b=>[b.band,b.band]),"<=4%","Driver out-of-service rate. Driver bands are tighter than vehicle bands.")}
+        ${sel("lossFreqBand","Loss Frequency (3yr)",VX.truckAcctLossFreqBands.map(b=>[b,b]),">24% and <=26%","Trailing 3-year loss frequency. Credit and debit both scale with fleet size — the same band is worth more on a large fleet.")}
         ${sel("iccFiling","Requires ICC Filing?",[["yes","Yes"],["no","No"]],"yes","For-hire carriers generally require this; not requiring it earns a credit.")}
-        ${sel("driverCriteria1Year","Driver Criteria — 1-Year Threshold Breached?",[["no","No"],["yes","Yes"]],"no","A flat +15% on BOTH Liability and Physical Damage when any rated driver breaches the filed 1-year criteria.")}
+        ${sel("driverCriteria1Year","Driver Criteria Breached?",[["no","No"],["yes","Yes"]],"no","A flat +15% on BOTH Liability and Physical Damage when any rated driver breaches the filed 1-year criteria.")}
         ${sel("broadenedPollution","Broadened Pollution Form?",[["no","No"],["yes","Yes"]],"no","A flat +10% on Liability only — Physical Damage does not carry this term in the real rater.")}
         ${sel("defenseAddback","Defense Cost Addback?",[["no","No"],["yes","Yes"]],"no","A flat +10% on Liability only — same as Broadened Pollution, not applied to Physical Damage.")}
       </div>
@@ -1434,10 +1434,15 @@ function renderQuoteContext() {
   if (prodSel && prods.length) prodSel.onchange = () => { S.product = prodSel.value; saveQuoteState(); render(); };
 }
 
+/* NAV-004 step semantics on a widget that's also click-to-jump tab
+   navigation (any step is reachable regardless of completion, so it isn't a
+   strict linear stepper) — role="list" + aria-current="step" carry the
+   progress meaning without adopting .vdx-stepper's bare-circle layout,
+   which is sized for a standalone indicator, not a compact icon+label pill. */
 function tabBar() {
-  return `<div class="vx-qtabs">${TABS.map((t, i) => {
+  return `<div class="vx-qtabs" role="list" aria-label="Quote sections">${TABS.map((t, i) => {
     const cur = t.k === S.tab, done = !cur && tabComplete(t.k);
-    return `<button class="vx-qtab ${cur ? "cur" : done ? "done" : ""}" data-tab="${t.k}">
+    return `<button class="vx-qtab ${cur ? "cur" : done ? "done" : ""}" data-tab="${t.k}" role="listitem"${cur ? ' aria-current="step"' : ""}>
       <span class="n">${done ? '<i class="fa-solid fa-check"></i>' : i + 1}</span>
       <span class="l"><i class="fa-solid ${t.i} me-1"></i>${t.n}</span></button>`;
   }).join("")}</div>`;
@@ -1452,7 +1457,7 @@ function render() {
   if (!TABS.some(t => t.k === S.tab)) S.tab = "cov";
   const body = {
     insured: () => `
-      <div class="vx-card vx-anim">
+      <div class="vx-card vdx-card vx-anim">
         <h2>Insured &amp; Location</h2>
         <div class="sub">Who is being insured, and where the risk sits. The county determines local tax on top of the state rate.</div>
         <div class="row g-3">
@@ -1485,31 +1490,31 @@ function render() {
           <div class="col-md-4"><label>Broker Phone</label><input type="tel" class="form-control form-control-sm F" data-k="brokerPhone" value="${S.v.brokerPhone || ""}"></div>
         </div></div></div>`,
     risk: () => `
-      <div class="vx-card vx-anim">
+      <div class="vx-card vdx-card vx-anim">
         <h2>${L.n} — Risk Details</h2>
         <div class="sub">Only the questions this product needs. Every answer feeds a rating factor.</div>
         ${questions("det")}
       </div>`,
     cov: () => `
-      <div class="vx-card vx-anim">
+      <div class="vx-card vdx-card vx-anim">
         <h2>Coverage Selection</h2>
         <div class="sub">Pick the primary coverages to quote — each one reveals the child coverages it carries.</div>
         ${questions("cov")}
       </div>`,
     vehicles: () => `
-      <div class="vx-card vx-anim">
+      <div class="vx-card vdx-card vx-anim">
         <h2>Vehicles &amp; Drivers</h2>
         <div class="sub">The scheduled units and drivers on this account. Each unit rates on its own class, value and garaging, so the schedule drives premium directly.</div>
       </div>
       ${questions("vehicles")}`,
     commodities: () => `
-      <div class="vx-card vx-anim">
+      <div class="vx-card vdx-card vx-anim">
         <h2>Commodities Hauled</h2>
         <div class="sub">What this fleet actually carries. The Cargo charge rates off the single highest classification factor among the coverable commodities selected, so the mix matters — not just the limit.</div>
       </div>
       ${questions("commodities")}`,
     factors: () => `
-      <div class="vx-card vx-anim">
+      <div class="vx-card vdx-card vx-anim">
         <div class="vx-card-head">
           <div><h2>Rating Factors</h2>
           <div class="sub">Every factor the engine applies to this risk — what drove it, the rule it matched,
@@ -1521,7 +1526,7 @@ function render() {
         </div>
         <div id="factorChain"></div>
       </div>
-      <div class="vx-card vx-anim" id="acctCard" style="display:none;padding:0;overflow:hidden">
+      <div class="vx-card vdx-card vx-anim" id="acctCard" style="display:none;padding:0;overflow:hidden">
         <div onclick="toggleAcctSection()" style="display:flex;align-items:center;gap:8px;padding:13px 16px;
           cursor:pointer;background:var(--surface-2)">
           <i class="fa-solid fa-chevron-right" data-acctchev style="font-size:10px;color:var(--text-mute);width:11px"></i>
@@ -1552,7 +1557,7 @@ function render() {
         </div>
       </div>
       <div class="col-lg-4"><div id="side">
-        <div class="vx-card vx-anim"><div class="vx-empty"><i class="fa-solid fa-calculator"></i>
+        <div class="vx-card vdx-card vx-anim"><div class="vx-empty vdx-empty"><i class="fa-solid fa-calculator"></i>
           ${S.res ? "" : "Complete the tabs and calculate to see the premium and how it was built up."}</div></div>
       </div></div>
     </div>`;
@@ -1588,7 +1593,7 @@ function render() {
 
   if (S.tab === "premium" && !S.res) {
     document.getElementById("premiumPane").innerHTML = `
-      <div class="vx-card vx-anim"><div class="vx-empty"><i class="fa-solid fa-calculator"></i>
+      <div class="vx-card vdx-card vx-anim"><div class="vx-empty vdx-empty"><i class="fa-solid fa-calculator"></i>
         Nothing calculated yet — press <b>Calculate Premium</b> to rate this risk and see every factor that was applied.</div></div>`;
   }
   /* A result goes stale the moment any answer changes. Landing on Premium (or
@@ -1855,7 +1860,7 @@ function creditsNotAppliedRow(r) {
       ${undet.length ? `<span class="vx-b amber" style="margin-inline-start:4px">${undet.length} undetermined</span>` : ""}</td>
       <td style="text-align:right;color:var(--text-mute)">—</td></tr>
     <tr class="vx-exp-body" id="expnocred"><td colspan="2" style="padding:0">
-      <table class="vx-t" style="margin:0">${rows}</table></td></tr>`;
+      <table class="vx-t vdx-table" style="margin:0">${rows}</table></td></tr>`;
 }
 
 function childRows(g, r) {
@@ -1926,7 +1931,7 @@ function calculationWalkthrough(r) {
       ${s.failed ? `<div style="font-size:11.2px;color:var(--warn);margin-top:5px"><b>${s.error}</b> — the quote completed on the default chain instead.</div>` : ""}
       ${s.vars.length ? `<details style="margin-top:6px">
         <summary style="font-size:11.2px;color:var(--text-mute);cursor:pointer">${s.vars.length} values used</summary>
-        <div class="vx-tw" style="max-height:220px;overflow:auto;margin-top:5px"><table class="vx-t" style="font-size:11.4px">
+        <div class="vx-tw vdx-table-wrapper" style="max-height:220px;overflow:auto;margin-top:5px"><table class="vx-t vdx-table" style="font-size:11.4px">
           <tbody>${s.vars.map(v => `<tr><td>${v.name}</td>
             <td style="text-align:right;font-variant-numeric:tabular-nums">${num(v.value)}</td></tr>`).join("")}</tbody>
         </table></div></details>` : ""}
@@ -1934,7 +1939,7 @@ function calculationWalkthrough(r) {
   };
 
   const failed = (r.formulaFailures || []).length;
-  return `<div class="vx-card vx-anim">
+  return `<div class="vx-card vdx-card vx-anim">
     <div class="vx-card-head">
       <div><h2>Calculation performed</h2>
         <div class="sub">Every formula the engine evaluated for this quote, in order, with the real values substituted.</div></div>
@@ -2019,7 +2024,7 @@ function tracePanel(r) {
   const ups = moved.filter(t => t.impact > 0).reduce((a, t) => a + t.impact, 0);
   const downs = moved.filter(t => t.impact < 0).reduce((a, t) => a + t.impact, 0);
   return `
-    <div class="vx-tw"><table class="vx-t">
+    <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table">
         <thead><tr><th>Factor</th><th>Driven by</th><th style="text-align:right">Default → Applied</th><th style="text-align:right">Impact</th></tr></thead>
         <tbody>${moved.map(t => `<tr>
           <td><b style="font-size:12px">${t.label}</b>
@@ -2047,7 +2052,7 @@ function moversStrip(r) {
   const ups = all.filter(t => t.impact > 0).reduce((a, t) => a + t.impact, 0);
   const downs = all.filter(t => t.impact < 0).reduce((a, t) => a + t.impact, 0);
   return `
-    <div class="vx-card vx-anim vx-anim-d2" style="padding:12px 16px">
+    <div class="vx-card vdx-card vx-anim vx-anim-d2" style="padding:12px 16px">
       <div class="d-flex align-items-center gap-2 flex-wrap" style="font-size:11.8px">
         <b style="font-size:13px">What moved this premium</b>
         <span class="fimp up">+${vxMoney(ups)} added</span>
@@ -2082,11 +2087,11 @@ function eligBanner() {
   if (!el || (!el.declines.length && !el.refers.length)) return "";
   const line = (e, icon) => `<div style="margin-top:4px"><i class="fa-solid ${icon} me-1"></i><b>${e.rule.name}</b> — ${e.reason}</div>`;
   return `
-    ${el.declines.length ? `<div class="vx-card vx-anim mb-2" style="border:1px solid var(--bad);background:rgba(210,69,69,.08);padding:12px 14px;font-size:12.3px;line-height:1.5">
+    ${el.declines.length ? `<div class="vx-card vdx-card vx-anim mb-2" style="border:1px solid var(--bad);background:rgba(210,69,69,.08);padding:12px 14px;font-size:12.3px;line-height:1.5">
       <span class="vx-b red"><i class="fa-solid fa-ban me-1"></i>Ineligible — cannot quote</span>
       ${el.declines.map(e => line(e, "fa-circle-xmark")).join("")}
     </div>` : ""}
-    ${el.refers.length ? `<div class="vx-card vx-anim mb-2" style="border:1px solid var(--warn);background:rgba(198,137,15,.08);padding:12px 14px;font-size:12.3px;line-height:1.5">
+    ${el.refers.length ? `<div class="vx-card vdx-card vx-anim mb-2" style="border:1px solid var(--warn);background:rgba(198,137,15,.08);padding:12px 14px;font-size:12.3px;line-height:1.5">
       <span class="vx-b amber"><i class="fa-solid fa-triangle-exclamation me-1"></i>Refers to underwriter</span>
       ${el.refers.map(e => line(e, "fa-flag")).join("")}
     </div>` : ""}`;
@@ -2139,9 +2144,9 @@ function truckPremiumSummary(r) {
   return `
   <div class="row g-3 mb-3">
     <div class="col-lg-6">
-      <div class="vx-card vx-anim">
+      <div class="vx-card vdx-card vx-anim">
         <h2 style="font-size:14px;margin-bottom:8px">Premium Breakdown</h2>
-        <table class="vx-t pt" style="margin:0">
+        <table class="vx-t vdx-table pt" style="margin:0">
           <tbody>
             ${r.groups.map(g => `<tr><td>Total ${g.name} Premium</td><td class="pt-num">${money(g.subtotal)}</td></tr>`).join("")}
             <tr class="pt-total"><td><b>Estimated Advance Premium</b></td><td class="pt-num"><b>${money(advancePremium)}</b></td></tr>
@@ -2155,9 +2160,9 @@ function truckPremiumSummary(r) {
       </div>
     </div>
     <div class="col-lg-6">
-      <div class="vx-card vx-anim">
+      <div class="vx-card vdx-card vx-anim">
         <h2 style="font-size:14px;margin-bottom:8px">Loss Ratio &amp; Rates</h2>
-        <table class="vx-t pt" style="margin:0">
+        <table class="vx-t vdx-table pt" style="margin:0">
           <thead><tr><th></th><th class="pt-num">AL</th><th class="pt-num">Cargo</th></tr></thead>
           <tbody>
             <tr><td>3-Year Loss Ratio</td><td class="pt-num">${pctOrNA(r.lossRatio3yr)}</td><td class="pt-num">N/A</td></tr>
@@ -2171,9 +2176,9 @@ function truckPremiumSummary(r) {
 
   <div class="row g-3 mb-3">
     <div class="col-lg-6">
-      <div class="vx-card vx-anim">
+      <div class="vx-card vdx-card vx-anim">
         <h2 style="font-size:14px;margin-bottom:8px"><i class="fa-solid fa-truck me-1"></i>Vehicle Type</h2>
-        <table class="vx-t pt" style="margin:0">
+        <table class="vx-t vdx-table pt" style="margin:0">
           <thead><tr><th>Vehicle Type</th><th class="pt-num">Units</th><th class="pt-num">PPU</th></tr></thead>
           <tbody>${vt.map(v => `<tr><td>${v.type}</td><td class="pt-num">${v.units}</td><td class="pt-num">${v.units && v.premium ? money(v.ppu) : "N/A"}</td></tr>`).join("")}
             <tr class="pt-total"><td><b>Total Units</b></td><td class="pt-num"><b>${r.units}</b></td><td></td></tr>
@@ -2182,9 +2187,9 @@ function truckPremiumSummary(r) {
       </div>
     </div>
     <div class="col-lg-6">
-      <div class="vx-card vx-anim">
+      <div class="vx-card vdx-card vx-anim">
         <h2 style="font-size:14px;margin-bottom:8px"><i class="fa-solid fa-users me-1"></i>Driver Info</h2>
-        <table class="vx-t pt" style="margin:0">
+        <table class="vx-t vdx-table pt" style="margin:0">
           <tbody>
             <tr><td>Risk State (${r.state})</td><td class="pt-num">${ds.riskState || 0}</td></tr>
             <tr><td>New York</td><td class="pt-num">${ds.ny || 0}</td></tr>
@@ -2226,14 +2231,14 @@ function truckFactorTabs(r) {
   // separately-clamped Account-Level Factor now (see engine.js); shown as
   // two tables rather than one so it's visible they can genuinely differ.
   const acctTable = (title, lines, value) => `<div class="sub" style="margin-top:10px">${title}</div>
-      <div class="vx-tw"><table class="vx-t pt" style="min-width:900px">
+      <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table pt" style="min-width:900px">
       <thead><tr>${lines.map(([n]) => `<th>${n}</th>`).join("")}<th>Account-Level Factor</th></tr></thead>
       <tbody><tr>${lines.map(([, v]) => `<td class="pt-num">${f2(v)}</td>`).join("")}<td class="pt-num"><b>${f3(value)}\u00d7</b></td></tr></tbody>
       </table></div>`;
   const acctPanel = () => {
     const liabLines = r.accountFactorLines || [];
     const pdLines = r.pdAccountFactorLines || [];
-    if (!liabLines.length && !pdLines.length) return `<div class="vx-empty" style="padding:20px"><i class="fa-solid fa-sliders"></i>No account-level factor applies to this coverage.</div>`;
+    if (!liabLines.length && !pdLines.length) return `<div class="vx-empty vdx-empty" style="padding:20px"><i class="fa-solid fa-sliders"></i>No account-level factor applies to this coverage.</div>`;
     return `<div class="sub">One policy-level credit/debit set per coverage, applied to every unit.</div>
       ${liabLines.length ? acctTable("Auto Liability \u2014 Account-Level Factor", liabLines, r.accountFactor) : ""}
       ${pdLines.length ? acctTable("Physical Damage \u2014 Account-Level Factor", pdLines, r.pdAccountFactor) : ""}`;
@@ -2244,7 +2249,7 @@ function truckFactorTabs(r) {
     const pv = (r.perVehicle || []).filter(v => v.covLiab !== false);
     if (!pv.length) return groupPanel("Auto Liability");
     return `<div class="sub">${pv.length} unit${pv.length === 1 ? "" : "s"} \u2014 each rated on its own class, age and value, then summed.</div>
-      <div class="vx-tw"><table class="vx-t pt" style="min-width:1040px">
+      <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table pt" style="min-width:1040px">
       <thead><tr><th>#</th><th>Class</th><th>Model Yr</th><th class="pt-num">Value</th><th class="pt-num">Primary</th><th class="pt-num">Age</th>
         <th class="pt-num">Fleet</th><th class="pt-num">OCN</th><th class="pt-num">Secondary</th><th class="pt-num">Miles</th><th class="pt-num">Liability Premium</th></tr></thead>
       <tbody>${pv.map(v => `<tr><td>${v.n}</td><td>${v.primDesc}</td><td>${v.year}</td><td class="pt-num">${money(v.value)}</td>
@@ -2262,7 +2267,7 @@ function truckFactorTabs(r) {
     const pv = (r.perVehicle || []).filter(v => v.covApd !== false && (+v.apd || 0) > 0);
     if (!pv.length) return groupPanel("Physical Damage");
     return `<div class="sub">${pv.length} unit${pv.length === 1 ? "" : "s"} \u2014 rated on stated value and trailer attachment.</div>
-      <div class="vx-tw"><table class="vx-t pt" style="min-width:940px">
+      <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table pt" style="min-width:940px">
       <thead><tr><th>#</th><th>Class</th><th>Model Yr</th><th class="pt-num">Stated Value</th><th class="pt-num">TIV</th>
         <th class="pt-num">Trailer</th><th class="pt-num">Miles</th><th>Radius</th><th class="pt-num">Phys. Damage Premium</th></tr></thead>
       <tbody>${pv.map(v => `<tr><td>${v.n}</td><td>${v.primDesc}</td><td>${v.year}</td>
@@ -2278,7 +2283,7 @@ function truckFactorTabs(r) {
     const cb = r.cargoBreakdown;
     if (!cb) return groupPanel("Cargo");
     return `<div class="sub">Cargo rates off the single highest classification factor among the commodities carried.</div>
-      <div class="vx-tw"><table class="vx-t pt" style="min-width:900px">
+      <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table pt" style="min-width:900px">
       <thead><tr><th>Commodity</th><th class="pt-num">Base Rate</th><th class="pt-num">Load Factor</th><th class="pt-num">Refer Basic Load</th>
         <th class="pt-num">Classification Factor</th><th class="pt-num">Hazardous Mod</th><th class="pt-num">Total Basic Charge</th></tr></thead>
       <tbody>${cb.rows.map(row => `<tr>
@@ -2289,7 +2294,7 @@ function truckFactorTabs(r) {
       <tfoot><tr class="pt-total"><td colspan="6">Loss Cost Factor</td><td class="pt-num">${cb.lossCostFactor}</td></tr></tfoot>
       </table></div>
       <h3 style="font-size:12px;font-weight:600;margin:16px 0 6px">Commodity detail</h3>
-      <div class="vx-tw"><table class="vx-t pt">
+      <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table pt">
       <thead><tr><th>#</th><th>Commodity ID</th><th>Commodity</th><th class="pt-num">Load %</th><th class="pt-num">Classification Factor</th><th class="pt-num">Factor</th></tr></thead>
       <tbody>${cb.rows.map((row, i) => `<tr>
         <td>${i + 1}</td><td>${row.commodity.classificationNumber}</td><td>${row.commodity.label}</td>
@@ -2303,11 +2308,11 @@ function truckFactorTabs(r) {
      blank one. */
   function groupPanel(name) {
     let g = (r.groups || []).find(x => x.name === name);
-    if (!g) return `<div class="vx-empty" style="padding:20px"><i class="fa-solid fa-shield-halved"></i>${name} is not selected on this quote.</div>`;
+    if (!g) return `<div class="vx-empty vdx-empty" style="padding:20px"><i class="fa-solid fa-shield-halved"></i>${name} is not selected on this quote.</div>`;
     const fs = g.factors || [];
-    if (!fs.length) return `<div class="vx-empty" style="padding:20px"><i class="fa-solid fa-shield-halved"></i>${name} carries no itemised factors \u2014 subtotal ${money(g.subtotal)}.</div>`;
+    if (!fs.length) return `<div class="vx-empty vdx-empty" style="padding:20px"><i class="fa-solid fa-shield-halved"></i>${name} carries no itemised factors \u2014 subtotal ${money(g.subtotal)}.</div>`;
     return `<div class="sub">${fs.length} factor${fs.length === 1 ? "" : "s"} applied \u2014 subtotal ${money(g.subtotal)}.</div>
-      <div class="vx-tw"><table class="vx-t pt" style="min-width:820px">
+      <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table pt" style="min-width:820px">
       <thead><tr><th>Factor</th><th>Driven by</th><th>Matched</th><th class="pt-num">Applied</th><th class="pt-num">Base</th></tr></thead>
       <tbody>${fs.map(x => `<tr>
         <td class="pt-f">${x.label}${x.varies ? ' <span class="vx-b amber" style="font-size:9px">per unit</span>' : ""}</td>
@@ -2326,7 +2331,7 @@ function truckFactorTabs(r) {
     return groupPanel(name);
   };
 
-  return `<div class="vx-card vx-anim">
+  return `<div class="vx-card vdx-card vx-anim">
     <ul class="nav nav-tabs" style="border-bottom:1px solid var(--border)">
       ${TABS_F.map(t => `<li class="nav-item"><a class="nav-link ${t === cur ? "active" : ""}" href="#" data-truck-tab="${t}" style="font-size:12.3px">${t}</a></li>`).join("")}
     </ul>
@@ -2360,12 +2365,12 @@ function premiumTable(r) {
 
   const line = (lbl, val, cls) => `<tr class="pt-total ${cls || ""}"><td colspan="6">${lbl}</td><td class="pt-num">${val}</td></tr>`;
   return `
-    <div class="vx-card vx-anim">
+    <div class="vx-card vdx-card vx-anim">
       <div class="vx-card-head"><div>
         <h2>How this premium was calculated</h2>
         <div class="sub">Every rating factor applied to this risk, the answer that selected it, and what it did to the premium.</div>
       </div></div>
-      <div class="vx-tw"><table class="vx-t pt">
+      <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table pt">
         <thead><tr>
           <th>Rating factor</th><th>Input value</th><th>Matched rule</th>
           <th class="pt-num">Applied</th><th class="pt-num">Default</th><th class="pt-num">Adjustment</th><th class="pt-num">Premium</th>
@@ -2410,7 +2415,7 @@ function paint() {
 
   document.getElementById("side").innerHTML = `
     ${eligBanner()}
-    <div class="vx-card vx-anim" style="text-align:center;background:linear-gradient(155deg,var(--primary-soft),rgba(14,165,183,.05))">
+    <div class="vx-card vdx-card vx-anim" style="text-align:center;background:linear-gradient(155deg,var(--primary-soft),rgba(14,165,183,.05))">
       <div style="font-size:11px;color:var(--text-mute);font-weight:650;text-transform:uppercase;letter-spacing:.04em">Annual Premium</div>
       <div style="font-size:34px;font-weight:800;margin:5px 0;letter-spacing:-.02em">${vxMoney(r.finalPremium)}</div>
       <div style="font-size:12px;color:var(--text-dim)">${r.lob} · ${r.state}${county ? " · " + county : ""}</div>
@@ -2420,9 +2425,9 @@ function paint() {
     </div>
 
     ${S.tab === "factors" ? "" : `
-    <div class="vx-card vx-anim vx-anim-d1">
+    <div class="vx-card vdx-card vx-anim vx-anim-d1">
       <h2>How this premium was built</h2><div class="sub">Click a coverage to see its factors</div>
-      <div class="vx-tw"><table class="vx-t"><tbody>
+      <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table"><tbody>
         ${r.groups.map((g, i) => `
           <tr class="vx-exp" data-x="${i}" style="cursor:pointer">
             <td><i class="fa-solid fa-chevron-right me-2" style="font-size:9px;transition:.2s" id="chev${i}"></i>
@@ -2430,7 +2435,7 @@ function paint() {
               ${ratedByBadge(g.ratedBy)}</td>
             <td style="text-align:right"><b>${vxMoney(g.subtotal)}</b></td></tr>
           <tr class="vx-exp-body" id="exp${i}"><td colspan="2" style="padding:0">
-            <table class="vx-t" style="margin:0">
+            <table class="vx-t vdx-table" style="margin:0">
               ${childRows(g, r)}
               <tr><td colspan="2" style="padding:5px 12px 4px 30px;font-size:9.5px;font-weight:800;letter-spacing:.05em;
                 text-transform:uppercase;color:var(--text-mute)">Factor chain — click any row to see where its value came from</td></tr>
@@ -2446,7 +2451,7 @@ function paint() {
         <tr class="vx-exp" data-x="fees" style="cursor:pointer"><td>
           <i class="fa-solid fa-chevron-right me-2" style="font-size:9px;transition:.2s" id="chevfees"></i>Fees</td>
           <td style="text-align:right">+${vxMoney(r.fees)}</td></tr>
-        <tr class="vx-exp-body" id="expfees"><td colspan="2" style="padding:0"><table class="vx-t" style="margin:0">
+        <tr class="vx-exp-body" id="expfees"><td colspan="2" style="padding:0"><table class="vx-t vdx-table" style="margin:0">
           ${(r.feeLines || []).map(f => `<tr>
             <td style="padding-left:32px;font-size:12.1px;color:var(--text-dim)">${f.name}
               ${f.valueType === "Percent"
@@ -2467,9 +2472,9 @@ function paint() {
       </tbody></table></div>
     </div>`}
 
-    ${r.perVehicle ? `<div class="vx-card vx-anim vx-anim-d2">
+    ${r.perVehicle ? `<div class="vx-card vdx-card vx-anim vx-anim-d2">
       <h2>Premium by Vehicle</h2><div class="sub">${r.perVehicle.length} units — each rated separately, then summed</div>
-      <div class="vx-tw"><table class="vx-t">
+      <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table">
         <thead><tr><th>#</th><th>Unit</th><th>Trailer</th><th>Liability</th><th>Phys Dam</th><th>Total</th></tr></thead>
         <tbody>${r.perVehicle.map(v => `<tr>
           <td><b>${v.n}</b></td>
@@ -2479,9 +2484,9 @@ function paint() {
           <td>${vxMoney(v.liab)}</td><td>${vxMoney(v.apd)}</td><td><b>${vxMoney(v.total)}</b></td></tr>`).join("")}
         </tbody></table></div></div>` : ""}
 
-    ${r.perDriver ? `<div class="vx-card vx-anim vx-anim-d2">
+    ${r.perDriver ? `<div class="vx-card vdx-card vx-anim vx-anim-d2">
       <h2>Drivers</h2><div class="sub">Worst-rated driver sets the policy driver factor (${r.driverFactor.toFixed(3)}×)</div>
-      <div class="vx-tw"><table class="vx-t">
+      <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table">
         <thead><tr><th>Driver</th><th>Age</th><th>CDL</th><th>Viol.</th><th>Class</th><th>Net Factor</th></tr></thead>
         <tbody>${r.perDriver.map((d, k) => `<tr ${k === 0 ? 'style="background:var(--primary-soft)"' : ""}>
           <td style="font-size:12.1px">${d.name}${k === 0 ? ' <span class="vx-b blue">rating driver</span>' : ""}</td>
@@ -2496,7 +2501,7 @@ function paint() {
 
     ${moversStrip(r)}
 
-    <div class="vx-card vx-anim vx-anim-d2">
+    <div class="vx-card vdx-card vx-anim vx-anim-d2">
       <h2><i class="fa-solid fa-wand-magic-sparkles me-2" style="color:var(--purple)"></i>Why this price?</h2>
       <div class="vx-ai">
         <p style="margin:0 0 8px">${ex.summary}</p>
@@ -2546,7 +2551,7 @@ function issue() {
     </div>
 
     <h6 style="font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--text-mute);margin-bottom:7px">Coverage Breakdown</h6>
-    <div class="vx-tw mb-3"><table class="vx-t" style="margin:0">
+    <div class="vx-tw vdx-table-wrapper mb-3"><table class="vx-t vdx-table" style="margin:0">
       ${r.groups.map(g => `<tr><td><i class="fa-solid ${g.icon} me-1" style="color:${g.color}"></i>${g.name}</td>
         <td style="text-align:right"><b>${vxMoney(g.subtotal)}</b></td></tr>`).join("")}
       <tr><td>Coverage Premium</td><td style="text-align:right">${vxMoney(r.coveragePremium)}</td></tr>

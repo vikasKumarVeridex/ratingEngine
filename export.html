@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" style="background-color:#1A1D23">
+<html lang="en" style="background-color:#1B2635">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Export Configuration — Administration | VeriDex</title>
@@ -39,7 +39,7 @@ const MODULES = [
 document.getElementById("vxBody").innerHTML = `
 <div class="row g-3">
   <div class="col-lg-8">
-    <div class="vx-card vx-anim">
+    <div class="vx-card vdx-card vx-anim">
       <div class="vx-card-head"><div><h2>Select Modules to Export</h2><div class="sub">Choose one or more configuration modules</div></div>
         <div class="d-flex gap-2"><button class="btn btn-outline-secondary btn-sm" onclick="all(true)">Select All</button>
         <button class="btn btn-outline-secondary btn-sm" onclick="all(false)">Clear</button></div></div>
@@ -52,7 +52,7 @@ document.getElementById("vxBody").innerHTML = `
   </div>
 
   <div class="col-lg-4">
-    <div class="vx-card vx-anim">
+    <div class="vx-card vdx-card vx-anim">
       <h2>Export Options</h2>
       <div class="mb-3"><label>Format</label><select class="form-select form-select-sm" id="fmt">
         <option>CSV (one file per module)</option><option>XLSX (multi-sheet workbook)</option>
@@ -72,7 +72,7 @@ document.getElementById("vxBody").innerHTML = `
       <button class="btn btn-primary w-100" onclick="run()"><i class="fa-solid fa-file-export me-1"></i>Generate Export</button>
       <div id="out" class="mt-3"></div>
     </div>
-    <div class="vx-card vx-anim vx-anim-d1">
+    <div class="vx-card vdx-card vx-anim vx-anim-d1">
       <h2>Recent Exports</h2>
       ${[["Full configuration backup","XLSX","2026-08-01","S. Patel"],["TX filing packet","CSV","2026-07-24","Compliance"],
          ["Trucking factors v2026.03","JSON","2026-07-18","J. Romero"],["Schema definition","DBML","2026-07-02","Platform"]]

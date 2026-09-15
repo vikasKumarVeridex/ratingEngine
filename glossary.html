@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" style="background-color:#1A1D23">
+<html lang="en" style="background-color:#1B2635">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Glossary — Rating | VeriDex</title>
@@ -164,7 +164,7 @@ const VARS_REF = [
 document.getElementById("vxBody").innerHTML = `
 <div class="row g-3">
   <div class="col-lg-9">
-    <div class="vx-card vx-anim">
+    <div class="vx-card vdx-card vx-anim">
       <h2><i class="fa-solid fa-book me-2 text-primary"></i>Glossary</h2>
       <div class="sub">Search or browse by category — every term below is used somewhere on this platform.</div>
       <input class="form-control form-control-sm mb-3" id="gq" placeholder="Search terms...">
@@ -172,14 +172,14 @@ document.getElementById("vxBody").innerHTML = `
 
       <h2 id="g-vars" style="margin-top:8px"><i class="fa-solid fa-square-root-variable me-2 text-primary"></i>Formula Variables</h2>
       <div class="sub">Every exact variable name in the Formula Builder's palette — look one up by the name you actually see when dragging tokens.</div>
-      <div class="vx-tw"><table class="vx-t">
+      <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table">
         <thead><tr><th>Variable</th><th>Meaning</th><th>Used in</th></tr></thead>
         <tbody id="gvars"></tbody>
       </table></div>
     </div>
   </div>
   <div class="col-lg-3">
-    <div class="vx-card vx-anim" style="position:sticky;top:74px">
+    <div class="vx-card vdx-card vx-anim" style="position:sticky;top:74px">
       <h2>Jump to</h2>
       <div class="gnav">${GROUPS.map(g => `<a href="#g-${g.key}"><i class="fa-solid ${g.icon} me-2"></i>${g.title}</a>`).join("")}<a href="#g-vars"><i class="fa-solid fa-square-root-variable me-2"></i>Formula Variables</a></div>
     </div>
@@ -207,7 +207,7 @@ function render(filter) {
       ${terms.map(x => `<div class="gterm"><b>${x.t}</b>${x.ab ? `<span class="gab">${x.ab}</span>` : ""}<p>${x.d}</p></div>`).join("")}
     </div>`;
   }).join("");
-  document.getElementById("gbody").innerHTML = html || `<div class="vx-empty"><i class="fa-solid fa-magnifying-glass"></i>No terms match "${filter}".</div>`;
+  document.getElementById("gbody").innerHTML = html || `<div class="vx-empty vdx-empty"><i class="fa-solid fa-magnifying-glass"></i>No terms match "${filter}".</div>`;
 }
 document.getElementById("gq").oninput = e => render(e.target.value);
 render("");

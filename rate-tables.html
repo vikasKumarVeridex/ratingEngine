@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" style="background-color:#1A1D23">
+<html lang="en" style="background-color:#1B2635">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Rate Tables — Rating | VeriDex</title>
@@ -51,7 +51,7 @@ document.getElementById("vxBody").innerHTML = `
     </div>
     <div class="row g-3">
       <div class="col-lg-4">
-        <div class="vx-card vx-anim">
+        <div class="vx-card vdx-card vx-anim">
           <h2>Rate Tables <span class="vx-b blue">${RATE_TABLES.length}</span></h2>
           <div class="sub">Grouped by coverage</div>
           <input class="form-control form-control-sm mb-2" id="rtq" placeholder="Search tables or factors...">
@@ -94,7 +94,7 @@ function renderList(filter) {
       + Object.entries(byLob).map(([lob, ts]) => `
         <div class="rtgrp">${lob}</div>
         ${ts.map(item).join("")}`).join("")
-    : `<div class="vx-empty" style="padding:22px"><i class="fa-solid fa-magnifying-glass"></i>No tables match "${filter}".</div>`;
+    : `<div class="vx-empty vdx-empty" style="padding:22px"><i class="fa-solid fa-magnifying-glass"></i>No tables match "${filter}".</div>`;
 
   document.querySelectorAll("[data-rt]").forEach(el => el.onclick = () => {
     currentTable = RATE_TABLES.find(t => t.id === el.dataset.rt);
@@ -107,7 +107,7 @@ function renderDetail() {
   let rows = []; try { rows = t.rows() || []; } catch (e) { rows = []; }
   const neutralRow = t.neutral ? rows.find(r => { try { return t.neutral(r); } catch (e) { return false; } }) : null;
   document.getElementById("rtDetail").innerHTML = `
-    <div class="vx-card vx-anim">
+    <div class="vx-card vdx-card vx-anim">
       <div class="vx-card-head">
         <div><h2>${t.name}</h2><div class="sub">${t.lob} · ${t.cov}</div></div>
         <button class="btn btn-outline-secondary btn-sm" onclick="exportTable()"><i class="fa-solid fa-file-export me-1"></i>Export CSV</button>
@@ -123,8 +123,8 @@ function renderDetail() {
         : `<div class="mb-3" style="border:1px solid var(--border);border-left:3px solid var(--warn);background:rgba(198,137,15,.08);border-radius:0 10px 10px 0;padding:9px 13px;font-size:12px">
              <i class="fa-solid fa-triangle-exclamation me-1" style="color:var(--warn)"></i>
              Working approximation — not verified line-by-line against a filed rating manual.${t.note ? " " + t.note : ""}</div>`}
-      <div class="vx-tw" style="max-height:520px;overflow-y:auto">
-        <table class="vx-t">
+      <div class="vx-tw vdx-table-wrapper" style="max-height:520px;overflow-y:auto">
+        <table class="vx-t vdx-table">
           <thead><tr>${t.cols.map(c => `<th>${c.l}</th>`).join("")}</tr></thead>
           <tbody>${rows.length ? rows.map(r => {
             let isN = false; try { isN = t.neutral ? !!t.neutral(r) : false; } catch (e) { isN = false; }

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" style="background-color:#1A1D23">
+<html lang="en" style="background-color:#1B2635">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Integration Guide — Administration | VeriDex</title>
@@ -91,7 +91,7 @@ document.getElementById("vxBody").innerHTML = `
   </div>
 </div>
 
-<div class="vx-card vx-anim">
+<div class="vx-card vdx-card vx-anim">
   <h2>Where rating sits</h2>
   <div class="sub">A <b>stateless calculation service</b> on an internal segment. It owns rate tables, factors,
     formulas and versions \u2014 not the insured, the policy, the invoice or the claim.</div>
@@ -122,7 +122,7 @@ document.getElementById("vxBody").innerHTML = `
   </div>
 </div>
 
-<div class="vx-card vx-anim">
+<div class="vx-card vdx-card vx-anim">
   <h2>Two meanings of &ldquo;underwriter&rdquo;</h2>
   <div class="sub">Developers and business stakeholders use the same word for different things. The distinction
     matters when reading the sequence below.</div>
@@ -152,11 +152,11 @@ document.getElementById("vxBody").innerHTML = `
   </div>
 </div>
 
-<div class="vx-card vx-anim">
+<div class="vx-card vdx-card vx-anim">
   <h2>Data flow: CRM \u2192 Underwriting \u2192 Rating</h2>
   <div class="sub">The full sequence for a new-business indication. Steps 4\u20136 are the only ones that touch
     the engine, and all three are server-to-server on the internal segment.</div>
-  <div class="vx-tw"><table class="ig-seq">
+  <div class="vx-tw vdx-table-wrapper"><table class="ig-seq">
     <thead><tr><th style="width:34px">#</th><th style="width:190px">Actor \u2192 Actor</th><th>Exchange</th></tr></thead>
     <tbody>
       <tr><td class="st">1</td>
@@ -227,7 +227,7 @@ document.getElementById("vxBody").innerHTML = `
 <div class="row g-3">
 <div class="col-lg-7">
 
-  <div class="vx-card vx-anim">
+  <div class="vx-card vdx-card vx-anim">
     <h2>The engine contract</h2>
     <div class="sub">The whole surface \u2014 <code>assets/js/engine.js</code>. Called only by the underwriting
       service, in the order shown.</div>
@@ -256,7 +256,7 @@ const trace = ENGINE.trace(result);     // ${E ? E.trace(E.rate("TRUCK", { state
     </div>
     <div class="mt-3">
       <div class="ig-h"><i class="fa-solid fa-right-from-bracket" style="color:var(--good)"></i>What comes back</div>
-      <div class="vx-tw"><table class="vx-t"><tbody>
+      <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table"><tbody>
         ${[["finalPremium","The number Billing invoices \u2014 after UW releases it. Minimum premium already applied."],
            ["coveragePremium","Before discounts, surcharges, fees and tax."],
            ["groups[]","One entry per coverage, each with its own factor chain and subtotal."],
@@ -270,7 +270,7 @@ const trace = ENGINE.trace(result);     // ${E ? E.trace(E.rate("TRUCK", { state
     </div>
   </div>
 
-  <div class="vx-card vx-anim">
+  <div class="vx-card vdx-card vx-anim">
     <h2>Rules the underwriting service must respect</h2>
     <div class="sub">Each is enforced somewhere in this codebase. Breaking one produces a wrong number, not an error.</div>
 
@@ -321,12 +321,12 @@ const trace = ENGINE.trace(result);     // ${E ? E.trace(E.rate("TRUCK", { state
         <span class="ig-tag">/quoteId</span> for exactly this reason.</div></div></div>
   </div>
 
-  <div class="vx-card vx-anim">
+  <div class="vx-card vdx-card vx-anim">
     <h2>Submission shape by application type</h2>
     <div class="sub">Which sections the CRM must send depends on the product's application type \u2014 the routing key
       back to <code>ams_service.ins_application_type</code>. Sending a GL payload to a trucking rater fails
       validation at the underwriting boundary, before rating is ever called.</div>
-    <div class="vx-tw"><table class="vx-t">
+    <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table">
       <thead><tr><th>App Type</th><th>Line</th><th>Required sections</th></tr></thead>
       <tbody>${appTypes.map(([id, a]) => `<tr>
         <td><b>${a.name}</b><div style="font-size:10.4px;color:var(--text-mute)">id ${id} \u00b7 ${a.raterType}</div></td>
@@ -339,7 +339,7 @@ const trace = ENGINE.trace(result);     // ${E ? E.trace(E.rate("TRUCK", { state
 </div>
 <div class="col-lg-5">
 
-  <div class="vx-card vx-anim">
+  <div class="vx-card vdx-card vx-anim">
     <h2>Deployment boundary</h2>
     <div class="sub">The architecture is only real if the network enforces it.</div>
     <div style="font-size:12.3px;color:var(--text-dim);line-height:1.7">
@@ -361,7 +361,7 @@ const trace = ENGINE.trace(result);     // ${E ? E.trace(E.rate("TRUCK", { state
     </div>
   </div>
 
-  <div class="vx-card vx-anim">
+  <div class="vx-card vdx-card vx-anim">
     <h2>Storage contract</h2>
     <div class="sub">What each module may read, and what it must never write.</div>
     ${containers.map(([name, c]) => `
@@ -380,7 +380,7 @@ const trace = ENGINE.trace(result);     // ${E ? E.trace(E.rate("TRUCK", { state
     </div>
   </div>
 
-  <div class="vx-card vx-anim">
+  <div class="vx-card vdx-card vx-anim">
     <h2>Feedback loop</h2>
     <div class="sub">The one path that runs backwards.</div>
     <div style="font-size:12.3px;color:var(--text-dim);line-height:1.7">
@@ -399,7 +399,7 @@ const trace = ENGINE.trace(result);     // ${E ? E.trace(E.rate("TRUCK", { state
     </div>
   </div>
 
-  <div class="vx-card vx-anim">
+  <div class="vx-card vdx-card vx-anim">
     <h2>Integration checklist</h2>
     <div class="sub">Before a module goes live against rating.</div>
     ${[["Rating is reachable only from the underwriting service", true],

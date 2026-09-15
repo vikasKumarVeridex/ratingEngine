@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" style="background-color:#1A1D23">
+<html lang="en" style="background-color:#1B2635">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Dashboard — Main | VeriDex</title>
@@ -48,7 +48,7 @@ const sev = { warning: ["amber","fa-triangle-exclamation"], danger: ["red","fa-c
    number it shows. `href` is optional — a card without a destination stays a
    plain card rather than pretending to be clickable. */
 const stat = (l, v, dt, cls, ic, bg, href) => {
-  const body = `<div class="vx-stat vx-anim${href ? " link" : ""}">
+  const body = `<div class="vx-stat vdx-kpi-card vx-anim${href ? " link" : ""}">
   <div><div class="lbl">${l}</div><div class="val">${v}</div><div class="dt ${cls}">${dt}</div></div>
   <div class="ic" style="background:${bg}"><i class="fa-solid ${ic}"></i></div>
   ${href ? '<i class="fa-solid fa-arrow-right go"></i>' : ""}</div>`;
@@ -67,40 +67,40 @@ document.getElementById("vxBody").innerHTML = `
 
 <div class="row g-3">
   <div class="col-lg-8">
-    <div class="vx-card vx-anim vx-anim-d1">
+    <div class="vx-card vdx-card vx-anim vx-anim-d1">
       <div class="vx-card-head"><div><h2>Premium &amp; Rating Request Trend</h2><div class="sub">Trailing 12 months — GWP in $000s vs. total rating API calls</div></div>
         <select class="form-select form-select-sm" style="width:auto" id="trendSel"><option>All Products</option>${VX.products.map(p=>`<option>${p.name}</option>`).join("")}</select></div>
       <canvas id="c1" height="96"></canvas>
     </div>
-    <div class="vx-card vx-anim vx-anim-d2">
+    <div class="vx-card vdx-card vx-anim vx-anim-d2">
       <div class="vx-card-head"><div><h2>Quotes by Coverage</h2><div class="sub">Volume and bound conversion by coverage this quarter</div></div>
         <a href="analytics.html" class="btn btn-outline-secondary btn-sm">Full Analytics <i class="fa-solid fa-arrow-right ms-1"></i></a></div>
       <canvas id="c2" height="104"></canvas>
     </div>
-    ${vxIsAdmin() ? `<div class="vx-card vx-anim">
+    ${vxIsAdmin() ? `<div class="vx-card vdx-card vx-anim">
       <h2>Recent Activity</h2><div class="sub">Latest configuration changes across the platform</div>
-      <div class="vx-tw"><table class="vx-t"><thead><tr><th>Time</th><th>User</th><th>Area</th><th>Action</th><th>Version</th></tr></thead>
+      <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table"><thead><tr><th>Time</th><th>User</th><th>Area</th><th>Action</th><th>Version</th></tr></thead>
       <tbody>${VX.audit.slice(0,7).map(a=>`<tr><td style="white-space:nowrap">${a.timestamp}</td>
         <td>${a.user.includes("ai")?'<i class="fa-solid fa-robot me-1" style="color:var(--purple)"></i>':""}${a.user.split("@")[0]}</td>
         <td>${a.area}</td><td>${a.detail}</td><td><span class="vx-b gray">${a.version}</span></td></tr>`).join("")}</tbody></table></div>
       <div class="text-end mt-2"><a href="audit.html" style="font-size:12.5px">View full audit history <i class="fa-solid fa-arrow-right ms-1"></i></a></div>
-    </div>` : `<div class="vx-card vx-anim">
+    </div>` : `<div class="vx-card vdx-card vx-anim">
       <h2>Recent Activity</h2><div class="sub">Not shown here — Audit History entries aren't tagged per tenant yet, so this card can't honestly show only YOUR tenant's changes without showing everyone's.</div>
     </div>`}
   </div>
 
   <div class="col-lg-4">
-    <div class="vx-card vx-anim vx-anim-d1">
+    <div class="vx-card vdx-card vx-anim vx-anim-d1">
       <h2>Premium Distribution by LOB</h2><div class="sub">Share of gross written premium</div>
       <canvas id="c3" height="180"></canvas>
     </div>
-    <div class="vx-card vx-anim vx-anim-d3">
+    <div class="vx-card vdx-card vx-anim vx-anim-d3">
       <h2>Configuration Warnings</h2><div class="sub">Issues to review before next publish</div>
       ${d.warnings.map(w=>`<div class="d-flex gap-2 mb-2 align-items-start">
         <span class="vx-b ${sev[w.sev][0]}"><i class="fa-solid ${sev[w.sev][1]}"></i></span>
         <div style="font-size:12.7px;line-height:1.5">${w.text}</div></div>`).join("")}
     </div>
-    <div class="vx-card vx-anim">
+    <div class="vx-card vdx-card vx-anim">
       <h2>Rating Data Loaded</h2><div class="sub">By coverage</div>
       ${VX.workbooks.map(w=>`<div class="d-flex justify-content-between align-items-center py-2" style="border-bottom:1px solid var(--border);font-size:12.5px">
         <div><b style="font-size:12.5px">${w.lob}</b><div style="color:var(--text-mute);font-size:11px">${w.rows} rating rows</div></div>
@@ -159,7 +159,7 @@ function renderActionBar() {
       ${LOB_OPTS.map(l => `<option ${l === selLob ? "selected" : ""}>${l}</option>`).join("")}</select>`;
 
   document.getElementById("actionBar").innerHTML = `
-    <div class="vx-card vx-anim mb-3" style="padding:11px 14px">
+    <div class="vx-card vdx-card vx-anim mb-3" style="padding:11px 14px">
       <div class="d-flex flex-wrap align-items-center gap-2">
         ${lobSelect}
       </div>

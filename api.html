@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" style="background-color:#1A1D23">
+<html lang="en" style="background-color:#1B2635">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>API Reference — Developer | VeriDex</title>
@@ -172,23 +172,23 @@ document.getElementById("vxPageActions").innerHTML =
 
 document.getElementById("vxBody").innerHTML = `
 <div class="row g-3 mb-1">
-  <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Endpoints Exposed</div>
+  <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card vx-anim"><div><div class="lbl">Endpoints Exposed</div>
     <div class="val">${total}</div><div class="dt flat">across ${GROUPS.length} groups</div></div>
     <div class="ic" style="background:var(--cat-1)"><i class="fa-solid fa-plug"></i></div></div></div>
-  <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Consuming Apps</div>
+  <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card vx-anim"><div><div class="lbl">Consuming Apps</div>
     <div class="val">${CONSUMERS.length}</div><div class="dt up">all share one engine</div></div>
     <div class="ic" style="background:var(--cat-2)"><i class="fa-solid fa-diagram-project"></i></div></div></div>
-  <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Calls / Month</div>
+  <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card vx-anim"><div><div class="lbl">Calls / Month</div>
     <div class="val">3.0M</div><div class="dt up"><i class="fa-solid fa-arrow-up"></i> 12% vs last month</div></div>
     <div class="ic" style="background:var(--cat-3)"><i class="fa-solid fa-bolt"></i></div></div></div>
-  <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">p95 Latency</div>
+  <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card vx-anim"><div><div class="lbl">p95 Latency</div>
     <div class="val">142ms</div><div class="dt flat">rate endpoint</div></div>
     <div class="ic" style="background:var(--cat-4)"><i class="fa-solid fa-gauge-high"></i></div></div></div>
 </div>
 
 <div class="row g-3">
   <div class="col-lg-8">
-    <div class="vx-card vx-anim">
+    <div class="vx-card vdx-card vx-anim">
       <div class="vx-card-head"><div><h2>Endpoints</h2><div class="sub">Base URL <code>${BASE}</code> · click an endpoint for request &amp; response</div></div>
         <div class="vx-search" style="max-width:220px"><i class="fa-solid fa-magnifying-glass"></i>
           <input class="form-control form-control-sm" id="q" placeholder="Filter endpoints..." style="padding-left:32px"></div></div>
@@ -197,7 +197,7 @@ document.getElementById("vxBody").innerHTML = `
   </div>
 
   <div class="col-lg-4">
-    <div class="vx-card vx-anim">
+    <div class="vx-card vdx-card vx-anim">
       <h2>Who Consumes This API</h2><div class="sub">No application implements rating internally</div>
       ${CONSUMERS.map(([n, i, d, v]) => `<div class="d-flex align-items-center gap-2 py-2" style="border-bottom:1px solid var(--border)">
         <div style="width:30px;height:30px;border-radius:8px;background:var(--surface-2);display:grid;place-items:center;color:var(--primary);flex:none">
@@ -206,7 +206,7 @@ document.getElementById("vxBody").innerHTML = `
         <span class="vx-b gray">${v}</span></div>`).join("")}
     </div>
 
-    <div class="vx-card vx-anim vx-anim-d1">
+    <div class="vx-card vdx-card vx-anim vx-anim-d1">
       <h2>Authentication</h2>
       <div class="vx-code" style="font-size:11.5px">POST ${BASE}/oauth/token
 Content-Type: application/json
@@ -226,7 +226,7 @@ Content-Type: application/json
           <code style="font-size:11.5px">${s}</code><span style="color:var(--text-mute)">${d}</span></div>`).join("")}
     </div>
 
-    <div class="vx-card vx-anim vx-anim-d2">
+    <div class="vx-card vdx-card vx-anim vx-anim-d2">
       <h2>Limits &amp; Conventions</h2>
       ${[["Rate limit","1,200 req/min per tenant"],["Burst","200 req/sec"],["Pagination","?page= &size= (max 500)"],
          ["Idempotency","Idempotency-Key header on POST"],["Versioning","URL path — /v1"],
@@ -264,7 +264,7 @@ function drawEps(filter) {
           </div>
         </div></div>`).join("")}
     </div>`;
-  }).join("") || `<div class="vx-empty"><i class="fa-solid fa-inbox"></i>No endpoints match.</div>`;
+  }).join("") || `<div class="vx-empty vdx-empty"><i class="fa-solid fa-inbox"></i>No endpoints match.</div>`;
 
   document.querySelectorAll(".ep-h").forEach(h => h.onclick = () => {
     document.getElementById("b" + h.dataset.e).classList.toggle("on");
@@ -325,7 +325,7 @@ function keys() {
     ["Broker Portal","brk_live_••••9c07","rate:execute quote:write","2026-08-05","Active"],
     ["Policy Admin","pol_live_••••2b88","rate:execute quote:read","2026-08-05","Active"],
     ["Partner Sandbox","prt_test_••••7d10","rate:execute","2026-07-19","Revoked"]];
-  vxModal("API Keys", `<div class="vx-tw"><table class="vx-t">
+  vxModal("API Keys", `<div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table">
     <thead><tr><th>Client</th><th>Key</th><th>Scopes</th><th>Last Used</th><th>Status</th></tr></thead>
     <tbody>${rows.map(r => `<tr><td><b>${r[0]}</b></td><td><code style="font-size:11.5px">${r[1]}</code></td>
       <td style="font-size:11.5px;color:var(--text-dim)">${r[2]}</td><td>${r[3]}</td>

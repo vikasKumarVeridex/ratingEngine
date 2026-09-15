@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" style="background-color:#1A1D23">
+<html lang="en" style="background-color:#1B2635">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Reports & Analytics — Main | VeriDex</title>
@@ -42,14 +42,14 @@ const bandLbl = ["<$5k","$5–15k","$15–30k","$30–60k","$60k+"];
 const byBand = bands.map(([a,b]) => Q.filter(q => q.premium >= a && q.premium < b).length);
 const verUse = VX.versions.filter(v => v.quotesRated > 0).sort((a,b)=>b.quotesRated-a.quotesRated).slice(0, 8);
 
-const card = (t, s, id, h) => `<div class="vx-card vx-anim"><h2>${t}</h2><div class="sub">${s}</div><canvas id="${id}" height="${h||150}"></canvas></div>`;
+const card = (t, s, id, h) => `<div class="vx-card vdx-card vx-anim"><h2>${t}</h2><div class="sub">${s}</div><canvas id="${id}" height="${h||150}"></canvas></div>`;
 
 document.getElementById("vxBody").innerHTML = `
 <div class="row g-3 mb-1">
-  <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Total Quotes</div><div class="val">${vxNum(Q.length)}</div><div class="dt up"><i class="fa-solid fa-arrow-up"></i> 8.1%</div></div><div class="ic" style="background:var(--cat-1)"><i class="fa-solid fa-file-invoice"></i></div></div></div>
-  <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Bind Rate</div><div class="val">${(Q.filter(q=>q.status==="Bound").length/Q.length*100).toFixed(1)}%</div><div class="dt up"><i class="fa-solid fa-arrow-up"></i> 2.4pt</div></div><div class="ic" style="background:var(--cat-3)"><i class="fa-solid fa-handshake"></i></div></div></div>
-  <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Total Premium Quoted</div><div class="val">${vxMoney(Q.reduce((a,q)=>a+q.premium,0))}</div><div class="dt up"><i class="fa-solid fa-arrow-up"></i> 6.4%</div></div><div class="ic" style="background:var(--cat-2)"><i class="fa-solid fa-sack-dollar"></i></div></div></div>
-  <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Referral Rate</div><div class="val">${(Q.filter(q=>q.status==="Referred").length/Q.length*100).toFixed(1)}%</div><div class="dt down"><i class="fa-solid fa-arrow-down"></i> 1.1pt</div></div><div class="ic" style="background:var(--cat-5)"><i class="fa-solid fa-user-clock"></i></div></div></div>
+  <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card vx-anim"><div><div class="lbl">Total Quotes</div><div class="val">${vxNum(Q.length)}</div><div class="dt up"><i class="fa-solid fa-arrow-up"></i> 8.1%</div></div><div class="ic" style="background:var(--cat-1)"><i class="fa-solid fa-file-invoice"></i></div></div></div>
+  <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card vx-anim"><div><div class="lbl">Bind Rate</div><div class="val">${(Q.filter(q=>q.status==="Bound").length/Q.length*100).toFixed(1)}%</div><div class="dt up"><i class="fa-solid fa-arrow-up"></i> 2.4pt</div></div><div class="ic" style="background:var(--cat-3)"><i class="fa-solid fa-handshake"></i></div></div></div>
+  <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card vx-anim"><div><div class="lbl">Total Premium Quoted</div><div class="val">${vxMoney(Q.reduce((a,q)=>a+q.premium,0))}</div><div class="dt up"><i class="fa-solid fa-arrow-up"></i> 6.4%</div></div><div class="ic" style="background:var(--cat-2)"><i class="fa-solid fa-sack-dollar"></i></div></div></div>
+  <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card vx-anim"><div><div class="lbl">Referral Rate</div><div class="val">${(Q.filter(q=>q.status==="Referred").length/Q.length*100).toFixed(1)}%</div><div class="dt down"><i class="fa-solid fa-arrow-down"></i> 1.1pt</div></div><div class="ic" style="background:var(--cat-5)"><i class="fa-solid fa-user-clock"></i></div></div></div>
 </div>
 
 <div class="row g-3">
@@ -60,8 +60,8 @@ document.getElementById("vxBody").innerHTML = `
   <div class="col-lg-6">${card("Premium Distribution","Quote count by premium band","a5",140)}</div>
   <div class="col-lg-6">${card("Rating Version Usage","Quotes rated per version","a6",140)}</div>
   <div class="col-lg-7">
-    <div class="vx-card vx-anim"><h2>Agency Performance</h2><div class="sub">Premium written and bind rate by producing agency</div>
-      <div class="vx-tw"><table class="vx-t"><thead><tr><th>Agency</th><th>Quotes</th><th>Bound</th><th>Bind Rate</th><th>Premium</th></tr></thead><tbody>
+    <div class="vx-card vdx-card vx-anim"><h2>Agency Performance</h2><div class="sub">Premium written and bind rate by producing agency</div>
+      <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table"><thead><tr><th>Agency</th><th>Quotes</th><th>Bound</th><th>Bind Rate</th><th>Premium</th></tr></thead><tbody>
         ${byAgent.map(([a, p]) => { const q = Q.filter(x => x.agent === a), b = q.filter(x => x.status === "Bound").length;
           return `<tr><td><b>${a}</b></td><td>${q.length}</td><td>${b}</td>
           <td><span class="vx-b ${b/q.length>.4?"green":b/q.length>.25?"amber":"red"}">${(b/q.length*100).toFixed(0)}%</span></td>
@@ -69,8 +69,8 @@ document.getElementById("vxBody").innerHTML = `
       </tbody></table></div></div>
   </div>
   <div class="col-lg-5">
-    <div class="vx-card vx-anim"><h2>Top Rating Factors by Impact</h2><div class="sub">Average absolute deviation from neutral across rated quotes</div>
-      <div class="vx-tw"><table class="vx-t"><thead><tr><th>Factor</th><th>LOB</th><th>Impact</th></tr></thead><tbody>
+    <div class="vx-card vdx-card vx-anim"><h2>Top Rating Factors by Impact</h2><div class="sub">Average absolute deviation from neutral across rated quotes</div>
+      <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table"><thead><tr><th>Factor</th><th>LOB</th><th>Impact</th></tr></thead><tbody>
         ${[["Primary Class Factor","Trucking","±0.62×",92],["Secondary Class Factor","Trucking","±0.48×",74],
            ["Hazard Group Factor","MPL","±0.45×",70],["Construction Type","Property","±0.38×",60],
            ["Increased Limits Factor","All","±0.31×",50],["MFA Controls","Cyber","±0.28×",44],
@@ -81,11 +81,11 @@ document.getElementById("vxBody").innerHTML = `
       </tbody></table></div></div>
   </div>
   <div class="col-lg-6">
-    <div class="vx-card vx-anim"><h2>Configuration Change Activity</h2><div class="sub">Changes by area over the last 120 days</div>
+    <div class="vx-card vdx-card vx-anim"><h2>Configuration Change Activity</h2><div class="sub">Changes by area over the last 120 days</div>
       <canvas id="a7" height="150"></canvas></div>
   </div>
   <div class="col-lg-6">
-    <div class="vx-card vx-anim"><h2>AI Suggestion Adoption</h2><div class="sub">Recommendations issued vs. applied</div>
+    <div class="vx-card vdx-card vx-anim"><h2>AI Suggestion Adoption</h2><div class="sub">Recommendations issued vs. applied</div>
       <canvas id="a8" height="150"></canvas></div>
   </div>
 </div>`;

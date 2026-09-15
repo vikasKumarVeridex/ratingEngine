@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" style="background-color:#1A1D23">
+<html lang="en" style="background-color:#1B2635">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Discounts — Pricing | VeriDex</title>
@@ -26,7 +26,7 @@ vxShell("Discount Management", "Premium credits. || Applied at account, driver, 
 document.getElementById("vxBody").innerHTML = `
   ${vxNotWiredBanner('Only the <b>first 2 active discounts</b> matching a quote’s LOB are applied.',
     'Matching runs in list order over the quote’s own LOB plus any marked "All"; anything beyond the first two is silently skipped. Reorder or deactivate a discount here to change which ones actually apply.')}
-  <div class="vx-card vx-anim"><div id="grid"></div></div>`;
+  <div class="vx-card vdx-card vx-anim"><div id="grid"></div></div>`;
 const grid = vxAgGrid({ el:"#grid", key:"discounts", name:"Discount",
 
   cols:[{k:"name",l:"Discount"},{k:"code",l:"Code"},{k:"lob",l:"LOB"},

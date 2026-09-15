@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" style="background-color:#1A1D23">
+<html lang="en" style="background-color:#1B2635">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tenant Setup — Administration | VeriDex</title>
@@ -40,7 +40,7 @@ function draw() {
   const t = s.tenant;
 
   document.getElementById("vxBody").innerHTML = `
-    <div class="vx-card vx-anim" style="border-left:3px solid ${t.accent || 'var(--primary)'}">
+    <div class="vx-card vdx-card vx-anim" style="border-left:3px solid ${t.accent || 'var(--primary)'}">
       <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
         <div>
           <h2 style="font-size:17px">${t.name || "—"}</h2>
@@ -63,7 +63,7 @@ function draw() {
              <b>Not ready to quote yet.</b> ${s.required.length - s.doneRequired.length} required step(s) outstanding — each one below links to the screen that fixes it.</div>`}
     </div>
 
-    <div class="vx-card vx-anim">
+    <div class="vx-card vdx-card vx-anim">
       <h2>Configuration steps</h2>
       <div class="sub">Required steps gate quoting. The rest refine pricing and can be done after go-live.</div>
       ${s.steps.map((st, i) => `

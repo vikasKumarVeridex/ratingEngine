@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" style="background-color:#1A1D23">
+<html lang="en" style="background-color:#1B2635">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>State Taxes — Pricing | VeriDex</title>
@@ -37,7 +37,7 @@ document.getElementById("vxBody").innerHTML = `
     <b>${vxNum(VX.counties.filter(c=>c.taxRate>0).length)} taxing counties</b> across
     <b>${new Set(VX.counties.filter(c=>c.taxRate>0).map(c=>c.state)).size} states</b>. Click a county count to see them.</p></div>
   </div>
-  <div class="vx-card vx-anim"><div id="grid"></div></div>`;
+  <div class="vx-card vdx-card vx-anim"><div id="grid"></div></div>`;
 
 vxAgGrid({ el:"#grid", key:"taxes", name:"State Tax", size:12,
   cols:[

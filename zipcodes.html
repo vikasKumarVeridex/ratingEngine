@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" style="background-color:#1A1D23">
+<html lang="en" style="background-color:#1B2635">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ZIP Codes — Geography | VeriDex</title>
@@ -23,7 +23,7 @@
 <script src="assets/js/ag-grid-adapter.js?v=20260912"></script>
 <script>
 vxShell("ZIP Code Configuration", "ZIP → county → territory mapping. || Production tables hold 41k–63k rows per LOB; a representative sample is shown here.", [{l:"Geography"},{l:"ZIP Code Configuration"}]);
-document.getElementById("vxBody").innerHTML = `<div class="vx-card vx-anim"><div id="grid"></div></div>`;
+document.getElementById("vxBody").innerHTML = `<div class="vx-card vdx-card vx-anim"><div id="grid"></div></div>`;
 vxAgGrid({ el:"#grid", key:"zipcodes", name:"ZIP Code",
   size:12,
   cols:[{k:"zip",l:"ZIP"},{k:"city",l:"City"},{k:"county",l:"County"},{k:"state",l:"State"},

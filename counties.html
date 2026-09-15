@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" style="background-color:#1A1D23">
+<html lang="en" style="background-color:#1B2635">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Counties — Geography | VeriDex</title>
@@ -23,7 +23,7 @@
 <script src="assets/js/ag-grid-adapter.js?v=20260912"></script>
 <script>
 vxShell("County Management", "County-level configuration. || Territory assignment, catastrophe zone and municipal tax rates.", [{l:"Geography"},{l:"County Management"}]);
-document.getElementById("vxBody").innerHTML = `<div class="vx-card vx-anim"><div id="grid"></div></div>`;
+document.getElementById("vxBody").innerHTML = `<div class="vx-card vdx-card vx-anim"><div id="grid"></div></div>`;
 vxAgGrid({ el:"#grid", key:"counties", name:"County",
   size:12,
   cols:[{k:"fips",l:"FIPS"},{k:"name",l:"County"},{k:"state",l:"State"},{k:"stateName",l:"State Name"},

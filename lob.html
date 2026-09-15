@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" style="background-color:#1A1D23">
+<html lang="en" style="background-color:#1B2635">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Coverage — Configuration | VeriDex</title>
@@ -23,7 +23,7 @@
 <script src="assets/js/ag-grid-adapter.js?v=20260912"></script>
 <script>
 vxShell("Coverage", "Each coverage has its own calculation engine. || Read-only: lines are provisioned per tenant from the enabled lines on the tenant record.", [{l:"Configuration"},{l:"Coverage"}]);
-document.getElementById("vxBody").innerHTML = `<div class="vx-card vx-anim"><div id="grid"></div></div>`;
+document.getElementById("vxBody").innerHTML = `<div class="vx-card vdx-card vx-anim"><div id="grid"></div></div>`;
 vxAgGrid({ el:"#grid", key:"lobs", name:"Coverage",
 
   cols:[{k:"code",l:"Code",r:r=>'<span class="vx-b blue">'+r.code+'</span>'},{k:"name",l:"Coverage"},{k:"desc",l:"Description"},

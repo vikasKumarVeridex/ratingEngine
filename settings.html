@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" style="background-color:#1A1D23">
+<html lang="en" style="background-color:#1B2635">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Settings — Administration | VeriDex</title>
@@ -36,7 +36,7 @@ function renderUserSwitch() {
   const users = (VX.users || []).filter(u => u.status !== "Suspended").slice().sort((a, b) => a.name.localeCompare(b.name));
   const host = document.getElementById("userSwitch");
   host.innerHTML = `
-    <div class="vx-card vx-anim" id="switch-user" style="margin-bottom:16px">
+    <div class="vx-card vdx-card vx-anim" id="switch-user" style="margin-bottom:16px">
       <h2>Acting As <span class="vx-b blue">${me.role}</span></h2>
       <div class="sub">Every change you make, request, or approve is stamped with whoever this is set to — switch here to approve a request as someone other than whoever raised it.</div>
       <div class="row g-2 align-items-end mt-2">
@@ -58,7 +58,7 @@ function renderUserSwitch() {
   };
 }
 
-document.getElementById("vxBody").innerHTML = `<div id="userSwitch"></div><div class="vx-card vx-anim"><div id="grid"></div></div>`;
+document.getElementById("vxBody").innerHTML = `<div id="userSwitch"></div><div class="vx-card vdx-card vx-anim"><div id="grid"></div></div>`;
 renderUserSwitch();
 vxAgGrid({ el:"#grid", key:"settings", name:"Setting",
   size:15,

@@ -186,7 +186,7 @@ function vxAgGrid(opt) {
       if (Array.isArray(v)) return v.length === 0 || v.some(x => rowVals.includes(String(x)));
       return !v || rowVals.includes(String(v));
     }),
-    overlayNoRowsTemplate: `<div class="vx-empty"><i class="fa-solid fa-inbox"></i><div id="${id}emptyMsg"></div></div>`,
+    overlayNoRowsTemplate: `<div class="vx-empty vdx-empty"><i class="fa-solid fa-inbox"></i><div id="${id}emptyMsg"></div></div>`,
     onCellValueChanged: e => {
       if (e.colDef.field === "_actions") return;
       const patch = { [e.colDef.field]: e.newValue };

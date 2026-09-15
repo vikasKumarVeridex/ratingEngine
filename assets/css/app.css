@@ -1,39 +1,43 @@
 /* ==========================================================================
    Veridex Rating Platform — Design System
    ========================================================================== */
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap");
+@import url("../../theme/global.css");
 
 :root {
   /* ====================================================================
-     VeriDex Global UI/UX Framework v3.0 — authoritative token block.
-     Copied verbatim per §3. Do not edit values here; changing a token hex
-     is a breaking change requiring a major version bump (§25).
+     VeriDex Enterprise UI/UX Framework v2.0.0 — token layer.
+     theme/global.css (imported above) is the actual, linked source of
+     every value below — nothing here is a copied hex literal. Legacy
+     alias names (--bg, --primary, --side-bg, etc.) are kept so the ~800
+     lines of component CSS in this file don't need call-site rewriting;
+     they now resolve through the vdx tokens instead of duplicated hex.
      ==================================================================== */
 
   /* Brand */
-  --color-brand:            #F97316;
-  --color-brand-dark:       #EA6A08;
-  --color-brand-amber:      #F59E0B;
-  --color-brand-light:      #FFF7ED;
-  --color-link:             #C2410C;   /* accessible text-link color on light surfaces */
-  --color-focus:            #C2410C;   /* focus indicator on light surfaces */
-  --color-control-border:   #6B7280;   /* form/control boundary; >=3:1 on light surfaces */
-  --color-on-brand:         #0D1117;   /* text/icons on orange brand fills */
-  --color-brand-gradient:   linear-gradient(135deg, #F97316, #F59E0B);
+  --color-brand:            var(--vdx-color-action-primary);
+  --color-brand-dark:       var(--vdx-color-action-primary-hover);
+  --color-brand-amber:      var(--vdx-primitive-amber-500);
+  --color-brand-light:      var(--vdx-color-action-primary-subtle);
+  --color-link:             var(--vdx-primitive-orange-700);   /* accessible text-link color; vdx's own text-link is navy, but this platform's --primary role needs an orange that still passes AA as text */
+  --color-focus:            var(--vdx-color-border-focus);
+  --color-control-border:   var(--vdx-color-form-input-border);
+  --color-on-brand:         var(--vdx-color-action-primary-text);
+  --color-brand-gradient:   linear-gradient(135deg, var(--vdx-primitive-orange-500), var(--vdx-primitive-amber-500));
 
   /* Shell (dark zones: topbar, left nav) */
-  --color-shell:            #1A1D23;
-  --color-shell-accent:     #22262E;
-  --color-border-dark:      #2E333D;
+  --color-shell:            var(--vdx-color-nav-bg);
+  --color-shell-accent:     var(--vdx-color-nav-item-hover-bg);
+  --color-border-dark:      var(--vdx-color-nav-border);
 
   /* Surfaces */
-  --color-ink:              #0D1117;
-  --color-ink-secondary:    #374151;
-  --color-surface:          #F7F8FA;
-  --color-panel:            #FFFFFF;
-  --color-border:           #E2E5EA;
+  --color-ink:              var(--vdx-color-text-primary);
+  --color-ink-secondary:    var(--vdx-color-text-secondary);
+  --color-surface:          var(--vdx-color-bg-canvas);
+  --color-panel:            var(--vdx-color-bg-surface);
+  --color-border:           var(--vdx-color-border-default);   /* §3.1.2 corrected default (3.14:1) — cards, inputs, panels */
+  --color-border-table:     var(--vdx-color-table-border);     /* §3.1.2 table-border — dense grid/list row dividers only */
 
-  /* Status — foreground */
+  /* Status — foreground (app-specific versioning lifecycle; no vdx equivalent) */
   --status-draft:           #475569;
   --status-review:          #B45309;
   --status-approved:        #1D4ED8;
@@ -50,18 +54,18 @@
   --status-retired-bg:      #F3F4F6;
 
   /* Functional */
-  --color-success:          #15803D;
-  --color-warning:          #B45309;
-  --color-danger:           #DC2626;
-  --color-info:             #0369A1;
-  --color-muted:            #6B7280;
-  --color-disabled:         #D1D5DB;
-  --color-success-bg:       #F0FDF4;
-  --color-warning-bg:       #FFFBEB;
-  --color-danger-bg:        #FEF2F2;
-  --color-info-bg:          #EFF6FF;
+  --color-success:          var(--vdx-color-text-success);
+  --color-warning:          var(--vdx-color-text-warning);
+  --color-danger:           var(--vdx-primitive-red-600);
+  --color-info:             var(--vdx-color-text-info);
+  --color-muted:            var(--vdx-color-text-secondary);
+  --color-disabled:         var(--vdx-color-text-disabled);
+  --color-success-bg:       var(--vdx-color-status-success-bg);
+  --color-warning-bg:       var(--vdx-color-status-warning-bg);
+  --color-danger-bg:        var(--vdx-color-status-error-bg);
+  --color-info-bg:          var(--vdx-color-status-info-bg);
 
-  /* Outcome decisions (decisioning modules only) */
+  /* Outcome decisions (decisioning modules only; app-specific, no vdx equivalent) */
   --outcome-accept:         #15803D;
   --outcome-decline:        #DC2626;
   --outcome-refer:          #B45309;
@@ -69,18 +73,21 @@
   --outcome-restrict:       #0369A1;
   --outcome-evidence:       #0F766E;
 
-  /* Spacing */
-  --space-1:  4px;
-  --space-2:  8px;
-  --space-3:  12px;
-  --space-4:  16px;
-  --space-5:  20px;
-  --space-6:  24px;
-  --space-8:  32px;
-  --space-10: 40px;
-  --space-12: 48px;
+  /* Spacing — identical scale to vdx; aliased for one source of truth */
+  --space-1:  var(--vdx-space-1);
+  --space-2:  var(--vdx-space-2);
+  --space-3:  var(--vdx-space-3);
+  --space-4:  var(--vdx-space-4);
+  --space-5:  var(--vdx-space-5);
+  --space-6:  var(--vdx-space-6);
+  --space-8:  var(--vdx-space-8);
+  --space-10: var(--vdx-space-10);
+  --space-12: var(--vdx-space-12);
 
-  /* Z-index scale */
+  /* Z-index scale — app-specific stacking order. vdx's own scale doesn't
+     map 1:1 onto this app's layering (e.g. vdx's toast sits at 700 but
+     this app's toast must clear --z-modal at 500, and vdx has nothing for
+     the tooltip-above-modal case below), so these stay independent. */
   --z-base:       0;
   --z-raised:     10;
   --z-dropdown:   100;
@@ -113,8 +120,9 @@
   --bg:            var(--color-surface);
   --surface:       var(--color-panel);
   --surface-2:     var(--color-surface);
-  --surface-3:     #EEF0F3;
+  --surface-3:     var(--vdx-primitive-neutral-100);
   --border:        var(--color-border);
+  --border-subtle: var(--color-border-table);
   --text:          var(--color-ink);
   --text-dim:      var(--color-ink-secondary);
   --text-mute:     var(--color-muted);
@@ -131,9 +139,9 @@
   --side-bg:        var(--color-shell);
   --side-bg-2:      var(--color-shell-accent);
   --side-border:    var(--color-border-dark);
-  --side-text:      #A8B0BC;
-  --side-text-dim:  #8B93A0;
-  --side-active-bg: var(--color-shell-accent);
+  --side-text:      var(--vdx-color-nav-text);
+  --side-text-dim:  var(--vdx-color-nav-group-label);
+  --side-active-bg: var(--color-brand);
 
   /* ====================================================================
      Categorical palette — LOB / category identity and chart series.
@@ -145,7 +153,7 @@
      language, and every one clears 4.5:1 against white in BOTH directions
      — they are used as an icon colour ON white and as a fill BEHIND a white
      glyph. The previous literals (#4A90D9 = 2.94:1, #1ABC9C = 2.13:1) failed
-     both ways.
+     both ways. No vdx equivalent exists for this set, so it stays literal.
      ==================================================================== */
   --cat-1: #1D4ED8;   /* 5.49:1  Commercial Trucking / primary series */
   --cat-2: #0F766E;   /* 4.80:1  General Liability */
@@ -166,14 +174,26 @@
   --cat-7-soft: #EFF8FE;
   --cat-8-soft: #F3F4F6;
 
-  --sidebar-w:  240px;   /* §5 */
-  --topbar-h:   56px;    /* §5 */
-  --radius:     8px;     /* §10.7 card radius */
-  --shadow:     0 1px 3px rgba(0, 0, 0, .06);
-  --shadow-lg:  0 4px 12px rgba(0, 0, 0, .12);
-  --font:       Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono:  "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --sidebar-w:           var(--vdx-sidebar-width-expanded);
+  --sidebar-w-collapsed: var(--vdx-sidebar-width-collapsed);
+  --topbar-h:   var(--vdx-topbar-height);
+  --radius:     var(--vdx-radius-md);
+  --shadow:     var(--vdx-shadow-xs);
+  --shadow-lg:  var(--vdx-shadow-lg);
+  --font:       var(--vdx-font-family-primary);
+  --font-mono:  var(--vdx-font-family-mono);
 }
+
+/* theme/global.css's own base reset (§2) blanks list-style on every bare
+   <ul>/<ol> and forces width:100% on every bare <table> — correct for its
+   .vdx-* components, but this platform still has a handful of plain,
+   unclassed lists/tables (e.g. quote-portal.html's inline bullet list,
+   formula-builder.html's preview table) that relied on browser defaults.
+   Restore those defaults only where no component class claims the element,
+   so classed tables/lists (table.vx-t, .vx-nav-list, Bootstrap .nav, …)
+   keep the vdx reset. */
+ul:not([class]), ol:not([class]) { list-style: revert; }
+table:not([class]) { width: auto; }
 
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
@@ -192,45 +212,53 @@ a:hover{text-decoration:underline}
 .vx-anim{animation:vxFadeUp .32s cubic-bezier(.22,.9,.32,1) both}
 .vx-anim-d1{animation-delay:.04s}.vx-anim-d2{animation-delay:.08s}.vx-anim-d3{animation-delay:.12s}
 
-/* ---------- Shell ---------- */
-.vx-sidebar{position:fixed;inset:0 auto 0 0;width:var(--sidebar-w);background:var(--side-bg);
-  border-inline-end:1px solid var(--side-border);overflow-y:auto;z-index:var(--z-drawer);transition:transform .22s}
-.vx-brand{display:flex;align-items:center;gap:10px;padding:16px;border-bottom:1px solid var(--side-border);position:sticky;top:0;background:var(--side-bg);z-index:var(--z-raised)}
-.vx-logo{width:34px;height:34px;border-radius:9px;background:var(--color-brand);
-  display:grid;place-items:center;color:var(--color-panel);font-weight:800;font-size:17px;flex:none}
-.vx-brand b{display:block;font-size:15px;line-height:1.15;color:var(--color-panel)}
-.vx-brand span{font-size:10.5px;color:var(--side-text-dim)}
-/* The brand's own flex row (.vx-brand) never gave its text child min-width:0
-   — the classic flex-overflow gotcha where a child defaults to
-   min-width:auto and refuses to shrink below its content's natural width. A
-   long tenant name plus an inline "back to admin" link on the same line
-   could overflow the 240px sidebar in ways that left the link positioned
-   outside the visible viewport entirely (measured, not assumed: a real
-   click landed at a negative x-coordinate). Truncated with an ellipsis
-   instead, and the logout link moved to its own line below, so it never
-   shares horizontal space with a name of unknown length. */
-.vx-brand-tenant{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
-.vx-brand-logout{display:block;margin-top:2px;color:var(--color-link);text-decoration:none;font-weight:600;font-size:10.5px}
-.vx-brand-logout:hover{text-decoration:underline}
-.vx-nav{padding:10px 12px 80px}
-.vx-nav-grp{display:flex;align-items:center;justify-content:space-between;width:100%;
-  font:inherit;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
-  color:var(--side-text-dim);margin:16px 0 7px;padding:0 10px;background:none;border:none;cursor:pointer}
-.vx-nav-grp:hover{color:var(--side-text)}
-.vx-nav-grp .chev{font-size:9px;transition:transform .15s}
-.vx-nav-grp[aria-expanded="false"] .chev{transform:rotate(-90deg)}
-.vx-nav a{display:flex;align-items:center;gap:10px;padding:8px 11px;border-radius:9px;color:var(--side-text);
-  font-size:13px;font-weight:500;margin-bottom:2px;transition:.14s;text-decoration:none}
-.vx-nav a i{width:16px;text-align:center;font-size:12.5px;flex:none}
-.vx-nav a:hover{background:var(--side-bg-2);color:var(--color-panel);text-decoration:none}
-.vx-nav a.active{background:var(--side-active-bg);color:var(--color-panel);font-weight:600;position:relative}
-.vx-nav a.active::before{content:"";position:absolute;inset-inline-start:0;top:50%;transform:translateY(-50%);
-  width:3px;height:18px;border-radius:0 3px 3px 0;background:var(--color-brand)}
-.vx-nav a .vx-chip{margin-inline-start:auto;font-size:9.5px;padding:1px 6px;border-radius:20px;background:var(--side-bg-2);color:var(--side-text-dim)}
+/* ---------- Shell ----------
+   Structural layout — app shell, topbar, sidebar, nav item states, the
+   mobile drawer, the tablet icon-rail breakpoint, and the breadcrumb —
+   comes from theme/global.css's real .vdx-app-shell / .vdx-topbar /
+   .vdx-sidebar / .vdx-nav__* / .vdx-breadcrumb__* classes; core.js renders
+   markup directly in those classes (NAV-001/NAV-002/NAV-003). What remains
+   here is (a) this platform's own topbar widgets that have no vdx-spec
+   equivalent (search, tenant/notification/profile popovers), and (b) the
+   collapsible per-group nav accordion, which also has no NAV-002 equivalent
+   (its nav is a flat list) and stays fully custom.
+   .vdx-logo__portal-name is white-space:nowrap with no overflow handling in
+   theme/global.css itself — a long tenant name can overflow the topbar the
+   same way a long name once overflowed the old sidebar brand row. Same
+   ellipsis treatment, ported to the new location. */
+.vdx-logo__portal-name{overflow:hidden;text-overflow:ellipsis;max-width:220px}
 
-.vx-main{margin-inline-start:var(--sidebar-w);min-height:100vh;display:flex;flex-direction:column}
-.vx-topbar{height:var(--topbar-h);background:var(--surface);border-bottom:1px solid var(--border);
-  display:flex;align-items:center;gap:14px;padding:0 18px;position:sticky;top:0;z-index:var(--z-sticky)}
+.vdx-main-content{padding:0}
+.vdx-breadcrumb{padding:14px 22px 0}
+/* theme/global.css sticks the sidebar at top:var(--vdx-topbar-height) — correct
+   when .vdx-sidebar's scrolling ancestor is the page itself, but here it's
+   .vdx-app-body (overflow:hidden makes it one), whose own box already starts
+   right below the topbar. Left as-is, that adds the topbar height a second
+   time and drops the sidebar 56px too low. It only needs to stick to app-body's
+   own top edge. */
+.vdx-sidebar{top:0}
+
+/* Per-group accordion (custom). Icon-rail and tablet auto-collapse leave no
+   room for a group header to toggle, so it's hidden and every list is
+   forced open in both states — mirrors the old .vx-collapsed logic, just
+   keyed off the framework's own .vdx-sidebar--collapsed class/breakpoint. */
+.vx-nav-grp{display:flex;align-items:center;justify-content:space-between;width:100%;
+  font:inherit;background:none;border:none;cursor:pointer;padding:0 var(--space-3);margin-top:var(--space-2)}
+.vx-nav-grp:hover .vdx-nav__group-label{color:var(--side-text)}
+.vx-nav-grp .chev{font-size:9px;color:var(--side-text-dim);transition:transform .15s}
+.vx-nav-grp[aria-expanded="false"] .chev{transform:rotate(-90deg)}
+.vdx-sidebar--collapsed .vx-nav-grp,
+.vdx-sidebar--collapsed .vdx-nav__item{justify-content:center;padding-inline:0}
+.vdx-sidebar--collapsed .vx-nav-grp{display:none}
+.vdx-sidebar--collapsed .vx-nav-list{display:block!important}
+@media(min-width:768px) and (max-width:1023px){
+  .vdx-sidebar .vx-nav-grp{display:none}
+  .vdx-sidebar .vx-nav-list{display:block!important}
+  .vdx-sidebar .vdx-nav__item{justify-content:center;padding-inline:0}
+}
+.vdx-sidebar__toggle{gap:var(--space-2)}
+
+/* ---------- Topbar widgets (app-specific — no vdx-spec equivalent) ---------- */
 .vx-search{position:relative;flex:1;max-width:420px}
 .vx-search i{position:absolute;inset-inline-start:11px;top:50%;transform:translateY(-50%);color:var(--text-mute);font-size:12px}
 .vx-search input{width:100%;padding:7px 12px 7px 32px;border-radius:8px;border:1px solid var(--border);
@@ -246,7 +274,6 @@ a:hover{text-decoration:underline}
 .vx-searchres a:hover{background:var(--surface-2);text-decoration:none}
 .vx-searchres .t{font-size:11px;color:var(--text-mute);margin-inline-start:auto}
 
-.vx-tb-actions{margin-inline-start:auto;display:flex;align-items:center;gap:6px}
 .vx-icobtn{width:34px;height:34px;border-radius:8px;border:1px solid transparent;background:transparent;color:var(--text-dim);
   display:grid;place-items:center;cursor:pointer;position:relative;transition:.14s;font-size:14px}
 .vx-icobtn:hover{background:var(--surface-2);color:var(--text)}
@@ -271,19 +298,19 @@ a:hover{text-decoration:underline}
 .vx-pop .it small{display:block;color:var(--text-mute);font-size:11px;margin-top:2px}
 .vx-pop a.it{color:var(--text);text-decoration:none}
 
-.vx-crumbs{padding:14px 22px 0;font-size:11.5px;color:var(--text-mute);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.vx-crumbs a{color:var(--primary);font-weight:600}
-.vx-crumbs .sep{opacity:.5}
-.vx-crumbs .cur{color:var(--text-dim);font-weight:600}
-.vx-page{padding:6px 22px 26px;flex:1}
-.vx-page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:4px 0 18px}
-.vx-page-head h1{margin:0;font-size:19.5px;font-weight:600;letter-spacing:-.02em;line-height:1.25}
-.vx-page-head p{margin:3px 0 0;color:var(--text-dim);font-size:12.5px;line-height:1.5;max-width:68ch}
+/* ---------- Page content ---------- */
+.vx-page{padding:20px 22px 26px}
+.vx-page-head{margin:4px 0 18px}
+.vx-page-head h1{letter-spacing:-.02em}
 .vx-foot{border-top:1px solid var(--border);padding:12px 22px;font-size:11.5px;color:var(--text-mute);
   display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;background:var(--surface)}
 
-/* ---------- Cards / stats ---------- */
-.vx-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:17px 19px;box-shadow:var(--shadow);margin-bottom:14px}
+/* ---------- Cards / stats ----------
+   Every .vx-card element also carries the real .vdx-card class (UI-007) now,
+   so its box model (background/border/radius/shadow/padding) comes straight
+   from theme/global.css — nothing to duplicate here. margin-bottom is
+   card-to-card spacing, which isn't part of the component itself. */
+.vx-card{margin-bottom:14px}
 .vx-card h2{font-size:14px;margin:0 0 2px;font-weight:600;letter-spacing:-.01em;line-height:1.35}
 /* Supporting line under a heading. Capped in width and length: past ~90
    characters this stops being a subtitle and becomes a paragraph the eye
@@ -291,8 +318,11 @@ a:hover{text-decoration:underline}
 .vx-card .sub{font-size:11.8px;color:var(--text-dim);margin-bottom:11px;line-height:1.5;max-width:76ch}
 .vx-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
 
-.vx-stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow);
-  display:flex;justify-content:flex-start;align-items:center;gap:14px;height:100%}
+/* .vx-stat elements also carry the real .vdx-kpi-card class now (DAT-005),
+   so box model comes from theme/global.css — the icon-leading flex layout
+   (no vdx-kpi-card equivalent; its own children just stack as plain block
+   elements) stays custom. */
+.vx-stat{display:flex;justify-content:flex-start;align-items:center;gap:14px;height:100%}
 /* Icon leads the card, matching the reference layout. Set with `order` rather
    than reordering markup on a dozen pages. */
 .vx-stat .ic{order:-1}
@@ -422,41 +452,60 @@ a:hover{text-decoration:underline}
 .vx-tree-kid:hover{background:var(--surface-2)}
 .vx-tree-kid input{flex:none;margin:0}
 
-/* ---------- Badges / pills ---------- */
-.vx-b{padding:2.5px 9px;border-radius:20px;font-size:10.5px;font-weight:600;display:inline-block;white-space:nowrap;line-height:1.5}
-.vx-b.green{background:var(--color-success-bg);color:var(--color-success)}
-.vx-b.amber{background:var(--color-warning-bg);color:var(--color-warning)}
-.vx-b.red{background:var(--color-danger-bg);color:var(--color-danger)}
+/* ---------- Badges / pills (bridge to .vdx-badge — UI-004) ----------
+   .vx-b sits at 329 scattered call sites (core.js, ag-grid-adapter.js,
+   grid.js, per-page inline scripts) with colour picked via a modifier class
+   (.green/.amber/...) rather than one shared render function — renaming
+   every call site to .vdx-badge + a BEM colour variant isn't practical, so
+   this mirrors the real component's shape/sizing and points each existing
+   colour name at its vdx semantic-status equivalent. */
+.vx-b{display:inline-flex;align-items:center;gap:var(--vdx-space-1);padding:var(--vdx-space-0-5) var(--space-2);
+  border-radius:var(--vdx-radius-full);font-size:var(--vdx-type-label-sm-size);font-weight:600;
+  line-height:1.4;white-space:nowrap;background:var(--vdx-color-status-neutral-bg);color:var(--vdx-color-status-neutral-text)}
+.vx-b.green{background:var(--vdx-color-status-success-bg);color:var(--vdx-color-status-success-text)}
+.vx-b.amber{background:var(--vdx-color-status-warning-bg);color:var(--vdx-color-status-warning-text)}
+.vx-b.red{background:var(--vdx-color-status-error-bg);color:var(--vdx-color-status-error-text)}
 /* Not tied to --primary — "blue" badges are informational/neutral chips (LOB
    tags, "Lookup" type, cross-page links), independent of the brand accent,
    which stays reserved for primary actions (Add/Save/Publish). */
-.vx-b.blue{background:var(--color-info-bg);color:var(--color-info)}
+.vx-b.blue{background:var(--vdx-color-status-info-bg);color:var(--vdx-color-status-info-text)}
+/* No vdx semantic-status equivalent for these two — app-specific lifecycle
+   ("superseded") and category-cycle colours, left as literal values. */
 .vx-b.purple{background:var(--status-superseded-bg);color:var(--status-superseded)}
 .vx-b.cyan{background:var(--cat-7-soft);color:var(--cat-7)}
-.vx-b.gray{background:var(--surface-3);color:var(--text-dim)}
+.vx-b.gray{background:var(--vdx-color-status-neutral-bg);color:var(--vdx-color-status-neutral-text)}
 
-/* ---------- Buttons ---------- */
-.btn{font-size:13px;font-weight:600;border-radius:8px;transition:.14s}
-/* §10.3 Primary: brand fill, --color-on-brand text, --color-link border, 6px radius */
-.btn-primary{background:var(--color-brand);border-color:var(--color-link);
-  color:var(--color-on-brand);border-radius:6px}
-.btn-primary:hover{background:var(--color-brand-dark);border-color:var(--color-link);color:var(--color-on-brand)}
-.btn-primary:hover{background:var(--primary-2);border-color:var(--primary-2)}
-.btn-outline-secondary{color:var(--text-dim);border-color:var(--border);background:var(--surface)}
-.btn-outline-secondary:hover{background:var(--surface-2);color:var(--text);border-color:var(--border)}
-.btn-sm{font-size:12.3px;padding:5px 11px}
+/* ---------- Buttons (bridge to .vdx-btn — UI-001/UI-002/UI-003) ----------
+   Bootstrap's own .btn / .btn-primary / .btn-outline-secondary / .btn-sm are
+   the call-site classes at 250+ scattered instances — including some built
+   from dynamic variant strings, e.g. vxModal()'s `btn-${c}` — so instead of
+   renaming every one to .vdx-btn, these rules make the existing classes
+   resolve to the same values as the real component: height/padding/radius/
+   type (UI-001), primary/outline colour treatment (UI-002), sm size (UI-003). */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--space-2);
+  height:40px;padding:0 var(--space-4);border-radius:var(--radius);
+  font-family:var(--font);font-size:var(--vdx-type-body-sm-size);font-weight:600;line-height:1;
+  transition:background .1s,color .1s,box-shadow .1s,border-color .1s}
+.btn:disabled,.btn[aria-disabled="true"]{background:var(--vdx-color-action-disabled-bg)!important;
+  color:var(--vdx-color-action-disabled-text)!important;border-color:transparent!important;box-shadow:none!important}
+.btn-sm{height:32px;padding:0 var(--space-3);font-size:.8125rem}
+.btn-primary{background:var(--color-brand);border-color:transparent;color:var(--color-on-brand)}
+.btn-primary:hover{background:var(--color-brand-dark);border-color:transparent;color:var(--color-on-brand)}
+.btn-outline-secondary,.btn-outline-primary{background:transparent;color:var(--vdx-color-action-secondary);
+  border:1.5px solid var(--vdx-color-action-secondary)}
+.btn-outline-secondary:hover,.btn-outline-primary:hover{background:var(--vdx-color-action-ghost-hover);
+  color:var(--vdx-color-action-secondary);border-color:var(--vdx-color-action-secondary)}
 
 /* ---------- Tables ---------- */
-.vx-tw{overflow-x:auto;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
-table.vx-t{width:100%;border-collapse:collapse;font-size:12.7px;margin:0}
-table.vx-t th{text-align:left;background:var(--surface-2);color:var(--text-mute);font-size:10.5px;text-transform:uppercase;
-  letter-spacing:.04em;padding:9px 12px;border-bottom:1px solid var(--border);white-space:nowrap;user-select:none;font-weight:700}
+/* Every .vx-tw / table.vx-t pair also carries the real .vdx-table-wrapper /
+   .vdx-table classes now (DAT-001), so box model, header/cell colours,
+   padding and borders come straight from theme/global.css. table.vx-t has
+   higher CSS specificity than .vdx-table alone (element+class beats class),
+   so what's left here is trimmed to genuinely custom behaviour the spec
+   doesn't define: sortable-header cursor, inline-edit affordance, and the
+   row-click cursor variant. */
 table.vx-t th.s{cursor:pointer}
-table.vx-t th.s:hover{color:var(--text)}
 table.vx-t th i{margin-inline-start:5px;opacity:.5;font-size:9.5px}
-table.vx-t td{padding:9.5px 12px;border-bottom:1px solid var(--border);vertical-align:middle;line-height:1.45}
-table.vx-t tbody tr:last-child td{border-bottom:none}
-table.vx-t tbody tr:hover{background:var(--surface-2)}
 table.vx-t tbody tr.vx-row-click{cursor:pointer}
 table.vx-t tbody tr.vx-row-click:hover{background:var(--primary-soft)}
 table.vx-t td.vx-editable{cursor:pointer;border-radius:4px;transition:background .1s}
@@ -467,19 +516,27 @@ table.vx-t td.vx-editable .form-control,table.vx-t td.vx-editable .form-select{f
    app instead of duplicating a color palette, so it follows light/dark mode
    and the VeriDex accent automatically. ---------- */
 .vx-ag.ag-theme-quartz{
-  --ag-background-color:var(--surface); --ag-foreground-color:var(--text);
-  --ag-header-background-color:var(--surface-2); --ag-header-foreground-color:var(--text-dim);
-  --ag-border-color:var(--border); --ag-row-border-color:var(--border);
-  --ag-row-hover-color:var(--surface-2); --ag-selected-row-background-color:var(--primary-soft);
+  /* AG Grid renders its own internal DOM (divs, not a <table>), so it can't
+     carry literal .vdx-table classes the way the plain HTML tables below can
+     — this is a real component (DAT-001), just consumed entirely through its
+     own CSS variable API. Pointed at the actual --vdx-color-table-* tokens
+     (not the generic --surface/--border aliases used elsewhere) so its
+     header/border/hover colours match .vdx-table exactly, not just "close". */
+  --ag-background-color:var(--vdx-color-table-row-bg); --ag-foreground-color:var(--text);
+  --ag-header-background-color:var(--vdx-color-table-header-bg); --ag-header-foreground-color:var(--vdx-color-table-header-text);
+  --ag-border-color:var(--vdx-color-table-border); --ag-row-border-color:var(--vdx-color-table-border);
+  --ag-row-hover-color:var(--vdx-color-table-row-hover); --ag-selected-row-background-color:var(--vdx-color-table-row-selected);
   --ag-accent-color:var(--primary); --ag-checkbox-checked-color:var(--primary);
-  --ag-font-family:var(--font); --ag-font-size:12.7px;
-  --ag-cell-horizontal-padding:12px; --ag-header-height:38px; --ag-row-height:40px;
-  --ag-border-radius:var(--radius); --ag-wrapper-border-radius:var(--radius);
+  --ag-font-family:var(--font); --ag-font-size:var(--vdx-type-body-sm-size);
+  --ag-cell-horizontal-padding:var(--vdx-space-4); --ag-header-height:38px; --ag-row-height:40px;
+  --ag-border-radius:var(--vdx-radius-lg); --ag-wrapper-border-radius:var(--vdx-radius-lg);
   --ag-input-focus-border-color:var(--primary);
   border:1px solid var(--border); border-radius:var(--radius); overflow:hidden;
 }
-.vx-empty{text-align:center;padding:34px 12px;color:var(--text-mute)}
-.vx-empty i{font-size:26px;opacity:.4;display:block;margin-bottom:8px}
+/* .vx-empty elements also carry the real .vdx-empty class now (UI-021), so
+   layout/padding/gap come from theme/global.css. The icon keeps its own
+   size/opacity treatment — vdx-empty__icon only sets colour, not size. */
+.vx-empty i{font-size:26px;opacity:.4}
 /* Actions sit under their own header, so they start where it starts. They were
    right-aligned against a left-aligned "Actions" label, which read as a stray
    pair of icons floating at the edge of the grid. */
@@ -525,7 +582,7 @@ table.vx-t td.vx-editable .form-control,table.vx-t td.vx-editable .form-select{f
   color:var(--text-mute);margin-bottom:9px}
 .vx-covcard .off-note{font-size:12.2px;color:var(--text-mute);border-top:none;padding-top:0}
 table.vx-t.covkids{margin:0}
-table.vx-t.covkids td{padding:6px 10px;font-size:12.3px;border-bottom:1px solid var(--border)}
+table.vx-t.covkids td{padding:6px 10px;font-size:12.3px;border-bottom:1px solid var(--border-subtle)}
 table.vx-t.covkids tr:last-child td{border-bottom:none}
 table.vx-t.covkids tr.off td{opacity:.5}
 table.vx-t.covkids td.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -553,36 +610,57 @@ table.vx-t.pt tr.pt-final td{background:var(--primary-soft);color:var(--text)}
 .vx-ctxbar .seg.meta .val{font-size:13px;font-weight:650;padding:5px 0}
 .vx-ctx-sep{color:var(--text-mute);font-size:11px;margin-bottom:9px}
 @media (max-width:820px){.vx-ctxbar{align-items:stretch}.vx-ctx-sep{display:none}}
-.form-control,.form-select{background:var(--surface-2);border-color:var(--border);color:var(--text);font-size:13px;border-radius:8px}
-.form-control:focus,.form-select:focus{background:var(--surface);border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft);color:var(--text)}
-.form-control::placeholder{color:var(--text-mute)}
-label{font-size:11.5px;font-weight:600;color:var(--text-dim);margin-bottom:3px}
+/* Bridge to .vdx-input/.vdx-select/.vdx-label (FRM-001/002) — Bootstrap's own
+   .form-control/.form-select/label classes are the call-site names across
+   every form on the platform, so restyled to match rather than renamed.
+   Real gap fixed here: inputs previously sat on --surface-2 (a light-gray
+   fill close to the page canvas colour), reading as "sunken into the page"
+   rather than vdx's white, clearly-interactive field; labels were both
+   smaller and dimmer (--text-dim) than vdx's full-strength ink. */
+.form-control,.form-select{background:var(--vdx-color-form-input-bg);border-color:var(--vdx-color-form-input-border);
+  color:var(--text);font-size:var(--vdx-type-body-sm-size);border-radius:var(--vdx-radius-md)}
+.form-control:focus,.form-select:focus{background:var(--vdx-color-form-input-bg);border-color:var(--vdx-color-form-input-border-focus);
+  box-shadow:var(--vdx-shadow-focus);color:var(--text)}
+.form-control::placeholder{color:var(--vdx-color-text-placeholder)}
+label{font-size:var(--vdx-type-label-md-size);font-weight:600;color:var(--vdx-color-text-primary);margin-bottom:3px}
 .form-check-input:checked{background-color:var(--color-brand);border-color:var(--color-link)}
 
-/* ---------- Modal ---------- */
-.modal-content{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:14px}
-.modal-header,.modal-footer{border-color:var(--border)}
-.modal-title{font-size:15px;font-weight:700}
+/* ---------- Modal (bridge to .vdx-modal — UI-013) ----------
+   vxModal() renders Bootstrap's own .modal/.modal-content/bootstrap.Modal,
+   whose focus-trap/backdrop/show-hide JS depends on that exact markup, so
+   these classes are restyled to match .vdx-modal's values rather than
+   renamed. Bootstrap 5.3's backdrop is themed through its own CSS vars. */
+.modal-content{background:var(--vdx-color-bg-surface-raised);color:var(--text);border:none;
+  border-radius:var(--vdx-radius-xl);box-shadow:var(--vdx-shadow-2xl)}
+.modal-header,.modal-footer{border-color:var(--vdx-color-border-subtle)}
+.modal-header{padding:var(--space-5) var(--space-6)}
+.modal-footer{padding:var(--space-4) var(--space-6)}
+.modal-title{font-size:var(--vdx-type-h4-size);font-weight:700;color:var(--vdx-color-text-primary)}
+.modal-backdrop{--bs-backdrop-bg:var(--vdx-color-bg-overlay);--bs-backdrop-opacity:1}
 
-/* ---------- Toast ---------- */
-#vxToasts{position:fixed;bottom:20px;inset-inline-end:20px;z-index:var(--z-toast);display:flex;flex-direction:column;gap:9px}
-.vx-toast{display:flex;align-items:flex-start;gap:10px;min-width:270px;max-width:380px;padding:11px 14px;border-radius:10px;
-  background:var(--surface);border:1px solid var(--border);border-inline-start:4px solid var(--primary);box-shadow:var(--shadow-lg);
-  font-size:13px;animation:vxSlideIn .26s cubic-bezier(.22,.9,.32,1) both}
-.vx-toast.ok{border-left-color:var(--good)}.vx-toast.err{border-left-color:var(--bad)}
-.vx-toast.warn{border-left-color:var(--warn)}.vx-toast.info{border-left-color:var(--primary)}
-.vx-toast i{margin-top:1px}
-.vx-toast.ok i{color:var(--good)}.vx-toast.err i{color:var(--bad)}
-.vx-toast.warn i{color:var(--warn)}.vx-toast.info i{color:var(--primary)}
-.vx-toast b{display:block;font-size:12.8px}
-.vx-toast small{color:var(--text-dim);font-size:11.5px}
+/* ---------- Toast (bridge to .vdx-toast — UI-017) ----------
+   vxToast() is fully custom (no Bootstrap JS dependency), but 40+ scattered
+   call sites pass a literal kind string ("ok"/"err"/"warn"/"info") baked
+   into the class name, so — as with badges — the existing classes are
+   restyled to match .vdx-toast rather than renamed at every call site. */
+#vxToasts{position:fixed;bottom:var(--space-6);inset-inline-end:var(--space-6);z-index:var(--z-toast);
+  display:flex;flex-direction:column;gap:var(--space-3);max-width:400px}
+.vx-toast{display:flex;align-items:flex-start;gap:var(--space-3);min-width:270px;max-width:380px;padding:var(--space-4);
+  border-radius:var(--vdx-radius-lg);background:var(--vdx-primitive-neutral-900);color:var(--vdx-color-text-inverse);
+  border-inline-start:4px solid transparent;box-shadow:var(--vdx-shadow-xl);
+  font-size:var(--vdx-type-body-sm-size);animation:vxSlideIn .26s cubic-bezier(.22,.9,.32,1) both}
+.vx-toast.ok{border-left-color:var(--vdx-primitive-green-500)}.vx-toast.err{border-left-color:var(--vdx-primitive-red-500)}
+.vx-toast.warn{border-left-color:var(--vdx-primitive-amber-500)}.vx-toast.info{border-left-color:var(--vdx-primitive-blue-500)}
+.vx-toast i{margin-top:1px;color:var(--vdx-primitive-neutral-400)}
+.vx-toast b{display:block;font-size:var(--vdx-type-body-sm-size);font-weight:600;margin-bottom:2px}
+.vx-toast small{color:var(--vdx-primitive-neutral-300);font-size:var(--vdx-type-body-xs-size)}
 
-/* ---------- Loading ---------- */
-.vx-spin{width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--primary);border-radius:50%;
+/* ---------- Loading (UI-018/019/020) ---------- */
+.vx-spin{width:16px;height:16px;border:2px solid var(--vdx-color-border-subtle);border-top-color:var(--primary);border-radius:50%;
   animation:vxSpin .7s linear infinite;display:inline-block}
 .vx-load{display:grid;place-items:center;padding:40px;color:var(--text-mute);font-size:12.5px;gap:10px}
-.vx-skel{background:linear-gradient(90deg,var(--surface-2),var(--surface-3),var(--surface-2));
-  background-size:200% 100%;animation:vxPulse 1.4s ease-in-out infinite;border-radius:6px;height:12px}
+.vx-skel{background:linear-gradient(90deg,var(--vdx-color-skeleton-base) 25%,var(--vdx-color-skeleton-shimmer) 50%,var(--vdx-color-skeleton-base) 75%);
+  background-size:400% 100%;animation:vxPulse 1.4s ease-in-out infinite;border-radius:var(--vdx-radius-sm);height:12px}
 
 /* ---------- AI panel ---------- */
 .vx-ai{background:linear-gradient(155deg,var(--primary-soft),rgba(80,165,241,.06));border:1px solid var(--border);
@@ -730,10 +808,17 @@ label{font-size:11.5px;font-weight:600;color:var(--text-dim);margin-bottom:3px}
 .vx-exp{cursor:pointer}
 .vx-exp-body{display:none;background:var(--surface-2)}
 .vx-exp-body.on{display:table-row}
-.nav-tabs{border-color:var(--border)}
-.nav-tabs .nav-link{color:var(--text-dim);font-size:12.8px;font-weight:600;border:none;border-bottom:2px solid transparent}
-.nav-tabs .nav-link:hover{border-color:transparent;color:var(--text)}
-.nav-tabs .nav-link.active{color:var(--primary);background:transparent;border-bottom-color:var(--primary)}
+/* Bridge to .vdx-tabs (UI-010) — Bootstrap's own .nav-tabs/.nav-link are the
+   call-site classes (4 pages) and its data-bs-toggle="tab" JS depends on
+   that exact markup shape, so these are restyled to match .vdx-tabs__list/
+   __tab exactly rather than renamed. */
+.nav-tabs{border-bottom:2px solid var(--vdx-color-border-subtle);border-top:none;border-inline:none;gap:0}
+.nav-tabs .nav-link{color:var(--vdx-color-text-secondary);font-family:var(--font);font-size:var(--vdx-type-body-sm-size);
+  font-weight:500;border:none;border-bottom:2px solid transparent;margin-bottom:-2px;padding:var(--space-3) var(--space-4);
+  background:transparent;transition:color .1s,border-color .1s}
+.nav-tabs .nav-link:hover{border-color:transparent;color:var(--vdx-color-text-primary)}
+.nav-tabs .nav-link.active{color:var(--vdx-color-action-primary);background:transparent;
+  border-bottom-color:var(--vdx-color-action-primary);font-weight:600}
 .vx-ctx{position:fixed;background:var(--surface);border:1px solid var(--border);border-radius:9px;box-shadow:var(--shadow-lg);
   padding:5px;z-index:var(--z-tooltip);display:none;min-width:170px}
 .vx-ctx.on{display:block;animation:vxFadeUp .13s both}
@@ -744,26 +829,39 @@ label{font-size:11.5px;font-weight:600;color:var(--text-dim);margin-bottom:3px}
 .vx-ov{position:fixed;inset:0;background:rgba(10,15,30,.55);backdrop-filter:blur(2px);z-index:var(--z-overlay);display:none}
 .vx-ov.on{display:block;animation:vxFade .18s both}
 
-@media(max-width:991px){
-  .vx-sidebar{transform:translateX(-100%)}
-  .vx-sidebar.on{transform:none;box-shadow:var(--shadow-lg)}
-  .vx-main{margin-inline-start:0}
+/* Sidebar mobile-drawer / tablet-icon-rail transforms and the topbar hamburger
+   breakpoint are now theme/global.css's own .vdx-sidebar / .vdx-topbar__hamburger
+   media queries (767px / 1023px) — nothing app-specific left to add here
+   beyond letting the search box drop its fixed max-width on narrow screens. */
+@media(max-width:767px){
+  /* .vdx-topbar__center is flex:1 with the flexbox default min-width:auto,
+     which floors it at the search input's intrinsic width and pushes
+     .vdx-topbar__end (tenant/notif/avatar) off-screen below ~480px. */
+  .vdx-topbar__center{min-width:0}
   .vx-search{max-width:none}
+  /* NAV-001 §8.1: "collapsed logo" on mobile. The wordmark + portal-name
+     lockup that's fine on a full topbar is ~150px this narrow topbar (now
+     also carrying the hamburger, search and 3-4 account actions) doesn't
+     have — down to the icon mark only. */
+  .vdx-logo__text,.vdx-logo__portal-name{display:none}
+}
+@media(max-width:480px){
+  /* "Tenant Management" is the widest single item in the action cluster —
+     icon-only below the point where the tenant switcher's own name already
+     drops (720px, above). Visually-hidden (not overflow-clipped): a flex
+     item's min-width:auto floors it at its own text width regardless of the
+     button's own width/overflow, so clipping the button box still let the
+     label spill into neighboring buttons. Taking the label out of flow
+     entirely is what actually removes it. */
+  #vxLogoutTenant{width:34px;padding-inline:0;display:inline-flex;align-items:center;justify-content:center}
+  #vxLogoutTenant i{margin-inline-end:0!important}
+  #vxLogoutTenantLabel{position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+    overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 }
 
 /* ==========================================================================
    Accessibility primitives (§15, §16)
    ========================================================================== */
-
-/* WCAG 2.4.1 Bypass Blocks. 41 nav links precede the content on every page;
-   without this a keyboard user tabs through all of them to reach anything.
-   Off-canvas until focused rather than display:none — a hidden element is not
-   focusable, which would defeat the entire purpose. */
-.vx-skip{position:absolute;inset-inline-start:var(--space-2);top:-64px;z-index:var(--z-tooltip);
-  background:var(--color-panel);color:var(--color-link);border:2px solid var(--color-focus);
-  border-radius:6px;padding:var(--space-2) var(--space-4);font-size:13px;font-weight:600;
-  text-decoration:none;transition:top .12s}
-.vx-skip:focus{top:var(--space-2)}
 
 /* Visually hidden but available to assistive technology. Used for the live
    region and for names that would be redundant on screen. */
@@ -776,8 +874,12 @@ label{font-size:11.5px;font-weight:600;color:var(--text-dim);margin-bottom:3px}
    --color-focus is 5.18:1 on white and 2px thick, clearing 2.4.11's minimum
    area with room to spare. */
 :focus-visible{outline:2px solid var(--color-focus);outline-offset:2px;border-radius:4px}
-/* The shell is dark; the light-surface focus colour would vanish on it. */
-.vx-sidebar :focus-visible,.vx-topbar :focus-visible{outline-color:var(--color-panel)}
+/* Only the sidebar has a dark (navy) background — the topbar is light like
+   the rest of the page, so it keeps the default orange ring. A prior version
+   of this rule also swapped the topbar's ring to the light-surface colour,
+   which made focus invisible against its white background; scoped to the
+   sidebar only, which is the one surface that actually needs it. */
+.vdx-sidebar :focus-visible{outline-color:var(--color-panel)}
 
 /* The nav is a list of lists now, for group announcement. Strip the list
    presentation without stripping the semantics (never list-style:none alone —

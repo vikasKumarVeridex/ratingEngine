@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" style="background-color:#1A1D23">
+<html lang="en" style="background-color:#1B2635">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Products — Configuration | VeriDex</title>
@@ -33,7 +33,7 @@ document.getElementById("vxBody").innerHTML = `
     <p><b>Custom</b> describes the calculator implementation, not its rate source. ISO-based programs use loss costs and carrier LCMs; proprietary programs use their own rate models. Both can use a custom calculator.</p>
     <p>Paper is resolved from the line, product and carrier. Admitted programs carry no surplus-lines tax or filing fee.</p></div>
   </div>
-  <div class="vx-card vx-anim"><div id="grid"></div></div>`;
+  <div class="vx-card vdx-card vx-anim"><div id="grid"></div></div>`;
 
 const VSTAT = { Published:"green", Draft:"amber", Scheduled:"blue", Expired:"gray", Archived:"gray" };
 /* Versions belong to the active tenant's partition, and one product can have
@@ -107,7 +107,7 @@ function versionOpts(cur) {
 document.getElementById("vxPageActions").innerHTML =
   `<label class="btn btn-outline-secondary btn-sm" for="prodCfgUpload" style="margin-bottom:0;cursor:pointer">
      <i class="fa-solid fa-file-arrow-up me-1"></i>Upload Product Configuration</label>
-   <input type="file" id="prodCfgUpload" accept=".json" class="vx-sr">`;
+   <input type="file" id="prodCfgUpload" accept=".json" class="vx-sr vdx-sr-only">`;
 
 document.getElementById("prodCfgUpload").onchange = async e => {
   const file = e.target.files[0];
@@ -139,7 +139,7 @@ document.getElementById("prodCfgUpload").onchange = async e => {
   const action = existing ? "Update" : "Create";
 
   vxModal(`${action} product from uploaded configuration`, `
-    <div class="vx-tw"><table class="vx-t"><tbody>
+    <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table"><tbody>
       <tr><td style="width:170px">Action</td><td><b>${action}</b>${existing ? ` — ${existing.name} (${existing.code})` : " — new Draft product"}</td></tr>
       <tr><td>Coverage Line</td><td>${mapped.lobName}</td></tr>
       <tr><td>Coverage class</td><td>${mapped.coverageClass || "—"}
@@ -191,7 +191,7 @@ function importStudioExport(raw) {
       This writes into <b>${tenant.name || "the active tenant"}</b>'s partition.
       To set up a <i>new</i> carrier instead, use <b>Tenants → Onboard Tenant from Configuration</b>.
     </div>
-    <div class="vx-tw"><table class="vx-t"><tbody>
+    <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table"><tbody>
       <tr><td style="width:190px">Product</td><td><b>${P.name || "—"}</b> · ${P.code || "—"}</td></tr>
       <tr><td>Coverage Line</td><td>${pv.lobName}${pv.lobIsNew ? ' <span class="vx-b vx-b-warn">new line</span>' : ""}</td></tr>
       <tr><td>Coverages</td><td>${pv.parents.length} primary · ${pv.children.length} child<div class="vx-mute" style="font-size:11.5px">${pv.parents.map(c => c.name).join(", ") || "—"}</div></td></tr>
