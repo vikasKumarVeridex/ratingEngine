@@ -58,16 +58,16 @@ const totalSeats = VX.tenants.reduce((a, t) => a + t.seats, 0);
 
 document.getElementById("vxBody").innerHTML = `
   <div class="row g-2 mb-3">
-    <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Tenants</div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card vx-anim"><div><div class="lbl">Tenants</div>
       <div class="val">${VX.tenants.length}</div><div class="dt flat">${VX.tenants.filter(t=>t.status==="Active").length} active · ${VX.tenants.filter(t=>t.status==="Trial").length} trial</div></div>
       <div class="ic" style="background:var(--cat-1)"><i class="fa-solid fa-building"></i></div></div></div>
-    <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Licensed Seats</div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card vx-anim"><div><div class="lbl">Licensed Seats</div>
       <div class="val">${totalSeats}</div><div class="dt flat">across all tenants</div></div>
       <div class="ic" style="background:var(--cat-2)"><i class="fa-solid fa-users"></i></div></div></div>
-    <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Enterprise Plans</div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card vx-anim"><div><div class="lbl">Enterprise Plans</div>
       <div class="val">${VX.tenants.filter(t=>t.plan==="Enterprise").length}</div><div class="dt flat">of ${VX.tenants.length} tenants</div></div>
       <div class="ic" style="background:var(--cat-4)"><i class="fa-solid fa-crown"></i></div></div></div>
-    <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Currently Working In</div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card vx-anim"><div><div class="lbl">Currently Working In</div>
       <div class="val" style="font-size:16px;line-height:1.5">${vxTenant().name}</div><div class="dt flat">switch from the top bar</div></div>
       <div class="ic" style="background:${vxTenant().accent}"><i class="fa-solid fa-circle-check"></i></div></div></div>
   </div>
@@ -85,7 +85,7 @@ document.getElementById("vxBody").innerHTML = `
   ${vxNotWiredBanner('Documents are stored in-browser — there is no live Cosmos DB account behind this.',
     '<code>assets/js/cosmos-model.js</code> defines the real container, partition-key and query design; see <a href="db-schema.html">Data Model</a>.')}
 
-  <div class="vx-card vx-anim"><div id="grid"></div></div>`;
+  <div class="vx-card vdx-card vx-anim"><div id="grid"></div></div>`;
 
 /* ============================================================
    Onboard a tenant FROM a product configuration file.
@@ -196,7 +196,7 @@ document.getElementById("tenantCfgUpload").onchange = async e => {
     </div>
 
     <h6 style="font-size:12px;font-weight:700;margin:18px 0 8px">2 · What this file will create</h6>
-    <div class="vx-tw"><table class="vx-t"><tbody>
+    <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table"><tbody>
       <tr><td style="width:190px">Product</td><td><b>${pv.P.name}</b> <code style="font-size:11px">${pv.P.code || "—"}</code> · ${pv.P.status === "draft" ? "Draft" : "Active"}</td></tr>
       <tr><td>Line of Business</td><td>${pv.lobIsNew
         ? `<span class="vx-b amber">${pv.lobName}</span> <span style="color:var(--warn);font-size:11.5px">— new line, no calculation engine behind it. A quote on it cannot be rated.</span>`
@@ -298,7 +298,7 @@ document.getElementById("tenantCfgUpload").onchange = async e => {
         vxModal("Tenant onboarded", `
           <div style="font-size:13.5px;line-height:1.7">
             <b>${tenant.name}</b> created and configured from <code style="font-size:11.5px">${pv.P.code || pv.P.name}</code>.
-            <div class="vx-tw mt-3"><table class="vx-t"><tbody>
+            <div class="vx-tw vdx-table-wrapper mt-3"><table class="vx-t vdx-table"><tbody>
               <tr><td style="width:180px">Line of Business</td><td>${res.lobName}${res.lobIsNew ? ' <span class="vx-b amber">new line — not rateable</span>' : ""}</td></tr>
               <tr><td>Coverages</td><td>${res.coverCount}</td></tr>
               <tr><td>Rating factors</td><td>${res.factorCount}${res.tableCount ? ` · ${res.tableCount} rate tables` : ""}</td></tr>

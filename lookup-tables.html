@@ -78,7 +78,7 @@ document.getElementById("vxBody").innerHTML = `
     a few placeholder rows shaped like the real key columns, generated here rather than filed, so the table isn't empty
     while you wait on the real extract. Upload a real CSV (or edit rows directly) to replace them.</div>
   <div id="lookupApprovals"></div>
-  <div class="vx-card vx-anim"><div id="grid"></div></div>`;
+  <div class="vx-card vdx-card vx-anim"><div id="grid"></div></div>`;
 /* Rows is never typed in — it always reflects reality. A table whose
    structure has been defined (columns.length) reports the number of rows
    actually in force today (VX.lookupRowsAsOf — see data.js), not the raw
@@ -253,7 +253,7 @@ function viewLocalData(rec) {
       <a href="#" onclick="event.preventDefault();setTimeout(()=>uploadCsv(vxLookupTableById(${rec.id})),300)">Upload a real CSV</a> or edit rows below to replace them.
     </div>` : "";
   vxModal(`${rec.name} — ${rows.length} row${rows.length === 1 ? "" : "s"}`,
-    `${sampleNote}<div class="vx-tw"><table class="vx-t"><thead><tr>${cols.map(c => `<th>${c.name}</th>`).join("")}${editable ? "<th></th>" : ""}</tr></thead>
+    `${sampleNote}<div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table"><thead><tr>${cols.map(c => `<th>${c.name}</th>`).join("")}${editable ? "<th></th>" : ""}</tr></thead>
       <tbody>${rows.map(row => {
         const pending = editable && vxPendingLookupRequest(rec.id, row.__rowId);
         return `<tr>${cols.map(c => `<td>${row[c.name] ?? '<span style="color:var(--text-mute)">—</span>'}</td>`).join("")}
@@ -446,12 +446,12 @@ function renderLookupApprovals() {
   };
 
   host.innerHTML = `
-    ${pending.length ? `<div class="vx-card vx-anim" style="margin-bottom:14px;border-left:3px solid var(--warn)">
+    ${pending.length ? `<div class="vx-card vdx-card vx-anim" style="margin-bottom:14px;border-left:3px solid var(--warn)">
       <div class="vx-card-head">
         <div><h2>Row changes awaiting approval <span class="vx-b amber">${pending.length}</span></h2>
           <div class="sub">A row edit or delete does not take effect until someone else approves it, and then only from its effective date.</div></div>
       </div>
-      <div class="vx-tw"><table class="vx-t" style="font-size:12.2px">
+      <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table" style="font-size:12.2px">
         <thead><tr><th>Table</th><th>Effective from</th><th>Requested by</th><th>Reason</th><th></th></tr></thead>
         <tbody>${pending.map(row).join("")}</tbody></table></div>
       <div style="font-size:11px;color:var(--text-mute);margin-top:8px">

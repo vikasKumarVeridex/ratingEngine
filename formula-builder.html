@@ -853,11 +853,11 @@ function bindTip(selector, nameFn) {
 document.getElementById("vxBody").innerHTML = `
 <div id="fbList">
   
-  <div class="vx-card vx-anim"><div id="fbGrid"></div></div>
+  <div class="vx-card vdx-card vx-anim"><div id="fbGrid"></div></div>
 </div>
 
 <div id="fbBuilder" style="display:none">
-<div class="vx-card vx-anim" id="pickerCard">
+<div class="vx-card vdx-card vx-anim" id="pickerCard">
   <h2 class="mb-3"><i class="fa-solid fa-truck-fast me-2 text-primary"></i>What are you rating?</h2>
   <div class="fb-step">
     <div class="fb-step-hd"><span class="fb-step-n">1</span>Line of business</div>
@@ -872,7 +872,7 @@ document.getElementById("vxBody").innerHTML = `
 
 <div class="row g-3">
   <div class="col-lg-3" id="colPalette">
-    <div class="vx-card vx-anim">
+    <div class="vx-card vdx-card vx-anim">
       <h2>Rating Variables</h2><div class="sub" id="palSub">Drag onto the canvas</div>
       <input class="form-control form-control-sm mb-2" id="vq" placeholder="Filter variables...">
       <div class="vx-fb-pal" id="palVar" style="max-height:620px;overflow-y:auto;display:block"></div>
@@ -880,7 +880,7 @@ document.getElementById("vxBody").innerHTML = `
   </div>
 
   <div class="col-lg-6" id="colCanvas">
-    <div class="vx-card vx-anim">
+    <div class="vx-card vdx-card vx-anim">
       <div id="canvasContext" class="mb-2"></div>
       <div class="vx-card-head"><div><h2>Formula Canvas</h2>
         <div class="sub">Click to append, drag to place exactly. <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes.</div></div>
@@ -906,7 +906,7 @@ document.getElementById("vxBody").innerHTML = `
       <div class="vx-fb-canvas" id="canvas"></div>
       <div class="mt-3"><label>Expression preview <span style="font-weight:400;color:var(--text-mute);text-transform:none;letter-spacing:0">— technical form, exactly what Evaluate/Save use</span></label><div class="vx-code" id="expr"></div></div>
     </div>
-    <div class="vx-card vx-anim vx-anim-d1 vx-adv">
+    <div class="vx-card vdx-card vx-anim vx-anim-d1 vx-adv">
       <div style="cursor:pointer" onclick="toggleRules()">
         <h2><i class="fa-solid fa-chevron-right me-2" id="rulesChevron" style="font-size:11px;transition:transform .15s;display:inline-block"></i>Conditional Overrides <span class="ms-1">${vxWiredChip(false,"Not wired")}</span></h2>
         <div class="sub">Document edge-case rules for underwriters — e.g. "cap Account Factor at 1.50."</div>
@@ -921,7 +921,7 @@ document.getElementById("vxBody").innerHTML = `
   </div>
 
   <div class="col-lg-3" id="colTest">
-    <div class="vx-card vx-anim">
+    <div class="vx-card vdx-card vx-anim">
       <h2>Test &amp; Preview</h2><div class="sub">Live evaluation with current variable values</div>
       <div id="testVals" style="max-height:230px;overflow-y:auto"></div>
       <button class="btn btn-primary btn-sm w-100 mt-2" onclick="test()"><i class="fa-solid fa-play me-1"></i>Evaluate Formula</button>
@@ -1022,7 +1022,7 @@ function inspectVar(n) {
     <div style="font-size:12.5px;color:var(--text-dim);line-height:1.6">${varDef(n)}</div>
     ${s.note ? `<div class="vx-ai mt-2" style="padding:9px 13px;font-size:12px"><i class="fa-solid fa-circle-info me-1"></i>${s.note}</div>` : ""}
     ${rows && rows.length ? `<h6 style="font-size:12px;font-weight:700;margin:16px 0 6px">Every row in this table</h6>
-      <div class="vx-tw" style="max-height:320px;overflow-y:auto"><table class="vx-t">
+      <div class="vx-tw vdx-table-wrapper" style="max-height:320px;overflow-y:auto"><table class="vx-t vdx-table">
         <thead><tr><th>When the answer is…</th><th style="text-align:right">Factor applied</th></tr></thead>
         <tbody>${rows.map(r => `<tr${s.base != null && Math.abs(+r.v - s.base) < 1e-9 ? ' style="background:var(--surface-2)"' : ""}>
           <td style="font-size:12px">${r.l}${s.base != null && Math.abs(+r.v - s.base) < 1e-9 ? ' <span class="vx-b gray" style="font-size:9px">default</span>' : ""}</td>
@@ -1579,7 +1579,7 @@ function bulkAttach(recs) {
       A formula belongs to a <b>version</b>, not to a product — a product owns many versions.
       This adds the version alongside whatever these formulas are already attached to.
     </div>
-    <div class="vx-tw mb-3"><table class="vx-t"><tbody>
+    <div class="vx-tw vdx-table-wrapper mb-3"><table class="vx-t vdx-table"><tbody>
       ${recs.map(f => `<tr><td><b>${f.name}</b>
         <div style="font-size:10.5px;color:var(--text-mute)">${f.scope === "Account" ? "Account level" : f.cob} · ${f.lob}</div></td>
         <td style="text-align:right"><span class="vx-b ${f.status === "Active" ? "green" : "amber"}">${f.status}</span></td></tr>`).join("")}
@@ -1632,7 +1632,7 @@ function showFormulaHistory(rec) {
   }
   vxModal(`Version history — ${rec.name}`, `
     <div class="sub mb-3">Every revision this formula's expression has been saved as. Saving stages Draft — nothing here goes live until its rating version is published.</div>
-    <div class="vx-tw"><table class="vx-t">
+    <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table">
       <thead><tr><th>In force</th><th>Expression</th><th>Saved by</th><th>Note</th></tr></thead>
       <tbody>${hist.map((h, i) => `<tr>
         <td style="white-space:nowrap;font-size:11.8px">${h.effectiveStart}${h.effectiveEnd ? " – " + h.effectiveEnd : " onward"}

@@ -45,7 +45,7 @@ const totalQuotes = rows.reduce((s, r) => s + r.quotes, 0);
 const totalBoundPremium = rows.reduce((s, r) => s + r.boundPremium, 0);
 const totalProducts = rows.reduce((s, r) => s + r.products, 0);
 
-const stat = (l, v, dt, ic, bg) => `<div class="col-6 col-lg-3"><div class="vx-stat vx-anim">
+const stat = (l, v, dt, ic, bg) => `<div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card vx-anim">
   <div><div class="lbl">${l}</div><div class="val">${v}</div><div class="dt flat">${dt}</div></div>
   <div class="ic" style="background:${bg}"><i class="fa-solid ${ic}"></i></div></div></div>`;
 
@@ -57,10 +57,10 @@ document.getElementById("vxBody").innerHTML = `
   ${stat("Bound Premium", vxMoney(totalBoundPremium), "Summed across every tenant", "fa-sack-dollar", "var(--cat-3)")}
 </div>
 
-<div class="vx-card vx-anim">
+<div class="vx-card vdx-card vx-anim">
   <div class="vx-card-head"><div><h2>Tenants</h2><div class="sub">One row per tenant on this account — open one to switch into its own workspace.</div></div>
     <a href="tenants.html" class="btn btn-primary btn-sm"><i class="fa-solid fa-plus me-1"></i>Onboard a tenant</a></div>
-  <div class="vx-tw"><table class="vx-t">
+  <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table">
     <thead><tr><th>Tenant</th><th>Plan</th><th>Lines of Business</th><th>Products</th><th>Published Versions</th>
       <th>Rating Factors</th><th>Quotes</th><th>Bound Premium</th><th>Status</th><th style="text-align:right">Switch to</th></tr></thead>
     <tbody>${rows.map(r => `<tr>

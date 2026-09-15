@@ -26,7 +26,7 @@ vxShell("Surcharge Management", "Premium debits. || Applied for elevated-risk co
 document.getElementById("vxBody").innerHTML = `
   ${vxNotWiredBanner('Only the <b>first active surcharge</b> matching a quote’s LOB is applied.',
     'Matching runs in list order over the quote’s own LOB plus any marked "All"; anything beyond the first match is silently skipped. Reorder or deactivate a surcharge here to change which one actually applies.')}
-  <div class="vx-card vx-anim"><div id="grid"></div></div>`;
+  <div class="vx-card vdx-card vx-anim"><div id="grid"></div></div>`;
 const grid = vxAgGrid({ el:"#grid", key:"surcharges", name:"Surcharge",
 
   cols:[{k:"name",l:"Surcharge"},{k:"code",l:"Code"},{k:"lob",l:"LOB"},

@@ -23,7 +23,7 @@
 <script src="assets/js/ag-grid-adapter.js?v=20260912"></script>
 <script>
 vxShell("User Management", "This tenant's own team. || Every tenant is provisioned with one Super Admin on onboarding — from there, invite your own Rating Administrator, Actuarial Analyst and Product Manager here.", [{l:"Team"},{l:"User Management"}]);
-document.getElementById("vxBody").innerHTML = `<div class="vx-card vx-anim"><div id="grid"></div></div>`;
+document.getElementById("vxBody").innerHTML = `<div class="vx-card vdx-card vx-anim"><div id="grid"></div></div>`;
 /* Seed users (ids 1-5, data.js) are regenerated fresh every load, never
    persisted — the same split ratingFactors already has between its fixed
    FACTORS table and D.customFactors. Anything added here (id > 5, since a

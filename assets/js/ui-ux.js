@@ -91,8 +91,8 @@
   function wrapSection(card, title) {
     if (!card || card.hidden || card.style.display === 'none' || card.closest('.vx-ux-disclosure') || card.dataset.uxSectionDone) return;
     card.dataset.uxSectionDone = 'true';
-    const details = document.createElement('details'); details.className = 'vx-ux-disclosure';
-    const summary = document.createElement('summary'); summary.textContent = title;
+    const details = document.createElement('details'); details.className = 'vx-ux-disclosure vdx-accordion';
+    const summary = document.createElement('summary'); summary.className = 'vdx-accordion__trigger'; summary.textContent = title;
     card.before(details); details.append(summary, card);
     const heading = card.querySelector('h2');
     if (heading && cleanText(heading) === title) {

@@ -156,7 +156,7 @@ document.getElementById("vxBody").innerHTML = `
     Covers <b>${byState.length} states/provinces</b> — Canadian provinces are treated as states here (cross-border
     trucking exposure); the County view is USA-only, as no Canadian county dataset exists in this platform.</div>
 
-  <div class="vx-card vx-anim mb-3" style="padding:12px 16px">
+  <div class="vx-card vdx-card vx-anim mb-3" style="padding:12px 16px">
     <div class="d-flex align-items-center gap-2 flex-wrap">
       <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-mute)">Scope</span>
       <select class="form-select form-select-sm" id="pgLob" style="width:auto"><option value="">All lines of business</option>
@@ -174,18 +174,18 @@ document.getElementById("vxBody").innerHTML = `
   </div>
 
   <div id="lrStats" class="row g-2 mb-3">
-    <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">Overall Loss Ratio</div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card stack"><div class="lbl">Overall Loss Ratio</div>
       <div class="val" style="color:${lrColor(overallLR - 0.55)}">${(overallLR * 100).toFixed(1)}%</div>
       <div class="dt flat">$${vxNum(totalInc)} incurred / $${vxNum(totalPrem)} earned</div></div></div>
-    <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">States — Rate Increase Indicated</div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card stack"><div class="lbl">States — Rate Increase Indicated</div>
       <div class="val" style="color:var(--bad)">${increaseStates.length}</div><div class="dt flat">loss ratio &gt;8pt over target</div></div></div>
-    <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">States — Room to Decrease</div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card stack"><div class="lbl">States — Room to Decrease</div>
       <div class="val" style="color:var(--good)">${decreaseStates.length}</div><div class="dt flat">loss ratio &gt;15pt under target</div></div></div>
-    <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">Total Claims (sample)</div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card stack"><div class="lbl">Total Claims (sample)</div>
       <div class="val">${vxNum(Q.reduce((s, q) => s + q.claims, 0))}</div><div class="dt flat">across ${vxNum(Q.length)} quotes</div></div></div>
   </div>
 
-  <div class="vx-card vx-anim mb-3">
+  <div class="vx-card vdx-card vx-anim mb-3">
     <div class="vx-card-head" style="cursor:pointer" onclick="toggleSugg()">
       <div><h2><i class="fa-solid fa-wand-magic-sparkles me-2" style="color:var(--purple)"></i>Rate Action Suggestions
         <span class="vx-b amber ms-1" id="suggCount"></span></h2>
@@ -197,14 +197,14 @@ document.getElementById("vxBody").innerHTML = `
 
   <div class="row g-3 mb-3">
     <div class="col-lg-6">
-      <div class="vx-card vx-anim" style="height:100%">
+      <div class="vx-card vdx-card vx-anim" style="height:100%">
         <h2>Premium &amp; Incurred Losses — Monthly</h2>
         <div class="sub">Real per-quote effective dates, bucketed by month — line is the resulting loss ratio</div>
         <canvas id="cTrend" height="220"></canvas>
       </div>
     </div>
     <div class="col-lg-6">
-      <div class="vx-card vx-anim" style="height:100%">
+      <div class="vx-card vdx-card vx-anim" style="height:100%">
         <h2>Loss Ratio by Line of Business</h2>
         <div class="sub">Each bar's target line is that LOB's real or illustrative Target Loss Ratio</div>
         <canvas id="cLob" height="220"></canvas>
@@ -212,7 +212,7 @@ document.getElementById("vxBody").innerHTML = `
     </div>
   </div>
 
-  <div class="vx-card vx-anim mb-3">
+  <div class="vx-card vdx-card vx-anim mb-3">
     <h2>Top States/Provinces — Furthest From Target</h2>
     <div class="sub">Loss ratio gap vs. target, worst first — the same states driving the AI suggestions above</div>
     <canvas id="cGap" height="140"></canvas>
@@ -225,7 +225,7 @@ document.getElementById("vxBody").innerHTML = `
   </ul>
   <div class="tab-content">
     <div class="tab-pane fade show active" id="tabState">
-      <div class="vx-card vx-anim">
+      <div class="vx-card vdx-card vx-anim">
         <div class="vx-tools mb-2"><div class="l">
           <div class="vx-search" style="max-width:230px"><i class="fa-solid fa-magnifying-glass"></i>
             <input class="form-control form-control-sm" id="stq" placeholder="Search state / province..." style="padding-left:32px"></div>
@@ -243,7 +243,7 @@ document.getElementById("vxBody").innerHTML = `
           <button class="btn btn-outline-secondary btn-sm" id="stClr"><i class="fa-solid fa-filter-circle-xmark me-1"></i>Clear</button>
           <span id="stCount" style="font-size:11.5px;color:var(--text-mute);align-self:center"></span>
         </div></div>
-        <div class="vx-tw"><table class="vx-t">
+        <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table">
           <thead><tr><th>State / Province</th><th>Primary LOB</th><th style="text-align:right">Quotes</th>
             <th style="text-align:right">Earned Premium</th><th style="text-align:right">Incurred Losses</th>
             <th style="text-align:right">Loss Ratio vs Target</th><th>Trend</th></tr></thead>
@@ -252,7 +252,7 @@ document.getElementById("vxBody").innerHTML = `
       </div>
     </div>
     <div class="tab-pane fade" id="tabCounty">
-      <div class="vx-card vx-anim">
+      <div class="vx-card vdx-card vx-anim">
         <div class="vx-tools mb-2"><div class="l">
           <div class="vx-search" style="max-width:230px"><i class="fa-solid fa-magnifying-glass"></i>
             <input class="form-control form-control-sm" id="ctq" placeholder="Search county..." style="padding-left:32px"></div>
@@ -272,7 +272,7 @@ document.getElementById("vxBody").innerHTML = `
           <button class="btn btn-outline-secondary btn-sm" id="ctClr"><i class="fa-solid fa-filter-circle-xmark me-1"></i>Clear</button>
           <span id="ctCount" style="font-size:11.5px;color:var(--text-mute);align-self:center"></span>
         </div></div>
-        <div class="vx-tw"><table class="vx-t">
+        <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table">
           <thead><tr><th>County</th><th>Primary LOB</th><th style="text-align:right">Quotes</th>
             <th style="text-align:right">Earned Premium</th><th style="text-align:right">Incurred Losses</th>
             <th style="text-align:right">Loss Ratio vs Target</th><th>Trend</th></tr></thead>
@@ -285,13 +285,13 @@ document.getElementById("vxBody").innerHTML = `
     <div class="hd"><i class="fa-solid fa-user-pen" style="color:var(--primary);font-size:11.5px"></i><b>Factor changes</b><span>Who changed which factor, from what to what, and why.</span><button type="button" class="tog" onclick="vxExpToggle(&#39;expLr&#39;)">Why?</button></div>
     <div class="bd"><p>Every row names a real factor from the Rating Factors registry, its before/after value, who changed it and why — distinct from the generic system audit log, which doesn't track factor-specific before/after values.</p><p>Rows are cross-checked against the states above: <span class="vx-b red">unaddressed</span> means that state is over target with no matching factor change on file.</p></div>
   </div>
-      <div class="vx-card vx-anim">
+      <div class="vx-card vdx-card vx-anim">
         <div class="vx-tools mb-2"><div class="l">
           <div class="vx-search" style="max-width:280px"><i class="fa-solid fa-magnifying-glass"></i>
             <input class="form-control form-control-sm" id="fcq" placeholder="Search factor, user, state..." style="padding-left:32px"></div>
           <span id="fcCount" style="font-size:11.5px;color:var(--text-mute);align-self:center"></span>
         </div></div>
-        <div class="vx-tw" style="max-height:560px;overflow-y:auto"><table class="vx-t">
+        <div class="vx-tw vdx-table-wrapper" style="max-height:560px;overflow-y:auto"><table class="vx-t vdx-table">
           <thead><tr><th>When</th><th>Who</th><th>Factor</th><th>State</th><th style="text-align:right">Change</th><th>Reason</th><th>Status</th></tr></thead>
           <tbody id="fcBody"></tbody></table></div>
       </div>
@@ -305,7 +305,7 @@ document.getElementById("aiSugg").innerHTML = suggestions().length ? suggestions
     <div style="flex:1"><b style="font-size:13px">${s.action}</b>
       <div style="font-size:12px;color:var(--text-dim);margin-top:2px">${s.text}</div></div>
     <button class="btn btn-outline-secondary btn-sm" onclick="vxToast('Flagged for review','${s.state} staged for actuarial review — not auto-applied','info')">Flag for Review</button>
-  </div>`).join("") : `<div class="vx-empty" style="padding:20px"><i class="fa-solid fa-check"></i>No states meaningfully off target.</div>`;
+  </div>`).join("") : `<div class="vx-empty vdx-empty" style="padding:20px"><i class="fa-solid fa-check"></i>No states meaningfully off target.</div>`;
 
 function rowHtml(r) {
   const maxAbs = Math.max(...byState.map(x => Math.abs(x.gap)), 0.01);
@@ -401,7 +401,7 @@ function renderState() {
   renderPager("st", rows.length, renderState);
   const page = rows.slice((PAGE.st - 1) * PAGE.size, PAGE.st * PAGE.size);
   document.getElementById("stBody").innerHTML = page.length ? page.map(r => rowHtml(r)).join("")
-    : `<tr><td colspan="7"><div class="vx-empty" style="padding:22px"><i class="fa-solid fa-inbox"></i>
+    : `<tr><td colspan="7"><div class="vx-empty vdx-empty" style="padding:22px"><i class="fa-solid fa-inbox"></i>
        No states or provinces match these filters.</div></td></tr>`;
 }
 
@@ -420,7 +420,7 @@ function renderCounty() {
   renderPager("ct", rows.length, renderCounty);
   const page = rows.slice((PAGE.ct - 1) * PAGE.size, PAGE.ct * PAGE.size);
   document.getElementById("ctBody").innerHTML = page.length ? page.map(r => rowHtml(r)).join("")
-    : `<tr><td colspan="7"><div class="vx-empty" style="padding:22px"><i class="fa-solid fa-inbox"></i>
+    : `<tr><td colspan="7"><div class="vx-empty vdx-empty" style="padding:22px"><i class="fa-solid fa-inbox"></i>
        No counties match these filters.</div></td></tr>`;
 }
 
@@ -560,14 +560,14 @@ function renderHeadline() {
 
   const el = document.getElementById("lrStats");
   if (el) el.innerHTML = `
-    <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">Overall Loss Ratio</div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card stack"><div class="lbl">Overall Loss Ratio</div>
       <div class="val" style="color:${lrColor(lr - 0.55)}">${(lr * 100).toFixed(1)}%</div>
       <div class="dt flat">$${vxNum(inc)} incurred / $${vxNum(prem)} earned</div></div></div>
-    <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">States \u2014 Rate Increase Indicated</div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card stack"><div class="lbl">States \u2014 Rate Increase Indicated</div>
       <div class="val" style="color:var(--bad)">${up.length}</div><div class="dt flat">loss ratio &gt;8pt over target</div></div></div>
-    <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">States \u2014 Room to Decrease</div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card stack"><div class="lbl">States \u2014 Room to Decrease</div>
       <div class="val" style="color:var(--good)">${down.length}</div><div class="dt flat">loss ratio &gt;15pt under target</div></div></div>
-    <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">Total Claims (sample)</div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card stack"><div class="lbl">Total Claims (sample)</div>
       <div class="val">${vxNum(qs.reduce((a, q) => a + q.claims, 0))}</div>
       <div class="dt flat">across ${vxNum(qs.length)} quotes</div></div></div>`;
 

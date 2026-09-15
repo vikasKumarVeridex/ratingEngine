@@ -23,7 +23,7 @@
 <script src="assets/js/ag-grid-adapter.js?v=20260912"></script>
 <script>
 vxShell("Quotes", "All rating requests processed by the engine. || Across every consuming application.", [{l:"Quoting"},{l:"Quotes"}]);
-document.getElementById("vxBody").innerHTML = `<div class="vx-card vx-anim"><div id="grid"></div></div>`;
+document.getElementById("vxBody").innerHTML = `<div class="vx-card vdx-card vx-anim"><div id="grid"></div></div>`;
 vxAgGrid({ el:"#grid", key:"quotes", name:"Quote",
   size:12,
   cols:[{k:"quoteNo",l:"Quote #"},{k:"insured",l:"Insured"},{k:"product",l:"Product"},{k:"lob",l:"LOB"},{k:"state",l:"State"},

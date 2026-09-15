@@ -60,7 +60,7 @@ function createNextVersion() {
   const products = tenantVersionProducts();
   if (!products.length) {
     vxModal("Create Next Version",
-      `<div class="vx-empty" style="padding:20px"><i class="fa-solid fa-code-branch"></i>
+      `<div class="vx-empty vdx-empty" style="padding:20px"><i class="fa-solid fa-code-branch"></i>
         ${vxTenant().name} has no rating versions yet. Add a product in
         <a href="products.html">Products</a> first — a version belongs to one.</div>`,
       [{ t: "Close", c: "secondary" }]);
@@ -228,7 +228,7 @@ document.getElementById("vxBody").innerHTML = `
       <p><b>Readiness</b> tracks whether every formula attached to a Draft version has been run through Evaluate Formula in the Formula Builder. Publishing with untested formulas attached requires an explicit override.</p>
     </div>
   </div>
-  <div class="vx-card vx-anim"><div id="grid"></div></div>`;
+  <div class="vx-card vdx-card vx-anim"><div id="grid"></div></div>`;
 
 /* Matched on product name + version label alone, with no tenant check —
    two tenants very often carry the SAME version label ("2026.10" is what
@@ -259,7 +259,7 @@ function manageFormulas(r) {
   const eligible = (VX.savedFormulas || []).filter(f => f.lob === r.lob && (f.tenantId == null || f.tenantId === r.tenantId));
   if (!eligible.length) {
     vxModal(`Formulas — ${r.version}`,
-      `<div class="vx-empty" style="padding:18px"><i class="fa-solid fa-square-root-variable"></i>
+      `<div class="vx-empty vdx-empty" style="padding:18px"><i class="fa-solid fa-square-root-variable"></i>
         No formulas exist for ${r.lob} yet. Build one in <a href="formula-builder.html">Formulas</a> first.</div>`,
       [{ t: "Close", c: "secondary" }]);
     return;
@@ -409,7 +409,7 @@ function workflowCoverageHtml() {
   return `
     <h6 style="font-size:12.5px;font-weight:700;margin:16px 0 8px"><i class="fa-solid fa-route me-1"></i>Post-Rating Workflow Coverage
       <span class="vx-b gray" style="font-size:9px" title="Against ams-service's real urls.py">vs. the real system</span></h6>
-    <div class="vx-tw"><table class="vx-t">
+    <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table">
       <thead><tr><th>Capability</th><th>Status</th><th>Real endpoints</th><th>Note</th></tr></thead>
       <tbody>${WORKFLOW_COVERAGE.map(w => `<tr>
         <td><b>${w.group}</b></td>
@@ -460,7 +460,7 @@ function acctFactorSection(rec) {
       <div class="bd"><p>Eight underwriting answers are summed into a single policy-level multiplier and applied inside the liability and physical-damage chains — not once at the end.</p>
       <p>A <b>New Venture</b> floors the safety, out-of-service and loss-frequency lines at 0%: an unproven account can be debited by them but never credited.</p></div>
     </div>
-    <div class="vx-tw"><table class="vx-t">
+    <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table">
       <thead><tr><th>Component</th><th>Driven by</th><th style="text-align:right">Range</th><th>Source</th></tr></thead>
       <tbody>${rows.map(([n, d, r, s]) => `<tr>
         <td><b>${n}</b></td>
@@ -483,13 +483,13 @@ function viewEngine(rec) {
 
   vxModal(`Rating Engine — ${rec.product} · ${rec.version}`, `
     <div class="row g-2 mb-3">
-      <div class="col-md-3"><div class="vx-stat stack" style="padding:11px 13px"><div>
+      <div class="col-md-3"><div class="vx-stat vdx-kpi-card stack" style="padding:11px 13px"><div>
         <div class="lbl">Status</div><div style="margin-top:4px">${verStatusChip(rec.status)}</div></div></div></div>
-      <div class="col-md-3"><div class="vx-stat stack" style="padding:11px 13px"><div>
+      <div class="col-md-3"><div class="vx-stat vdx-kpi-card stack" style="padding:11px 13px"><div>
         <div class="lbl">App Type · Rater</div><div style="margin-top:4px">${prod ? `<span class="vx-b blue">${prod.appTypeId} · ${prod.raterType}</span>` : '<span style="color:var(--text-mute)">—</span>'}</div></div></div></div>
-      <div class="col-md-3"><div class="vx-stat stack" style="padding:11px 13px"><div>
+      <div class="col-md-3"><div class="vx-stat vdx-kpi-card stack" style="padding:11px 13px"><div>
         <div class="lbl">Effective</div><div style="font-size:13px;font-weight:700;margin-top:3px">${rec.effectiveStart}</div></div></div></div>
-      <div class="col-md-3"><div class="vx-stat stack" style="padding:11px 13px"><div>
+      <div class="col-md-3"><div class="vx-stat vdx-kpi-card stack" style="padding:11px 13px"><div>
         <div class="lbl">Formulas Attached</div><div style="font-size:13px;font-weight:700;margin-top:3px">${attached.length}</div></div></div></div>
     </div>
 
@@ -515,7 +515,7 @@ function viewEngine(rec) {
     ${workflowCoverageHtml()}
 
     <h6 style="font-size:12.5px;font-weight:700;margin:16px 0 8px"><i class="fa-solid fa-square-root-variable me-1"></i>Formulas Attached to This Engine</h6>
-    ${attached.length ? `<div class="vx-tw"><table class="vx-t"><thead><tr><th>Formula</th><th>Scope</th><th>Expression</th><th>Tested</th><th>Status</th></tr></thead>
+    ${attached.length ? `<div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table"><thead><tr><th>Formula</th><th>Scope</th><th>Expression</th><th>Tested</th><th>Status</th></tr></thead>
       <tbody>${attached.map(f => `<tr data-fid="${f.id}" class="vx-row-click" title="Click for full details">
         <td><b>${f.name}</b></td>
         <td>${f.scope === "Class of Business" ? `<span class="vx-b blue">${f.cob}</span>` : '<span class="vx-b gray">Account</span>'}</td>
@@ -524,7 +524,7 @@ function viewEngine(rec) {
         <td><span class="vx-b ${f.status==="Active"?"green":"amber"}">${f.status}</span></td>
       </tr>`).join("")}</tbody></table></div>
       <div style="font-size:11px;color:var(--text-mute);margin-top:6px"><i class="fa-solid fa-arrow-pointer me-1"></i>Click any formula row for its full details.</div>`
-      : `<div class="vx-empty" style="padding:20px"><i class="fa-solid fa-inbox"></i>No formulas attached to this engine yet.<br><a href="formula-builder.html">Build one in the Formula Builder →</a></div>`}`,
+      : `<div class="vx-empty vdx-empty" style="padding:20px"><i class="fa-solid fa-inbox"></i>No formulas attached to this engine yet.<br><a href="formula-builder.html">Build one in the Formula Builder →</a></div>`}`,
     [{ t: "Close", c: "secondary" }, { t: "Open Formula Builder", c: "primary", fn: () => { location.href = "formula-builder.html"; } }],
     "modal-xl");
 
@@ -613,7 +613,7 @@ function bulkPublishVersions(recs) {
 
   vxModal(`Publish ${publishable.length} version${publishable.length === 1 ? "" : "s"}?`, `
     <div style="font-size:13px;line-height:1.65">
-      <div class="vx-tw" style="max-height:260px;overflow:auto"><table class="vx-t" style="font-size:12.2px">
+      <div class="vx-tw vdx-table-wrapper" style="max-height:260px;overflow:auto"><table class="vx-t vdx-table" style="font-size:12.2px">
         <thead><tr><th>Product</th><th>Version</th><th>Now</th><th>Becomes</th></tr></thead>
         <tbody>${publishable.map(r => {
           const future = r.effectiveStart && r.effectiveStart > new Date().toISOString().slice(0, 10);
@@ -841,7 +841,7 @@ function showChanges(id, pickedOlderId) {
     return `<h6 style="font-size:12.3px;font-weight:700;margin:14px 0 7px;display:flex;align-items:center;gap:7px">
         <span class="vx-b ${TCOL[t]}"><i class="fa-solid ${icon} me-1"></i>${t}</span>
         <span style="color:var(--text-mute);font-weight:500">${list.length} factor${list.length>1?"s":""}</span></h6>
-      <div class="vx-tw"><table class="vx-t">
+      <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table">
         <thead><tr><th>Factor</th><th>Category</th><th>From</th><th>To</th><th>Why</th></tr></thead>
         <tbody>${list.map(c => `<tr>
           <td><b>${c.factor}</b></td>
@@ -855,18 +855,18 @@ function showChanges(id, pickedOlderId) {
   vxModal(`What changed in ${v.version} — ${v.product}`, `
     ${mismatch ? vxNotWiredBanner(`Change tracking only stores a diff of a version against the one immediately before it. <b>${pickedOlder.version}</b> is not ${v.version}'s immediate predecessor — that's <b>${realPrior ? realPrior.version : "none"}</b> — so a direct ${pickedOlder.version} → ${v.version} diff isn't available. Showing ${v.version}'s tracked changes vs its real predecessor below instead.`) : ""}
     <div class="row g-2 mb-2">
-      <div class="col-md-3"><div class="vx-stat stack" style="padding:11px 13px"><div>
+      <div class="col-md-3"><div class="vx-stat vdx-kpi-card stack" style="padding:11px 13px"><div>
         <div class="lbl">Effective</div><div style="font-size:14px;font-weight:700;margin-top:3px">${v.effectiveStart || "not set"}</div>
         <div class="dt flat">${v.effectiveEnd || "open-ended"}</div></div></div></div>
-      <div class="col-md-3"><div class="vx-stat stack" style="padding:11px 13px"><div>
+      <div class="col-md-3"><div class="vx-stat vdx-kpi-card stack" style="padding:11px 13px"><div>
         <div class="lbl"><i class="fa-solid fa-lock me-1"></i>Rate Lock</div>
         <div style="font-size:14px;font-weight:700;margin-top:3px">${v.rateLockDate || "not set"}</div>
         <div class="dt flat">${v.rateLockDays}-day lock</div></div></div></div>
-      <div class="col-md-3"><div class="vx-stat stack" style="padding:11px 13px"><div>
+      <div class="col-md-3"><div class="vx-stat vdx-kpi-card stack" style="padding:11px 13px"><div>
         <div class="lbl">Rate Impact</div>
         <div style="font-size:14px;font-weight:700;margin-top:3px;color:${v.rateImpact>0?"var(--bad)":"var(--good)"}">${v.rateImpact>0?"+":""}${v.rateImpact.toFixed(1)}%</div>
         <div class="dt flat">avg premium</div></div></div></div>
-      <div class="col-md-3"><div class="vx-stat stack" style="padding:11px 13px"><div>
+      <div class="col-md-3"><div class="vx-stat vdx-kpi-card stack" style="padding:11px 13px"><div>
         <div class="lbl">Quotes Rated</div><div style="font-size:14px;font-weight:700;margin-top:3px">${vxNum(v.quotesRated)}</div>
         <div class="dt flat">on this version</div></div></div></div>
     </div>

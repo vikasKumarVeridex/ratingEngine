@@ -107,8 +107,8 @@ function vxGrid(opt) {
       ${bulk.map((b, bi) => `<button class="btn btn-outline-secondary btn-sm" data-ba="${bi}"><i class="fa-solid ${b.i}"></i> ${b.t}</button>`).join("")}
       <button class="btn btn-link btn-sm" id="${id}selclear">Clear</button>
     </div>` : ""}
-    <div class="vx-tw">
-      <table class="vx-t">
+    <div class="vx-tw vdx-table-wrapper">
+      <table class="vx-t vdx-table">
         <thead><tr>${bulk.length ? `<th scope="col" style="width:34px"><input type="checkbox" id="${id}selall" aria-label="Select all ${name.toLowerCase()}s on this page"></th>` : ""}${cols.map(c => {
           /* A sortable header is a control, so it is announced as one and
              carries its current sort state. Previously it was a plain <th>
@@ -135,7 +135,7 @@ function vxGrid(opt) {
 
     if (!rows.length) {
       const hasFilter = !!st.q || Object.values(st.filters).some(v => v);
-      body.innerHTML = `<tr><td colspan="${colspan}"><div class="vx-empty"><i class="fa-solid fa-inbox"></i>
+      body.innerHTML = `<tr><td colspan="${colspan}"><div class="vx-empty vdx-empty"><i class="fa-solid fa-inbox"></i>
         ${hasFilter
           ? `No ${name.toLowerCase()}s match your filters.<br><button class="btn btn-outline-secondary btn-sm mt-2" id="${id}clrf">Clear filters</button>`
           : `No ${name.toLowerCase()}s yet.` + (opt.readOnly ? "" : `<br><button class="btn btn-primary btn-sm mt-2" id="${id}emptyadd"><i class="fa-solid fa-plus me-1"></i>Add ${name}</button>`)}

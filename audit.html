@@ -23,7 +23,7 @@
 <script src="assets/js/ag-grid-adapter.js?v=20260912"></script>
 <script>
 vxShell("Audit History", "Immutable log of every configuration change. || Includes AI-originated recommendations that were applied.", [{l:"Administration"},{l:"Audit History"}]);
-document.getElementById("vxBody").innerHTML = `<div class="vx-card vx-anim"><div id="grid"></div></div>`;
+document.getElementById("vxBody").innerHTML = `<div class="vx-card vdx-card vx-anim"><div id="grid"></div></div>`;
 vxAgGrid({ el:"#grid", key:"audit", name:"Audit Entry",
   readOnly:true,size:15,
   cols:[{k:"timestamp",l:"Timestamp"},

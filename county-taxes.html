@@ -34,16 +34,16 @@ const byState = Object.entries(VX.countyTaxes.reduce((a,c)=>(a[c.stateName]=(a[c
 
 document.getElementById("vxBody").innerHTML = `
   <div class="row g-3 mb-1">
-    <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Taxing Counties</div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card vx-anim"><div><div class="lbl">Taxing Counties</div>
       <div class="val">${vxNum(VX.countyTaxes.length)}</div><div class="dt flat">of ${vxNum(VX.counties.length)} configured</div></div>
       <div class="ic" style="background:var(--cat-1)"><i class="fa-solid fa-map-pin"></i></div></div></div>
-    <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">States Affected</div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card vx-anim"><div><div class="lbl">States Affected</div>
       <div class="val">${new Set(VX.countyTaxes.map(c=>c.state)).size}</div><div class="dt flat">with local county tax</div></div>
       <div class="ic" style="background:var(--cat-2)"><i class="fa-solid fa-flag-usa"></i></div></div></div>
-    <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Highest County Rate</div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card vx-anim"><div><div class="lbl">Highest County Rate</div>
       <div class="val">${Math.max(...VX.countyTaxes.map(c=>c.countyTax)).toFixed(2)}%</div><div class="dt flat">local tax only</div></div>
       <div class="ic" style="background:var(--cat-5)"><i class="fa-solid fa-arrow-up"></i></div></div></div>
-    <div class="col-6 col-lg-3"><div class="vx-stat vx-anim"><div><div class="lbl">Highest Combined</div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card vx-anim"><div><div class="lbl">Highest Combined</div>
       <div class="val">${Math.max(...VX.countyTaxes.map(c=>c.totalTax)).toFixed(2)}%</div><div class="dt flat">state + county</div></div>
       <div class="ic" style="background:var(--cat-6)"><i class="fa-solid fa-layer-group"></i></div></div></div>
   </div>
@@ -51,7 +51,7 @@ document.getElementById("vxBody").innerHTML = `
   ${vxNotWiredBanner('Reference data only — no quote is charged from these rows.',
     'The county tax a quote actually gets charged comes from the <b>Municipal Tax</b> field on <a href="counties.html">County Management</a>, added on top of state tax at quote time. The <b>County Tax</b> / <b>Total Tax</b> figures below are a separate, unused dataset.')}
 
-  <div class="vx-card vx-anim"><div id="grid"></div></div>`;
+  <div class="vx-card vdx-card vx-anim"><div id="grid"></div></div>`;
 
 const qs = new URLSearchParams(location.search).get("state");
 

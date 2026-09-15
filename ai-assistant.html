@@ -125,7 +125,7 @@ function respond(q) {
 document.getElementById("vxBody").innerHTML = `
 <div class="row g-3">
   <div class="col-lg-8">
-    <div class="vx-card vx-anim">
+    <div class="vx-card vdx-card vx-anim">
       <div class="vx-card-head"><div><h2>Assistant</h2><div class="sub">Connected to ${VX.meta.tenant} · Sandbox · changes stage to draft only</div></div>
         <button class="btn btn-outline-secondary btn-sm" onclick="CHAT=[];boot()"><i class="fa-solid fa-rotate-left me-1"></i>Reset</button></div>
       <div class="vx-chat" id="chat"></div>
@@ -137,7 +137,7 @@ document.getElementById("vxBody").innerHTML = `
     </div>
   </div>
   <div class="col-lg-4">
-    <div class="vx-card vx-anim">
+    <div class="vx-card vdx-card vx-anim">
       <h2><i class="fa-solid fa-file-arrow-up me-1"></i>Upload a Rating Sheet</h2>
       <div class="sub">Pick the line of business, then the rater workbook. The assistant derives the full factor configuration for that line and stages it into ${VX.meta.tenant}.</div>
       <label>Line of Business</label>
@@ -152,12 +152,12 @@ document.getElementById("vxBody").innerHTML = `
       </div>
       <div id="upResult" class="mt-2"></div>
     </div>
-    <div class="vx-card vx-anim">
+    <div class="vx-card vdx-card vx-anim">
       <h2>Example Commands</h2><div class="sub">Click to try</div>
       ${EX.map(e => `<div class="vx-fld" style="cursor:pointer" onclick="ask('${e.replace(/'/g,"\\'")}')">
         <i class="fa-solid fa-comment-dots gr"></i><div><b style="font-size:12.3px">${e}</b></div></div>`).join("")}
     </div>
-    <div class="vx-card vx-anim vx-anim-d1">
+    <div class="vx-card vdx-card vx-anim vx-anim-d1">
       <h2>Staged Changes</h2><div class="sub">Pending your publish</div>
       <div id="staged"><div style="font-size:12.3px;color:var(--text-mute)">No changes staged this session.</div></div>
     </div>
@@ -198,13 +198,13 @@ function send() {
     const r = respond(q);
     let h = r.text;
     if (r.diff) {
-      h += `<div class="vx-tw mt-2" style="border-radius:8px"><table class="vx-t"><thead><tr><th>Attribute</th><th>Current</th><th>Proposed</th></tr></thead><tbody>
+      h += `<div class="vx-tw vdx-table-wrapper mt-2" style="border-radius:8px"><table class="vx-t vdx-table"><thead><tr><th>Attribute</th><th>Current</th><th>Proposed</th></tr></thead><tbody>
         ${r.diff.map(d => `<tr><td style="font-size:12px">${d[0]}</td><td style="font-size:12px;color:var(--text-mute)">${d[1]}</td>
           <td style="font-size:12px;color:${d[3]==="warn"?"var(--warn)":d[3]==="mod"?"var(--primary)":"var(--good)"};font-weight:600">
           ${d[3]==="warn"?'<i class="fa-solid fa-triangle-exclamation me-1"></i>':""}${d[2]}</td></tr>`).join("")}</tbody></table></div>`;
     }
     if (r.table) {
-      h += `<div class="vx-tw mt-2" style="border-radius:8px"><table class="vx-t"><tbody>
+      h += `<div class="vx-tw vdx-table-wrapper mt-2" style="border-radius:8px"><table class="vx-t vdx-table"><tbody>
         ${r.table.map(row => `<tr>${row.map(c => `<td style="font-size:12px">${c}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
     }
     if (r.impact) h += `<div class="vx-ai mt-2" style="padding:10px 12px"><span class="tag"><i class="fa-solid fa-chart-line"></i>Impact Analysis</span>${r.impact}</div>`;
@@ -291,7 +291,7 @@ function renderUpload() {
       <i class="fa-solid fa-circle-check me-1" style="color:var(--good)"></i>
       Matched <b>${wb.name}</b> — ${wb.sheets} sheets, ${wb.rows}, imported ${wb.imported}.
     </div>
-    <div class="vx-tw mt-2" style="max-height:230px;overflow:auto"><table class="vx-t">
+    <div class="vx-tw vdx-table-wrapper mt-2" style="max-height:230px;overflow:auto"><table class="vx-t vdx-table">
       <thead><tr><th>Factor</th><th>Source sheet</th><th style="text-align:right">Values</th><th>State</th></tr></thead>
       <tbody>${factors.map(f => `<tr>
         <td><b style="font-size:11.8px">${f.name}</b>

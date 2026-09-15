@@ -58,7 +58,7 @@ document.getElementById("vxBody").innerHTML = `
 
   <div class="row g-3">
     <div class="col-lg-4">
-      <div class="vx-card vx-anim">
+      <div class="vx-card vdx-card vx-anim">
         <h2>Entities <span class="vx-b blue">${SCHEMA.length}</span></h2>
         <div class="sub">Grouped by kind</div>
         <input class="form-control form-control-sm mb-2" id="dmq" placeholder="Search tables, columns, purpose...">
@@ -83,7 +83,7 @@ function renderList(filter) {
           <b>${e.prefix}.${e.key}</b>
           <small>${e.rowCount ?? "—"} rows${e.usage.length === 0 ? " · <span style='color:var(--bad)'>unused</span>" : ""}${e.refs && e.refs.length ? " · " + e.refs.length + " ref" + (e.refs.length === 1 ? "" : "s") : ""}</small>
         </div>`).join("")}`).join("")
-    || `<div class="vx-empty" style="padding:22px"><i class="fa-solid fa-magnifying-glass"></i>No entities match "${filter}".</div>`;
+    || `<div class="vx-empty vdx-empty" style="padding:22px"><i class="fa-solid fa-magnifying-glass"></i>No entities match "${filter}".</div>`;
   document.querySelectorAll("[data-k]").forEach(el => el.onclick = () => {
     const [prefix, key] = el.dataset.k.split(".");
     current = SCHEMA.find(e => e.prefix === prefix && e.key === key);
@@ -102,7 +102,7 @@ function renderDetail() {
   const e = current;
   const inbound = SCHEMA.filter(x => (x.refs || []).some(r => r.table === e.key));
   document.getElementById("dmDetail").innerHTML = `
-    <div class="vx-card vx-anim">
+    <div class="vx-card vdx-card vx-anim">
       <div class="vx-card-head">
         <div><h2><code style="font-size:16px">${e.prefix}.${e.key}</code></h2>
           <div class="sub">${KINDLABEL[e.kind]} · ${e.rowCount ?? "—"} ${e.kind === "table" ? "rows" : "entries"}</div></div>
@@ -119,7 +119,7 @@ function renderDetail() {
         Defined but never read by any page or the engine — likely dead data, or feeds a feature not yet wired up.</div>` : ""}
 
       <h6 style="font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--text-mute);margin:14px 0 7px">Columns</h6>
-      <div class="vx-tw mb-3"><table class="vx-t">
+      <div class="vx-tw vdx-table-wrapper mb-3"><table class="vx-t vdx-table">
         <thead><tr><th>Column</th><th>Type</th><th>References</th></tr></thead>
         <tbody>${e.columns.map(c => {
           const ref = (e.refs || []).find(r => r.column === c.name);

@@ -26,7 +26,7 @@ vxShell("State Management", "State availability and filing status. || Controls w
 document.getElementById("vxBody").innerHTML = `
   ${vxNotWiredBanner('Tax rates here are read-only. <a href="taxes.html">Edit them on State Taxes →</a>',
     'The rating engine charges tax from <b>one place only</b>, <a href="taxes.html">State Taxes</a>. Editing tax on this screen used to silently do nothing while still showing a normal "Saved" message, so the fields are locked here instead.')}
-  <div class="vx-card vx-anim"><div id="grid"></div></div>`;
+  <div class="vx-card vdx-card vx-anim"><div id="grid"></div></div>`;
 vxAgGrid({ el:"#grid", key:"states", name:"State",
   size:12,
   cols:[{k:"name",l:"State"},{k:"abv",l:"Abv"},{k:"stateCode",l:"Code"},

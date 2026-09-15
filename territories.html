@@ -23,7 +23,7 @@
 <script src="assets/js/ag-grid-adapter.js?v=20260912"></script>
 <script>
 vxShell("Territory Management", "Rating territories with ISO mapping and relativity. || Territory drives base loss cost selection.", [{l:"Geography"},{l:"Territory Management"}]);
-document.getElementById("vxBody").innerHTML = `<div class="vx-card vx-anim"><div id="grid"></div></div>`;
+document.getElementById("vxBody").innerHTML = `<div class="vx-card vdx-card vx-anim"><div id="grid"></div></div>`;
 vxAgGrid({ el:"#grid", key:"territories", name:"Territory",
   size:12,
   cols:[{k:"code",l:"Territory Code"},{k:"state",l:"State"},{k:"name",l:"Territory Name"},

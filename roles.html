@@ -62,10 +62,10 @@ document.getElementById("vxBody").innerHTML = `
     </div>
   </div>
 
-  <div class="vx-card vx-anim"><div id="grid"></div></div>
+  <div class="vx-card vdx-card vx-anim"><div id="grid"></div></div>
   <div class="row g-3">
-    <div class="col-lg-5"><div class="vx-card vx-anim" id="simCard"></div></div>
-    <div class="col-lg-7"><div class="vx-card vx-anim" id="matrixCard"></div></div>
+    <div class="col-lg-5"><div class="vx-card vdx-card vx-anim" id="simCard"></div></div>
+    <div class="col-lg-7"><div class="vx-card vdx-card vx-anim" id="matrixCard"></div></div>
   </div>`;
 
 /* ---------------------------------------------------------------------------
@@ -84,7 +84,7 @@ function matrixHtml(rec) {
         <a href="#" style="font-size:11px" data-gall="${g}">all</a>
         <a href="#" style="font-size:11px" data-gnone="${g}">none</a>
       </div>
-      <div class="vx-tw"><table class="vx-t" style="font-size:12px">
+      <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table" style="font-size:12px">
         <thead><tr><th style="min-width:180px">Resource</th>
           ${P.ACTIONS.map(a => `<th style="text-align:center;width:74px" title="${a.d}">${a.l}</th>`).join("")}</tr></thead>
         <tbody>${rows.map(r => `<tr data-grp="${g}">
@@ -160,7 +160,7 @@ function roleEditor(rec, startTab) {
       <div class="sub">Every constraint on this role must pass for the action to be allowed. Leave the resource
         list blank to apply it everywhere.</div>
       <div id="cxList">${editing.constraints.map(constraintRow).join("") ||
-        '<div class="vx-empty" style="padding:16px"><i class="fa-solid fa-filter"></i>No constraints — this role is limited only by its permission matrix.</div>'}</div>
+        '<div class="vx-empty vdx-empty" style="padding:16px"><i class="fa-solid fa-filter"></i>No constraints — this role is limited only by its permission matrix.</div>'}</div>
       <button class="btn btn-outline-secondary btn-sm mt-1" onclick="addCx()"><i class="fa-solid fa-plus me-1"></i>Add constraint</button>
     </div>`,
     [{ t: "Cancel", c: "secondary" },
@@ -208,7 +208,7 @@ function collectConstraints() {
 function redrawCx() {
   const el = document.getElementById("cxList");
   el.innerHTML = editing.constraints.map(constraintRow).join("") ||
-    '<div class="vx-empty" style="padding:16px"><i class="fa-solid fa-filter"></i>No constraints — this role is limited only by its permission matrix.</div>';
+    '<div class="vx-empty vdx-empty" style="padding:16px"><i class="fa-solid fa-filter"></i>No constraints — this role is limited only by its permission matrix.</div>';
   wirePermModal();
 }
 function addCx() { collectConstraints(); editing.constraints.push({ attr: "tenantId", op: "eqUser", resources: [] }); redrawCx(); }
@@ -379,12 +379,12 @@ function renderEffective() {
     <h2><i class="fa-solid fa-list-check me-2" style="color:var(--primary)"></i>Effective access</h2>
     <div class="sub">What <b>${u.name}</b> holds via ${roles.map(x => x.name).join(" + ") || "no role"} —
       before constraints. The simulator applies those.</div>
-    ${rows.length ? `<div class="vx-tw" style="max-height:360px;overflow:auto"><table class="vx-t" style="font-size:12px">
+    ${rows.length ? `<div class="vx-tw vdx-table-wrapper" style="max-height:360px;overflow:auto"><table class="vx-t vdx-table" style="font-size:12px">
       <thead><tr><th>Resource</th><th>Actions granted</th></tr></thead>
       <tbody>${rows.map(x => `<tr><td>${x.r.l}</td>
         <td>${x.held.map(a => `<span class="vx-b ${a.k === "publish" || a.k === "delete" ? "amber" : "blue"}"
           style="margin-right:3px">${a.l}</span>`).join("")}</td></tr>`).join("")}</tbody></table></div>`
-      : `<div class="vx-empty" style="padding:20px"><i class="fa-solid fa-ban"></i>This role grants nothing.</div>`}`;
+      : `<div class="vx-empty vdx-empty" style="padding:20px"><i class="fa-solid fa-ban"></i>This role grants nothing.</div>`}`;
 }
 const _renderSim = renderSim;
 renderSim = function () { _renderSim(); renderEffective(); };

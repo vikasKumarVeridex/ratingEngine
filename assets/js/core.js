@@ -339,7 +339,7 @@ function vxCatAlpha(n, a) {
 }
 function vxSubtitle(sub) {
   if (!sub) return "";
-  return `<p data-page-help>${sub.split("||").map(s => s.trim()).join(" ")}</p>`;
+  return `<p class="vdx-page-header__subtitle" data-page-help>${sub.split("||").map(s => s.trim()).join(" ")}</p>`;
 }
 /* For pages that re-title themselves at runtime, so they get the same
    "short line + tooltip" treatment as a subtitle passed to vxShell. */
@@ -382,11 +382,11 @@ function vxShell(title, subtitle, crumbs) {
     const explicit = navCollapsed[g.g];
     const collapsed = !sidebarCollapsed && !isCurGroup && (explicit !== undefined ? !!explicit : true);
     return `<button type="button" class="vx-nav-grp" id="vxNavG${gi}" data-navgrp="${g.g}" aria-expanded="${!collapsed}" aria-controls="vxNavL${gi}">` +
-      `<span>${g.g}</span><i class="fa-solid fa-chevron-down chev" aria-hidden="true"></i></button>` +
+      `<span class="vdx-nav__group-label">${g.g}</span><i class="fa-solid fa-chevron-down chev" aria-hidden="true"></i></button>` +
       `<ul class="vx-nav-list" id="vxNavL${gi}" aria-labelledby="vxNavG${gi}"${collapsed ? " hidden" : ""}>` +
-      g.items.map(it => `<li><a href="${it.h}" class="${it.h === cur ? "active" : ""}" title="${it.l}"` +
+      g.items.map(it => `<li><a href="${it.h}" class="vdx-nav__item${it.h === cur ? " vdx-nav__item--active" : ""}" title="${it.l}"` +
         `${it.h === cur ? ' aria-current="page"' : ""}>` +
-        `<i class="fa-solid ${it.i}" aria-hidden="true"></i><span class="vx-nav-label">${it.l}</span></a></li>`).join("") +
+        `<i class="fa-solid ${it.i} vdx-nav__icon" aria-hidden="true"></i><span class="vdx-nav__label">${it.l}</span></a></li>`).join("") +
       `</ul>`;
   }).join("");
 
@@ -398,54 +398,56 @@ function vxShell(title, subtitle, crumbs) {
   const navGroup = NAV.find(g => g.items.some(it => it.h === cur));
   const passedCrumbs = crumbs || [];
   const fixedCrumbs = navGroup ? [{ l: navGroup.g }, ...passedCrumbs.slice(1)] : passedCrumbs;
-  const cr = fixedCrumbs.map((c, i) => {
-    const isLast = i === fixedCrumbs.length - 1;
-    const seg = c.h ? `<a href="${c.h}">${c.l}</a>` : `<span class="${isLast ? "cur" : ""}">${c.l}</span>`;
-    return seg + (isLast ? "" : '<span class="sep" aria-hidden="true">/</span>');
+  // NAV-003: real <ol>/<li> breadcrumb list; the "/" separator is a CSS
+  // ::before on .vdx-breadcrumb__item (aria-hidden via content, never in the
+  // DOM as text) rather than a hand-built <span class="sep">.
+  const crumbItems = [{ l: "Home", h: "dashboard.html" }, ...fixedCrumbs];
+  const cr = crumbItems.map((c, i) => {
+    const isLast = i === crumbItems.length - 1;
+    const inner = isLast
+      ? `<span class="vdx-breadcrumb__current" aria-current="page">${c.l}</span>`
+      : c.h
+        ? `<a class="vdx-breadcrumb__link" href="${c.h}">${c.l}</a>`
+        : `<span class="vdx-breadcrumb__link">${c.l}</span>`;
+    return `<li class="vdx-breadcrumb__item">${inner}</li>`;
   }).join("");
 
   document.getElementById("vxApp").innerHTML = `
   <!-- WCAG 2.4.1 Bypass Blocks: 41 nav links sit before the content on every
        page. Visually hidden until focused, first thing in the tab order. -->
-  <a href="#vxMain" class="vx-skip vdx-skip-link">Skip to main content</a>
-  <aside class="vx-sidebar${sidebarCollapsed ? " vx-collapsed" : ""}" id="vxSide">
-    <div class="vx-brand">
-      <div class="vx-logo" aria-hidden="true">
-        <svg viewBox="0 0 40 40" width="22" height="22" fill="none">
-          <path d="M4 8 L18 32 L22 32 L36 8 L28 8 L20 22 L12 8 Z" style="fill:var(--color-on-brand)"/>
-          <path d="M20 22 L28 8 L36 8 L26 26 Z" style="fill:var(--color-on-brand);fill-opacity:.55"/>
-        </svg>
+  <a href="#vxMain" class="vdx-skip-link">Skip to main content</a>
+  <div class="vdx-app-shell">
+    <header class="vdx-topbar">
+      <div class="vdx-topbar__start">
+        <!-- Mobile-only drawer trigger (NAV-002 §8.2.3). vdx-topbar__hamburger
+             is hidden ≥768px by theme/global.css itself, so this needs no
+             Bootstrap display-utility class of its own. -->
+        <button type="button" class="vdx-topbar__hamburger" id="vxHamburger" aria-label="Open navigation"
+          aria-controls="vxSide" aria-expanded="false" onclick="vxToggleNav(this)">
+          <i class="fa-solid fa-bars" aria-hidden="true"></i>
+        </button>
+        <a href="dashboard.html" class="vdx-logo">
+          <svg viewBox="0 0 40 40" width="26" height="26" fill="none" aria-hidden="true">
+            <path d="M4 8 L18 32 L22 32 L36 8 L28 8 L20 22 L12 8 Z" style="fill:var(--color-brand)"/>
+            <path d="M20 22 L28 8 L36 8 L26 26 Z" style="fill:var(--color-brand);fill-opacity:.55"/>
+          </svg>
+          <span class="vdx-logo__text">VeriDex</span>
+          <span class="vdx-logo__portal-name">${vxTenant().name}</span>
+        </a>
       </div>
-      <div><b>VeriDex</b><span>${vxTenant().name}</span></div>
-    </div>
-    <nav class="vx-nav" aria-label="Primary">${nav}</nav>
-    <!-- Desktop-only icon-rail toggle (NAV-002 §8.2.2). Mobile already has
-         its own show/hide pattern via the hamburger + off-canvas drawer
-         below, so this stays hidden under the same breakpoint (lg, 992px)
-         that drawer switches over at. -->
-    <button type="button" class="vx-sidebar-toggle d-none d-lg-flex" id="vxSideToggle"
-      aria-label="${sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}"
-      aria-expanded="${!sidebarCollapsed}" aria-controls="vxSide" onclick="vxToggleSidebarCollapse(this)">
-      <i class="fa-solid ${sidebarCollapsed ? "fa-angles-right" : "fa-angles-left"}" aria-hidden="true"></i>
-      <span class="vx-nav-label">Collapse</span>
-    </button>
-  </aside>
-
-  <div class="vx-main${sidebarCollapsed ? " vx-collapsed" : ""}">
-    <header class="vx-topbar">
-      <button class="vx-icobtn d-lg-none" aria-label="Open navigation" aria-controls="vxSide" aria-expanded="false"
-        onclick="vxToggleNav(this)"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>
-      <div class="vx-search" role="search">
-        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-        <input id="vxQ" aria-label="Search products, factors, states and quotes"
-          placeholder="Search products, factors, states, quotes..." autocomplete="off"
-          role="combobox" aria-expanded="false" aria-controls="vxQR" aria-autocomplete="list">
-        <kbd aria-hidden="true">/</kbd>
-        <div class="vx-searchres" id="vxQR" role="listbox" aria-label="Search results"></div>
+      <div class="vdx-topbar__center">
+        <div class="vx-search" role="search">
+          <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+          <input id="vxQ" aria-label="Search products, factors, states and quotes"
+            placeholder="Search products, factors, states, quotes..." autocomplete="off"
+            role="combobox" aria-expanded="false" aria-controls="vxQR" aria-autocomplete="list">
+          <kbd aria-hidden="true">/</kbd>
+          <div class="vx-searchres" id="vxQR" role="listbox" aria-label="Search results"></div>
+        </div>
       </div>
-      <div class="vx-tb-actions">
+      <div class="vdx-topbar__end">
         ${vxIsAdmin() ? "" : `<button class="btn btn-outline-secondary btn-sm" id="vxLogoutTenant" title="Log out of ${vxTenant().name} back to the admin console">
-          <i class="fa-solid fa-right-from-bracket me-1"></i>Tenant Management</button>`}
+          <i class="fa-solid fa-right-from-bracket me-1" aria-hidden="true"></i><span id="vxLogoutTenantLabel">Tenant Management</span></button>`}
         <div style="position:relative">
           <button class="vx-tenant" id="vxTenantBtn" aria-haspopup="true" aria-expanded="false"
             aria-controls="vxTenantPop" aria-label="Switch tenant. Current tenant ${vxTenant().name}">
@@ -492,20 +494,40 @@ function vxShell(title, subtitle, crumbs) {
       </div>
     </header>
 
-    <nav class="vx-crumbs" aria-label="Breadcrumb"><a href="dashboard.html">Home</a><span class="sep" aria-hidden="true">/</span>${cr}</nav>
-    <main class="vx-page" id="vxMain" tabindex="-1">
-      <div class="vx-page-head vx-anim">
-        <div><h1>${title}</h1>${vxSubtitle(subtitle)}</div>
-        <div id="vxPageActions" class="d-flex gap-2 flex-wrap"></div>
-      </div>
-      <div id="vxSetupBanner"></div>
-      <div id="vxBody"></div>
-    </main>
+    <div class="vdx-app-body">
+      <aside class="vdx-sidebar${sidebarCollapsed ? " vdx-sidebar--collapsed" : ""}" id="vxSide" aria-label="Main navigation">
+        <nav class="vdx-nav" aria-label="Primary">${nav}</nav>
+        <!-- Desktop-only icon-rail toggle (NAV-002 §8.2.2). Mobile already has
+             its own show/hide pattern via the hamburger + off-canvas drawer
+             above, so this stays hidden under the same breakpoint (lg, 992px)
+             the drawer switches over at. -->
+        <button type="button" class="vdx-sidebar__toggle d-none d-lg-flex" id="vxSideToggle"
+          aria-label="${sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}"
+          aria-expanded="${!sidebarCollapsed}" aria-controls="vxSide" onclick="vxToggleSidebarCollapse(this)">
+          <i class="fa-solid ${sidebarCollapsed ? "fa-angles-right" : "fa-angles-left"}" aria-hidden="true"></i>
+          <span class="vdx-nav__label">Collapse</span>
+        </button>
+      </aside>
+      <!-- NAV-002 §8.2.3 mobile backdrop — behind the drawer, closes it on tap. -->
+      <div class="vdx-sidebar-overlay" id="vxSideOverlay" onclick="vxCloseMobileNav()"></div>
 
-    <footer class="vx-foot">
-      <span>VeriDex · <span class="hintdot" title="${VX.meta.engine} · Build ${VX.meta.build}">${VX.meta.env}</span></span>
-      <span><a href="#" onclick="vxShortcuts();return false">Keyboard shortcuts</a></span>
-    </footer>
+      <div class="vdx-main-content">
+        <nav class="vdx-breadcrumb" aria-label="Breadcrumb"><ol class="vdx-breadcrumb__list">${cr}</ol></nav>
+        <main class="vx-page" id="vxMain" tabindex="-1">
+          <div class="vx-page-head vdx-page-header vx-anim">
+            <div class="vdx-page-header__content"><h1 class="vdx-page-header__title">${title}</h1>${vxSubtitle(subtitle)}</div>
+            <div id="vxPageActions" class="vdx-page-header__actions d-flex gap-2 flex-wrap"></div>
+          </div>
+          <div id="vxSetupBanner"></div>
+          <div id="vxBody"></div>
+        </main>
+
+        <footer class="vx-foot">
+          <span>VeriDex · <span class="hintdot" title="${VX.meta.engine} · Build ${VX.meta.build}">${VX.meta.env}</span></span>
+          <span><a href="#" onclick="vxShortcuts();return false">Keyboard shortcuts</a></span>
+        </footer>
+      </div>
+    </div>
   </div>
   <div class="vx-ov" id="vxOv" aria-hidden="true"></div>
   <div class="vx-ctx" id="vxCtx"></div>
@@ -608,6 +630,7 @@ function vxShell(title, subtitle, crumbs) {
     }
     const ctx = document.getElementById("vxCtx");
     if (ctx) ctx.classList.remove("on");
+    vxCloseMobileNav();
   });
 
   vxSearchInit();
@@ -844,20 +867,40 @@ function vxClearUploadedConfig() {
   try { localStorage.removeItem(VX_UPLOAD_KEY); } catch (e) {}
 }
 
+/* Mobile drawer (NAV-002 §8.2.1/§8.2.3). theme/global.css's own
+   .vdx-sidebar media query at <768px takes the sidebar out of flow (fixed,
+   left:-100%); this toggle only ever needs to add/remove the --open
+   modifier and the backdrop, both defined by the framework. */
 function vxToggleNav(btn) {
-  const open = document.getElementById("vxSide").classList.toggle("on");
+  const open = document.getElementById("vxSide").classList.toggle("vdx-sidebar--open");
+  document.getElementById("vxSideOverlay").classList.toggle("vdx-sidebar-overlay--visible", open);
   btn.setAttribute("aria-expanded", open ? "true" : "false");
   btn.setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
+}
+/* Backdrop click / Escape (FND-005 §7.1: overlay dismissal returns focus to
+   the control that opened it — the hamburger, here). No-op if the drawer is
+   already closed, so Escape's global handler can call this unconditionally. */
+function vxCloseMobileNav() {
+  const side = document.getElementById("vxSide");
+  if (!side.classList.contains("vdx-sidebar--open")) return;
+  side.classList.remove("vdx-sidebar--open");
+  document.getElementById("vxSideOverlay").classList.remove("vdx-sidebar-overlay--visible");
+  const hamburger = document.getElementById("vxHamburger");
+  if (hamburger) {
+    hamburger.setAttribute("aria-expanded", "false");
+    hamburger.setAttribute("aria-label", "Open navigation");
+    hamburger.focus();
+  }
 }
 
 /* Desktop icon-rail toggle (NAV-002 §8.2.2), separate from vxToggleNav's
    mobile drawer above — that one shows/hides the whole sidebar off-canvas,
-   this one resizes it between 240px and 56px in place. */
+   this one resizes it between 240px and 56px in place. .vdx-main-content is
+   a normal flex sibling of .vdx-sidebar now, so it reflows on its own —
+   unlike the old fixed-position sidebar, nothing else needs a matching class. */
 function vxToggleSidebarCollapse(btn) {
   const side = document.getElementById("vxSide");
-  const main = document.querySelector(".vx-main");
-  const collapsed = side.classList.toggle("vx-collapsed");
-  if (main) main.classList.toggle("vx-collapsed", collapsed);
+  const collapsed = side.classList.toggle("vdx-sidebar--collapsed");
   btn.setAttribute("aria-expanded", String(!collapsed));
   btn.setAttribute("aria-label", collapsed ? "Expand navigation" : "Collapse navigation");
   const icon = btn.querySelector("i");
@@ -874,7 +917,7 @@ function vxToggleSidebarCollapse(btn) {
   document.querySelectorAll(".vx-nav-grp").forEach(g => {
     const list = document.getElementById(g.getAttribute("aria-controls"));
     if (!list) return;
-    const isCurGroup = !!list.querySelector("a.active");
+    const isCurGroup = !!list.querySelector("a.vdx-nav__item--active");
     const explicit = stored[g.dataset.navgrp];
     const isOpen = collapsed || isCurGroup || (explicit !== undefined ? !explicit : false);
     list.hidden = !isOpen;

@@ -48,13 +48,13 @@ const custom = tenantFactorRows.filter(f => f.custom).length;
 
 document.getElementById("vxBody").innerHTML = `
   <div class="row g-2 mb-3">
-    <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">Factors in the engine</div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card stack"><div class="lbl">Factors in the engine</div>
       <div class="val">${tenantFactorRows.length}</div><div class="dt flat">across ${new Set(tenantFactorRows.map(f => f.lob)).size} lines of business</div></div></div>
-    <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">Verified</div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card stack"><div class="lbl">Verified</div>
       <div class="val" style="color:var(--good)">${verified}</div><div class="dt flat">matched to a filed workbook</div></div></div>
-    <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">Approximated</div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card stack"><div class="lbl">Approximated</div>
       <div class="val" style="color:var(--warn)">${approx}</div><div class="dt flat">working values, not filed</div></div></div>
-    <div class="col-6 col-lg-3"><div class="vx-stat stack"><div class="lbl">Custom (added here)</div>
+    <div class="col-6 col-lg-3"><div class="vx-stat vdx-kpi-card stack"><div class="lbl">Custom (added here)</div>
       <div class="val">${custom}</div><div class="dt flat">${custom ? "not yet wired to the engine" : "none added yet"}</div></div></div>
   </div>
 
@@ -65,7 +65,7 @@ document.getElementById("vxBody").innerHTML = `
 
   <div id="formulaApprovals"></div>
   <div id="approvals"></div>
-  <div class="vx-card vx-anim"><div id="grid"></div></div>`;
+  <div class="vx-card vdx-card vx-anim"><div id="grid"></div></div>`;
 
 /* Line of Business, Coverage and Scope are multi-select — a factor can be
    assigned against more than one of each at once — so every place that used
@@ -158,12 +158,12 @@ function renderFormulaApprovals() {
              <button class="btn btn-primary btn-sm ms-1" onclick="approveFactorForFormulas('${f.code}')">Approve</button>`}
       </td></tr>`;
   };
-  host.innerHTML = `<div class="vx-card vx-anim" style="margin-bottom:14px;border-left:3px solid var(--warn)">
+  host.innerHTML = `<div class="vx-card vdx-card vx-anim" style="margin-bottom:14px;border-left:3px solid var(--warn)">
     <div class="vx-card-head">
       <div><h2>Awaiting Formula Builder approval <span class="vx-b amber">${pending.length}</span></h2>
         <div class="sub">Not yet approved to appear as a usable variable in Formula Builder — shows there as a locked "Awaiting approval" tile until then.</div></div>
     </div>
-    <div class="vx-tw"><table class="vx-t" style="font-size:12.2px">
+    <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table" style="font-size:12.2px">
       <thead><tr><th>Factor</th><th>Created by</th><th>Status</th><th></th></tr></thead>
       <tbody>${pending.map(row).join("")}</tbody></table></div>
   </div>`;
@@ -196,12 +196,12 @@ function renderApprovals() {
   };
 
   host.innerHTML = `
-    ${pending.length ? `<div class="vx-card vx-anim" style="margin-bottom:14px;border-left:3px solid var(--warn)">
+    ${pending.length ? `<div class="vx-card vdx-card vx-anim" style="margin-bottom:14px;border-left:3px solid var(--warn)">
       <div class="vx-card-head">
         <div><h2>Changes awaiting approval <span class="vx-b amber">${pending.length}</span></h2>
           <div class="sub">A factor value change does not take effect until someone else approves it, and then only from its effective date.</div></div>
       </div>
-      <div class="vx-tw"><table class="vx-t" style="font-size:12.2px">
+      <div class="vx-tw vdx-table-wrapper"><table class="vx-t vdx-table" style="font-size:12.2px">
         <thead><tr><th>Factor</th><th>Change</th><th>Effective from</th><th>Requested by</th><th>Reason</th><th></th></tr></thead>
         <tbody>${pending.map(row).join("")}</tbody></table></div>
       <div style="font-size:11px;color:var(--text-mute);margin-top:8px">
@@ -731,7 +731,7 @@ function pathToWiredCard(rec) {
           : !hasRealData ? "Needs real data attached first (step 3)."
           : LIVE_REASON[liveInfo.reason] || "Not yet live.") },
   ];
-  return `<div class="vx-card" style="margin-bottom:14px">
+  return `<div class="vx-card vdx-card" style="margin-bottom:14px">
     <div class="d-flex align-items-center justify-content-between">
       <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-mute)">Path to Wired</div>
       <span class="vx-b amber" style="font-size:9.5px">${steps.filter(s => s.done).length}/${steps.length} done</span>
@@ -850,7 +850,7 @@ function openFactorPanel(rec) {
       </div>
     </div>
     <div class="offcanvas-body">
-      <div class="vx-card" style="margin-bottom:14px">
+      <div class="vx-card vdx-card" style="margin-bottom:14px">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-mute)">Factor Assignment</div>
         <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;font-size:12px">
           <span class="vx-b purple">${rec.name}</span>
@@ -866,7 +866,7 @@ function openFactorPanel(rec) {
         </div>
       </div>
       ${wired ? pathToWiredCard(rec) : ""}
-      <div class="vx-card" style="margin-bottom:14px">
+      <div class="vx-card vdx-card" style="margin-bottom:14px">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-mute)">Default Value</div>
         <div style="font-size:24px;font-weight:800;margin:4px 0 6px">
           ${rec.defaultValue != null ? rec.defaultValue : (rec.rowCount ? '<span style="font-size:15px;color:var(--text-mute)">No single default — always looked up</span>' : '<span class="vx-b red">Not configured</span>')}</div>
@@ -903,7 +903,7 @@ function openFactorPanel(rec) {
             return `<div style="margin-top:5px;border-left:3px solid var(--warn);padding-left:9px;font-size:11.8px">
               <b style="color:var(--warn)">Pending approval</b> — ${p.from ?? "none"} → ${p.to} from ${p.effectiveFrom},
               requested by ${p.requestedBy.split("@")[0]}. Not in force yet.</div>`; })()}
-          <div class="vx-tw" style="margin-top:6px"><table class="vx-t" style="font-size:11.6px">
+          <div class="vx-tw vdx-table-wrapper" style="margin-top:6px"><table class="vx-t vdx-table" style="font-size:11.6px">
             <thead><tr><th>Value</th><th>In force</th><th>Approved by</th></tr></thead>
             <tbody>${(rec.valueHistory || []).slice().reverse().map(v => `<tr>
               <td style="font-variant-numeric:tabular-nums"><b>${v.value}</b></td>
@@ -927,7 +927,7 @@ function openFactorPanel(rec) {
         </div>
       </div>
 
-      <div class="vx-card">
+      <div class="vx-card vdx-card">
         <div class="d-flex align-items-center justify-content-between">
           <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-mute)">Factor Values</div>
           <div class="d-flex gap-2">
@@ -952,7 +952,7 @@ function openFactorPanel(rec) {
               const rangeAttr = rangeTxt ? ` data-vx-range="${rangeTxt.replace(/"/g, "&quot;")}"` : "";
               const thead = `<thead><tr>${labels.map((l, i) => `<th${i === labels.length - 1 ? rangeAttr : ""}>${l}</th>`).join("")}</tr></thead>`;
               const body = `<tbody>${rows.map(r => `<tr>${r.map(c => `<td style="font-size:11.8px">${c === null || c === undefined || c === "" ? "—" : c}</td>`).join("")}</tr>`).join("")}</tbody>`;
-              return `<div class="vx-tw" style="max-height:340px;overflow:auto"><table class="vx-t">${thead}${body}</table></div>`
+              return `<div class="vx-tw vdx-table-wrapper" style="max-height:340px;overflow:auto"><table class="vx-t vdx-table">${thead}${body}</table></div>`
                    + (rec.rowCount > rows.length ? `<div style="font-size:11.3px;color:var(--text-mute);margin-top:7px">Showing first ${rows.length} of ${vxNum(rec.rowCount)} — <a href="${tableLinkHref(rec.tableId)}">open the full table →</a></div>` : "");
             })()
           : (rec.rowCount
@@ -1341,7 +1341,7 @@ function editFactorValues(rec) {
     </div>
     <input class="form-control form-control-sm mb-2" id="fvq" placeholder="Filter rows\u2026"
       oninput="fvFilter(this.value)">
-    <div class="vx-tw" style="max-height:400px;overflow:auto"><table class="vx-t">
+    <div class="vx-tw vdx-table-wrapper" style="max-height:400px;overflow:auto"><table class="vx-t vdx-table">
       <thead><tr><th>Row</th><th style="width:190px;text-align:right">Value / Range</th></tr></thead>
       <tbody id="fvBody">${shown.map((it, i) => it.kind === "range" ? `<tr data-fvrow="${i}">
         <td style="font-size:11.8px">${it.label}</td>
