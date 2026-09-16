@@ -35,7 +35,7 @@ document.getElementById("vxBody").innerHTML = `
 vxAgGrid({ el: "#grid", key: "units", name: "Unit", size: 12,
   cols: [
     { k: "name", l: "Unit" },
-    { k: "basis", l: "Rating Basis" },
+    { k: "basis", l: "Rating Basis", flex: 2 },
     { k: "appliesToLob", l: "Applies To", r: r => r.appliesToLob === "All"
         ? '<span class="vx-b blue">All Lines</span>' : `<span class="vx-b cyan">${r.appliesToLob}</span>` },
     { k: "builtIn", l: "Source", r: r => r.builtIn

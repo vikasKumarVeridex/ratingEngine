@@ -62,7 +62,7 @@ document.getElementById("vxBody").innerHTML = `<div id="userSwitch"></div><div c
 renderUserSwitch();
 vxAgGrid({ el:"#grid", key:"settings", name:"Setting",
   size:15,
-  cols:[{k:"label",l:"Setting"},{k:"category",l:"Category",r:r=>'<span class="vx-b blue">'+r.category+'</span>'},
+  cols:[{k:"label",l:"Setting",flex:2},{k:"category",l:"Category",r:r=>'<span class="vx-b blue">'+r.category+'</span>'},
       {k:"value",l:"Value",r:r=>'<b>'+r.value+'</b>'},{k:"key",l:"Config Key",r:r=>'<code style="font-size:11.5px">'+r.key+'</code>'}],
   form:[{k:"label",l:"Setting Label"},{k:"key",l:"Config Key"},
       {k:"category",l:"Category",t:"select",opts:["Localization","Calculation","Versioning","AI","Compliance","Security","API","General"]},

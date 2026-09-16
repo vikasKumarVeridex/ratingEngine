@@ -7,8 +7,8 @@ body{font-size:1rem;line-height:1.5}
 .vx-page-head p{font-size:.875rem;margin-block-start:6px;max-width:65ch;color:var(--text-mute)}
 .vdx-topbar{padding-inline:24px;box-shadow:none}
 .vx-search{max-width:360px}.vx-search input{font-size:.875rem;min-height:36px;background:var(--surface);border-color:var(--border)}
-.vdx-nav__item{font-size:.875rem;padding:10px 12px;border-radius:6px;min-height:40px}
-.vx-nav-grp{font-size:.75rem;letter-spacing:.04em;margin-block:20px 8px;min-height:28px}
+.vdx-nav-item{font-size:.875rem;padding:10px 12px;border-radius:6px;min-height:40px}
+.vdx-nav-item--parent{font-size:.75rem;letter-spacing:.04em;margin-block:20px 8px;min-height:28px}
 .vx-card{margin-block-end:20px}
 .vx-card h2{font-size:1rem;line-height:1.45;margin-block-end:16px;font-weight:600;letter-spacing:-.02em}
 .vx-card-head{align-items:center;margin-block-end:16px}.vx-card-head h2{margin:0}

@@ -7,7 +7,7 @@ const NAV = [
      views of how the book is performing, and that is what you look at before
      going near a quote. The two quote screens follow as the "do something"
      pair. */
-  { g: "Main", items: [
+  { g: "Main", gi: "fa-house", items: [
     { h: "dashboard.html", i: "fa-gauge-high", l: "Dashboard" },
     { h: "loss-runs.html", i: "fa-triangle-exclamation", l: "Loss Run Analytics" },
     { h: "quote-portal.html", i: "fa-flask", l: "Quote Sandbox" },
@@ -23,7 +23,7 @@ const NAV = [
      coverages under it and the product that sells them BEFORE the factors and
      formulas that price them, so the nav runs in the order the work is
      actually done — LOB, then its coverages, then the product. */
-  { g: "Configuration", items: [
+  { g: "Configuration", gi: "fa-gears", items: [
     { h: "products.html", i: "fa-cubes", l: "Products" },
     { h: "versions.html", i: "fa-code-branch", l: "Versions" },
     { h: "lob.html", i: "fa-layer-group", l: "Coverage" },
@@ -31,7 +31,7 @@ const NAV = [
     { h: "units.html", i: "fa-ruler", l: "Rating Units" },
     { h: "industry-classes.html", i: "fa-industry", l: "Industry Classes" },
   ]},
-  { g: "Rating", items: [
+  { g: "Rating", gi: "fa-calculator", items: [
     /* Lines of Business moved up to Configuration — an LOB is something you
        define before rating it, not a rating artefact. Rate Tables moved OUT
        (see Administration below) — it holds the platform's own real, FILED
@@ -43,7 +43,7 @@ const NAV = [
     { h: "lookup-tables.html", i: "fa-table-list", l: "Lookup Tables" },
     { h: "glossary.html", i: "fa-book", l: "Glossary" },
   ]},
-  { g: "Pricing", items: [
+  { g: "Pricing", gi: "fa-sack-dollar", items: [
     { h: "base-rates.html", i: "fa-table", l: "Base Rates" },
     { h: "discounts.html", i: "fa-tags", l: "Discounts" },
     { h: "surcharges.html", i: "fa-triangle-exclamation", l: "Surcharges" },
@@ -52,7 +52,7 @@ const NAV = [
     { h: "county-taxes.html", i: "fa-map-pin", l: "County Taxes" },
     { h: "premium-rules.html", i: "fa-arrows-up-down", l: "Min / Max Rules" },
   ]},
-  { g: "Geography", items: [
+  { g: "Geography", gi: "fa-earth-americas", items: [
     { h: "states.html", i: "fa-flag-usa", l: "States" },
     { h: "counties.html", i: "fa-map", l: "Counties" },
     { h: "territories.html", i: "fa-map-location-dot", l: "Territories" },
@@ -70,11 +70,11 @@ const NAV = [
      visible inside a tenant's workspace while everything actually about
      overseeing OTHER tenants (Tenants, Audit History, Export, and VeriDex's
      own Settings) stays out of it. */
-  { g: "Team", items: [
+  { g: "Team", gi: "fa-users-gear", items: [
     { h: "users.html", i: "fa-users", l: "Users" },
     { h: "roles.html", i: "fa-user-shield", l: "Roles" },
   ]},
-  { g: "Administration", items: [
+  { g: "Administration", gi: "fa-shield-halved", items: [
     /* Back in the sidebar. It was removed on the reasoning that switching
        tenant is a top-bar action and the picker's "Manage tenants" item
        still reached this page — which held while Tenants was only a list
@@ -96,7 +96,7 @@ const NAV = [
        administers on everyone's behalf, not in a tenant's own workspace. */
     { h: "rate-tables.html", i: "fa-database", l: "Rate Tables (live)" },
   ]},
-  { g: "Reference & Tools", items: [
+  { g: "Reference & Tools", gi: "fa-toolbox", items: [
     { h: "engine-flow.html", i: "fa-sitemap", l: "Engine Flow" },
     { h: "integration.html", i: "fa-plug", l: "Integration Guide" },
     { h: "design-patterns.html", i: "fa-shapes", l: "Technical Guide" },
@@ -127,7 +127,7 @@ const NAV = [
    overseeing every tenant. Nothing about the Acting-As user or its role is
    touched by this — the two systems no longer share a knob. */
 const ADMIN_NAV = [
-  { g: "Administration", items: [
+  { g: "Administration", gi: "fa-shield-halved", items: [
     { h: "tenants.html", i: "fa-building", l: "Tenant Management" },
     { h: "tenant-stats.html", i: "fa-chart-simple", l: "Tenant Stat Dashboard" },
     /* The platform's own real, filed reference data — VeriDex's to
@@ -418,13 +418,16 @@ function vxShell(title, subtitle, crumbs) {
        so the rail forces every group open regardless of that preference. */
     const explicit = navCollapsed[g.g];
     const collapsed = !sidebarCollapsed && !isCurGroup && (explicit !== undefined ? !!explicit : true);
-    return `<button type="button" class="vx-nav-grp" id="vxNavG${gi}" data-navgrp="${g.g}" aria-expanded="${!collapsed}" aria-controls="vxNavL${gi}">` +
-      `<span class="vdx-nav__group-label">${g.g}</span><i class="fa-solid fa-chevron-down chev" aria-hidden="true"></i></button>` +
-      `<ul class="vx-nav-list" id="vxNavL${gi}" aria-labelledby="vxNavG${gi}"${collapsed ? " hidden" : ""}>` +
-      g.items.map(it => `<li><a href="${it.h}" class="vdx-nav__item${it.h === cur ? " vdx-nav__item--active" : ""}" title="${it.l}"` +
+    return `<div class="vdx-nav-group">` +
+      `<button type="button" class="vdx-nav-item vdx-nav-item--parent" id="vxNavG${gi}" data-navgrp="${g.g}" aria-expanded="${!collapsed}" aria-controls="vxNavL${gi}">` +
+      `<i class="fa-solid ${g.gi} vdx-nav-item__icon" aria-hidden="true"></i>` +
+      `<span class="vdx-nav-item__label">${g.g}</span>` +
+      `<i class="fa-solid fa-chevron-down vdx-nav-item__chevron${collapsed ? "" : " vdx-nav-item__chevron--open"}" aria-hidden="true"></i></button>` +
+      `<ul class="vdx-nav-item__children" role="list" id="vxNavL${gi}" aria-labelledby="vxNavG${gi}"${collapsed ? " hidden" : ""}>` +
+      g.items.map(it => `<li><a href="${it.h}" class="vdx-nav-item${it.h === cur ? " vdx-nav-item--active" : ""}" title="${it.l}"` +
         `${it.h === cur ? ' aria-current="page"' : ""}>` +
-        `<i class="fa-solid ${it.i} vdx-nav__icon" aria-hidden="true"></i><span class="vdx-nav__label">${it.l}</span></a></li>`).join("") +
-      `</ul>`;
+        `<i class="fa-solid ${it.i} vdx-nav-item__icon" aria-hidden="true"></i><span class="vdx-nav-item__label">${it.l}</span></a></li>`).join("") +
+      `</ul></div>`;
   }).join("");
 
   // The first crumb segment is always the page's real NAV group, derived
@@ -533,7 +536,7 @@ function vxShell(title, subtitle, crumbs) {
 
     <div class="vdx-app-body">
       <aside class="vdx-sidebar${sidebarCollapsed ? " vdx-sidebar--collapsed" : ""}" id="vxSide" aria-label="Main navigation">
-        <nav class="vdx-nav" aria-label="Primary">${nav}</nav>
+        <nav class="vdx-sidebar-nav" aria-label="Primary">${nav}</nav>
         <!-- Desktop-only icon-rail toggle (NAV-002 §8.2.2). Mobile already has
              its own show/hide pattern via the hamburger + off-canvas drawer
              above, so this stays hidden under the same breakpoint (lg, 992px)
@@ -542,7 +545,7 @@ function vxShell(title, subtitle, crumbs) {
           aria-label="${sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}"
           aria-expanded="${!sidebarCollapsed}" aria-controls="vxSide" onclick="vxToggleSidebarCollapse(this)">
           <i class="fa-solid ${sidebarCollapsed ? "fa-angles-right" : "fa-angles-left"}" aria-hidden="true"></i>
-          <span class="vdx-nav__label">Collapse</span>
+          <span class="vdx-sidebar__toggle-text">Collapse</span>
         </button>
       </aside>
       <!-- NAV-002 §8.2.3 mobile backdrop — behind the drawer, closes it on tap. -->
@@ -570,11 +573,13 @@ function vxShell(title, subtitle, crumbs) {
   <div class="vx-ctx" id="vxCtx"></div>
   <div id="vxToasts" aria-live="polite" aria-atomic="false"></div>`;
 
-  document.querySelectorAll(".vx-nav-grp").forEach(btn => btn.onclick = () => {
+  document.querySelectorAll(".vdx-nav-item--parent").forEach(btn => btn.onclick = () => {
     const list = document.getElementById(btn.getAttribute("aria-controls"));
     const nowCollapsed = !list.hidden; // was open, this click closes it
     list.hidden = nowCollapsed;
     btn.setAttribute("aria-expanded", String(!nowCollapsed));
+    const chev = btn.querySelector(".vdx-nav-item__chevron");
+    if (chev) chev.classList.toggle("vdx-nav-item__chevron--open", !nowCollapsed);
     try {
       const state = JSON.parse(localStorage.getItem("vxNavCollapsed") || "{}");
       state[btn.dataset.navgrp] = nowCollapsed;
@@ -917,7 +922,7 @@ function vxClearUploadedConfig() {
    left:-100%); this toggle only ever needs to add/remove the --open
    modifier and the backdrop, both defined by the framework. */
 function vxToggleNav(btn) {
-  const open = document.getElementById("vxSide").classList.toggle("vdx-sidebar--open");
+  const open = document.getElementById("vxSide").classList.toggle("vdx-sidebar--mobile-open");
   document.getElementById("vxSideOverlay").classList.toggle("vdx-sidebar-overlay--visible", open);
   btn.setAttribute("aria-expanded", open ? "true" : "false");
   btn.setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
@@ -927,8 +932,8 @@ function vxToggleNav(btn) {
    already closed, so Escape's global handler can call this unconditionally. */
 function vxCloseMobileNav() {
   const side = document.getElementById("vxSide");
-  if (!side.classList.contains("vdx-sidebar--open")) return;
-  side.classList.remove("vdx-sidebar--open");
+  if (!side.classList.contains("vdx-sidebar--mobile-open")) return;
+  side.classList.remove("vdx-sidebar--mobile-open");
   document.getElementById("vxSideOverlay").classList.remove("vdx-sidebar-overlay--visible");
   const hamburger = document.getElementById("vxHamburger");
   if (hamburger) {
@@ -959,14 +964,16 @@ function vxToggleSidebarCollapse(btn) {
   // this is the current page's group or an explicit stored preference says
   // otherwise — "no stored value" must fall back to collapsed, not open.
   const stored = (() => { try { return JSON.parse(localStorage.getItem("vxNavCollapsed")) || {}; } catch (e) { return {}; } })();
-  document.querySelectorAll(".vx-nav-grp").forEach(g => {
+  document.querySelectorAll(".vdx-nav-item--parent").forEach(g => {
     const list = document.getElementById(g.getAttribute("aria-controls"));
     if (!list) return;
-    const isCurGroup = !!list.querySelector("a.vdx-nav__item--active");
+    const isCurGroup = !!list.querySelector("a.vdx-nav-item--active");
     const explicit = stored[g.dataset.navgrp];
     const isOpen = collapsed || isCurGroup || (explicit !== undefined ? !explicit : false);
     list.hidden = !isOpen;
     g.setAttribute("aria-expanded", String(isOpen));
+    const chev = g.querySelector(".vdx-nav-item__chevron");
+    if (chev) chev.classList.toggle("vdx-nav-item__chevron--open", isOpen);
   });
 }
 

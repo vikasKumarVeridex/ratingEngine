@@ -113,7 +113,7 @@ const grid = vxAgGrid({ el:"#grid", key:"lookupTables", name:"Lookup Table",
   },
   onAfterDelete: () => persistLookupTables(),
 
-  cols:[{k:"name",l:"Lookup Table"},{k:"lob",l:"LOB"},{k:"keys",l:"Key Columns"},
+  cols:[{k:"name",l:"Lookup Table",flex:2},{k:"lob",l:"LOB"},{k:"keys",l:"Key Columns"},
       {k:"rows",l:"Rows",r:r=>'<b>'+vxNum(rowCount(r))+'</b>'},
       {k:"records",l:"Records",r:r=>
         LOOKUP_LIVE[r.name] ? '<span class="vx-b green">Loaded</span>'

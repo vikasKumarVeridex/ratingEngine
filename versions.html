@@ -742,7 +742,7 @@ function publishVersion(rec) {
 
 const grid = vxAgGrid({ el:"#grid", key:"versions", name:"Rating Version", size:12,
   cols:[
-    {k:"product",l:"Product"},
+    {k:"product",l:"Product",flex:2},
     {k:"version",l:"Version",r:r=>'<b>'+r.version+'</b>'},
     {k:"status",l:"Status",r:r=>verStatusChip(r.status)},
     {k:"_readiness",l:"Readiness",sort:false,r:readinessCell},

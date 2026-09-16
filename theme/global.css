@@ -184,7 +184,7 @@
 
   /* Navigation */
   --vdx-color-nav-bg:              var(--vdx-primitive-navy-900);
-  --vdx-color-nav-text:            var(--vdx-primitive-navy-100);
+  --vdx-color-nav-text:            var(--vdx-primitive-navy-050);
   --vdx-color-nav-text-active:     var(--vdx-primitive-neutral-000);
   --vdx-color-nav-item-active-bg:  var(--vdx-primitive-orange-500);
   --vdx-color-nav-item-hover-bg:   var(--vdx-primitive-navy-800);
@@ -931,26 +931,30 @@ p, .vdx-body-md { font-size: var(--vdx-type-body-md-size); line-height: var(--vd
   width: var(--vdx-sidebar-width-collapsed);
 }
 
-.vdx-sidebar--collapsed .vdx-nav__label,
-.vdx-sidebar--collapsed .vdx-nav__group-label,
-.vdx-sidebar--collapsed .vdx-nav__badge {
+.vdx-sidebar--collapsed .vdx-nav-item__label,
+.vdx-sidebar--collapsed .vdx-nav-item__chevron,
+.vdx-sidebar--collapsed .vdx-sidebar__toggle-text {
   display: none;
 }
 
-/* Mobile — sidebar becomes an overlay drawer */
+/* Mobile — sidebar becomes an overlay drawer. Transform-based rather than
+   animating `left`, so it stays GPU-composited and never depends on the
+   drawer's own width literal (280px here) matching a value baked into the
+   transition. */
 @media (max-width: 767px) {
   .vdx-sidebar {
     position: fixed;
-    left: -100%;
+    left: 0;
     top: 0;
     height: 100vh;
     width: 280px;
     z-index: var(--vdx-z-dialog);
-    transition: left var(--vdx-duration-normal) var(--vdx-ease-default);
+    transform: translateX(-100%);
+    transition: transform var(--vdx-duration-normal) var(--vdx-ease-default);
   }
 
-  .vdx-sidebar--open {
-    left: 0;
+  .vdx-sidebar--mobile-open {
+    transform: translateX(0);
   }
 }
 
@@ -960,8 +964,8 @@ p, .vdx-body-md { font-size: var(--vdx-type-body-md-size); line-height: var(--vd
     width: var(--vdx-sidebar-width-collapsed);
   }
 
-  .vdx-sidebar .vdx-nav__label,
-  .vdx-sidebar .vdx-nav__group-label {
+  .vdx-sidebar .vdx-nav-item__label,
+  .vdx-sidebar .vdx-sidebar__toggle-text {
     display: none;
   }
 }
@@ -982,25 +986,17 @@ p, .vdx-body-md { font-size: var(--vdx-type-body-md-size); line-height: var(--vd
   opacity: 1;
 }
 
-/* Nav list */
-.vdx-nav {
+/* Nav wrapper */
+.vdx-sidebar-nav {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   padding: var(--vdx-space-4) var(--vdx-space-2);
 }
 
-.vdx-nav__group-label {
-  display: block;
-  padding: var(--vdx-space-4) var(--vdx-space-3) var(--vdx-space-1);
-  font-size: var(--vdx-type-label-sm-size);
-  font-weight: 600;
-  color: var(--vdx-color-nav-group-label);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.vdx-nav__item {
+/* Base nav item — shared by the plain link and the parent/group button, so
+   both read as the same kind of control at a glance. */
+.vdx-nav-item {
   display: flex;
   align-items: center;
   gap: var(--vdx-space-3);
@@ -1008,6 +1004,7 @@ p, .vdx-body-md { font-size: var(--vdx-type-body-md-size); line-height: var(--vd
   border-radius: var(--vdx-radius-md);
   color: var(--vdx-color-nav-text);
   text-decoration: none;
+  font: inherit;
   font-size: var(--vdx-type-body-sm-size);
   font-weight: 500;
   white-space: nowrap;
@@ -1020,38 +1017,53 @@ p, .vdx-body-md { font-size: var(--vdx-type-body-md-size); line-height: var(--vd
               color var(--vdx-duration-fast) var(--vdx-ease-default);
 }
 
-.vdx-nav__item:hover {
+/* The global `a:visited` rule (§ links, above) outranks the plain
+   `.vdx-nav-item` selector on specificity (one class vs. one element +
+   pseudo-class), so any nav link already in the browser's history silently
+   fell back to --color-text-link-visited — a dim navy meant for prose links,
+   not sidebar chrome. Nav items aren't prose links a reader compares
+   visited-vs-not; every item should read the same regardless of history. */
+.vdx-nav-item:visited {
+  color: var(--vdx-color-nav-text);
+}
+
+.vdx-nav-item:hover {
   background: var(--vdx-color-nav-item-hover-bg);
   color: var(--vdx-color-nav-text-active);
 }
 
-.vdx-nav__item--active,
-.vdx-nav__item[aria-current="page"] {
+.vdx-nav-item--active,
+.vdx-nav-item[aria-current="page"] {
   background: var(--vdx-color-nav-item-active-bg);
   color: var(--vdx-color-nav-text-active);
   font-weight: 600;
 }
 
-.vdx-nav__icon { flex-shrink: 0; width: var(--vdx-icon-md); height: var(--vdx-icon-md); }
-.vdx-nav__label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.vdx-nav-item__icon { flex-shrink: 0; width: var(--vdx-icon-md); height: var(--vdx-icon-md); }
+.vdx-nav-item__label { flex: 1; overflow: hidden; text-overflow: ellipsis; text-align: left; }
 
-/* Nav badge — numeric count chips on nav items (e.g., "12 pending policies")
-   Hidden in collapsed sidebar via .vdx-sidebar--collapsed rule above. */
-.vdx-nav__badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 var(--vdx-space-1-5);
-  background: var(--vdx-color-action-primary);
-  color: var(--vdx-color-text-inverse);
-  border-radius: var(--vdx-radius-full);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
+/* Parent (group) item — a real nav item that expands/collapses its children
+   rather than a plain uppercase label, so a screen reader and a mouse user
+   get the same affordance. */
+.vdx-nav-item--parent { font-weight: 600; }
+
+.vdx-nav-item__chevron {
   flex-shrink: 0;
+  font-size: 11px;
+  color: var(--vdx-color-nav-group-label);
+  transition: transform var(--vdx-duration-fast) var(--vdx-ease-default);
 }
+.vdx-nav-item__chevron--open { transform: rotate(180deg); }
+
+/* Nested links under a parent item. */
+.vdx-nav-item__children {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  margin: 0;
+  padding-inline-start: var(--vdx-space-4);
+}
+.vdx-nav-item__children li { margin: 0; }
 
 /* Sidebar toggle button */
 .vdx-sidebar__toggle {

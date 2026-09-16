@@ -190,8 +190,8 @@
    unclassed lists/tables (e.g. quote-portal.html's inline bullet list,
    formula-builder.html's preview table) that relied on browser defaults.
    Restore those defaults only where no component class claims the element,
-   so classed tables/lists (table.vx-t, .vx-nav-list, Bootstrap .nav, …)
-   keep the vdx reset. */
+   so classed tables/lists (table.vx-t, .vdx-nav-item__children, Bootstrap
+   .nav, …) keep the vdx reset. */
 ul:not([class]), ol:not([class]) { list-style: revert; }
 table:not([class]) { width: auto; }
 
@@ -216,12 +216,13 @@ a:hover{text-decoration:underline}
    Structural layout — app shell, topbar, sidebar, nav item states, the
    mobile drawer, the tablet icon-rail breakpoint, and the breadcrumb —
    comes from theme/global.css's real .vdx-app-shell / .vdx-topbar /
-   .vdx-sidebar / .vdx-nav__* / .vdx-breadcrumb__* classes; core.js renders
-   markup directly in those classes (NAV-001/NAV-002/NAV-003). What remains
-   here is (a) this platform's own topbar widgets that have no vdx-spec
-   equivalent (search, tenant/notification/profile popovers), and (b) the
-   collapsible per-group nav accordion, which also has no NAV-002 equivalent
-   (its nav is a flat list) and stays fully custom.
+   .vdx-sidebar / .vdx-nav-item__* / .vdx-breadcrumb__* classes; core.js
+   renders markup directly in those classes (NAV-001/NAV-002/NAV-003). What
+   remains here is (a) this platform's own topbar widgets that have no
+   vdx-spec equivalent (search, tenant/notification/profile popovers), and
+   (b) the collapsible per-group nav accordion (parent items with nested
+   .vdx-nav-item__children), which also has no NAV-002 equivalent and stays
+   fully custom.
    .vdx-logo__portal-name is white-space:nowrap with no overflow handling in
    theme/global.css itself — a long tenant name can overflow the topbar the
    same way a long name once overflowed the old sidebar brand row. Same
@@ -239,22 +240,18 @@ a:hover{text-decoration:underline}
 .vdx-sidebar{top:0}
 
 /* Per-group accordion (custom). Icon-rail and tablet auto-collapse leave no
-   room for a group header to toggle, so it's hidden and every list is
-   forced open in both states — mirrors the old .vx-collapsed logic, just
-   keyed off the framework's own .vdx-sidebar--collapsed class/breakpoint. */
-.vx-nav-grp{display:flex;align-items:center;justify-content:space-between;width:100%;
-  font:inherit;background:none;border:none;cursor:pointer;padding:0 var(--space-3);margin-top:var(--space-2)}
-.vx-nav-grp:hover .vdx-nav__group-label{color:var(--side-text)}
-.vx-nav-grp .chev{font-size:9px;color:var(--side-text-dim);transition:transform .15s}
-.vx-nav-grp[aria-expanded="false"] .chev{transform:rotate(-90deg)}
-.vdx-sidebar--collapsed .vx-nav-grp,
-.vdx-sidebar--collapsed .vdx-nav__item{justify-content:center;padding-inline:0}
-.vdx-sidebar--collapsed .vx-nav-grp{display:none}
-.vdx-sidebar--collapsed .vx-nav-list{display:block!important}
+   room for a group's parent item to toggle, so it's hidden and every child
+   list is forced open in both states — keyed off the framework's own
+   .vdx-sidebar--collapsed class/breakpoint. */
+.vdx-nav-item--parent{margin-top:var(--space-2)}
+.vdx-sidebar--collapsed .vdx-nav-item--parent,
+.vdx-sidebar--collapsed .vdx-nav-item{justify-content:center;padding-inline:0}
+.vdx-sidebar--collapsed .vdx-nav-item--parent{display:none}
+.vdx-sidebar--collapsed .vdx-nav-item__children{display:flex!important;padding-inline-start:0}
 @media(min-width:768px) and (max-width:1023px){
-  .vdx-sidebar .vx-nav-grp{display:none}
-  .vdx-sidebar .vx-nav-list{display:block!important}
-  .vdx-sidebar .vdx-nav__item{justify-content:center;padding-inline:0}
+  .vdx-sidebar .vdx-nav-item--parent{display:none}
+  .vdx-sidebar .vdx-nav-item__children{display:flex!important;padding-inline-start:0}
+  .vdx-sidebar .vdx-nav-item{justify-content:center;padding-inline:0}
 }
 .vdx-sidebar__toggle{gap:var(--space-2)}
 
@@ -880,12 +877,6 @@ label{font-size:var(--vdx-type-label-md-size);font-weight:600;color:var(--vdx-co
    which made focus invisible against its white background; scoped to the
    sidebar only, which is the one surface that actually needs it. */
 .vdx-sidebar :focus-visible{outline-color:var(--color-panel)}
-
-/* The nav is a list of lists now, for group announcement. Strip the list
-   presentation without stripping the semantics (never list-style:none alone —
-   Safari drops the list role when it has no marker AND no explicit role). */
-.vx-nav-list{list-style:none;margin:0;padding:0}
-.vx-nav-list li{margin:0}
 
 /* WCAG 1.4.12 Text Spacing: the page must survive a user stylesheet forcing
    these values. Verified at 200% zoom with the spacing overrides applied. */

@@ -368,7 +368,7 @@ vxAgGrid({ el:"#grid", key:"products", name:"Product",
       `${rec.name} (${rec.code}) ${isNew ? "created" : "edited"} by ${who.split("@")[0]}`);
   },
 
-  cols:[{k:"name",l:"Product"},{k:"code",l:"Code"},{k:"lob",l:"Coverage"},
+  cols:[{k:"name",l:"Product",flex:2},{k:"code",l:"Code"},{k:"lob",l:"Coverage"},
       /* Lead with the application type's NAME — the numeric id is an internal
          routing key from ams_service, meaningless on its own. It stays as
          secondary text (and in the tooltip) because it's the only thing that

@@ -1702,7 +1702,7 @@ let fbGrid = null;
 fbGrid = vxAgGrid({ el: "#fbGrid", key: "savedFormulas", name: "Formula", size: 12, readOnly: true,
   onHist: r => showFormulaHistory(r),
   cols: [
-    { k: "name", l: "Formula" },
+    { k: "name", l: "Formula", flex: 2 },
     { k: "lob", l: "Coverage" },
     { k: "_scope", l: "Rates", sort: false, r: r => r.scope === "Account"
         ? '<span class="vx-b purple">Account level</span>'

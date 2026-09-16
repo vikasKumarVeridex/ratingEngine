@@ -29,7 +29,7 @@ document.getElementById("vxBody").innerHTML = `
   <div class="vx-card vdx-card vx-anim"><div id="grid"></div></div>`;
 const grid = vxAgGrid({ el:"#grid", key:"surcharges", name:"Surcharge",
 
-  cols:[{k:"name",l:"Surcharge"},{k:"code",l:"Code"},{k:"lob",l:"LOB"},
+  cols:[{k:"name",l:"Surcharge",flex:2},{k:"code",l:"Code"},{k:"lob",l:"LOB"},
       {k:"type",l:"Applies To",r:r=>'<span class="vx-b amber">'+r.type+'</span>'},
       {k:"value",l:"Value",editable:true,r:r=>'<span style="color:var(--bad);font-weight:650">+'+(r.value*100).toFixed(0)+'%</span>'},
       {k:"condition",l:"Condition"},

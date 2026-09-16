@@ -33,7 +33,7 @@ function persistTenantUsers() {
 }
 vxAgGrid({ el:"#grid", key:"users", name:"User",
   cols:[{k:"name",l:"Name",r:r=>(r.role==="Service Account"?'<i class="fa-solid fa-robot me-1" style="color:var(--purple)"></i>':"")+r.name},
-      {k:"email",l:"Email"},{k:"role",l:"Role",r:r=>'<span class="vx-b blue">'+r.role+'</span>'},
+      {k:"email",l:"Email",flex:2},{k:"role",l:"Role",r:r=>'<span class="vx-b blue">'+r.role+'</span>'},
       {k:"mfa",l:"MFA",r:r=>'<span class="vx-b '+(r.mfa==="Enabled"?"green":"amber")+'">'+r.mfa+'</span>'},
       {k:"status",l:"Status",r:r=>'<span class="vx-b '+(r.status==="Active"?"green":"red")+'">'+r.status+'</span>'},
       {k:"lastLogin",l:"Last Login"}],
