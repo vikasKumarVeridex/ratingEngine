@@ -227,7 +227,7 @@ document.getElementById("vxBody").innerHTML = `
 <div class="row g-3">
 <div class="col-lg-7">
 
-  <div class="vx-card vx-anim">
+  <div class="vx-card vx-anim" id="engineContract">
     <h2>The engine contract</h2>
     <div class="sub">The whole surface \u2014 <code>assets/js/engine.js</code>. Called only by the underwriting
       service, in the order shown.</div>
@@ -361,7 +361,7 @@ const trace = ENGINE.trace(result);     // ${E ? E.trace(E.rate("TRUCK", { state
     </div>
   </div>
 
-  <div class="vx-card vx-anim">
+  <div class="vx-card vx-anim" id="storageContract">
     <h2>Storage contract</h2>
     <div class="sub">What each module may read, and what it must never write.</div>
     ${containers.map(([name, c]) => `

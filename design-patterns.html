@@ -5,6 +5,8 @@
 <title>Technical Guide — Architecture | VeriDex</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-grid.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-theme-quartz.css" rel="stylesheet">
 <link href="assets/css/app.css?v=20260915" rel="stylesheet">
 <style>
 .dp-code{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;
@@ -13,6 +15,7 @@
 .dp-pat .hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px}
 .dp-pat .hd b{font-size:13px}
 .dp-pat p{margin:0;font-size:12.3px;color:var(--text-dim);line-height:1.6}
+.dp-pat ul{margin:6px 0 0;padding-inline-start:18px;font-size:12.3px;color:var(--text-dim);line-height:1.6}
 </style>
 <link href="assets/css/workspace.css?v=20260915" rel="stylesheet">
 <script src="assets/js/tooltip-dictionary.js?v=20260915" defer></script>
@@ -20,189 +23,419 @@
 </head>
 <body><div id="vxApp"></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/dist/ag-grid-community.min.js"></script>
 <script src="assets/js/data.js?v=20260915"></script>
 <script src="assets/js/cosmos-model.js?v=20260915"></script>
 <script src="assets/js/tenant-setup.js?v=20260915"></script>
 <script src="assets/js/core.js?v=20260915"></script>
+<script src="assets/js/grid.js?v=20260915"></script>
+<script src="assets/js/ag-grid-adapter.js?v=20260915"></script>
 <script>
-/* Same honesty rule as Integration Guide's Technology Stack card (which this
-   page is a detailed sibling of, not a replacement for): this platform is a
-   browser-only HTML/JS prototype. What follows documents the real .NET/
-   Angular/Cosmos system it models, grounded in structures that already exist
-   in THIS prototype's own code (engine.js's LOB dispatch table, the factor-
-   code generator in factors.html, the typed Cosmos facade in cosmos-model.js)
-   rather than invented from scratch — the prototype's shape is deliberately
-   a small-scale mirror of the real one. */
+/* Same honesty rule as Integration Guide's Technology Stack card (which the
+   Architecture tab below is a detailed sibling of, not a replacement for):
+   this platform is a browser-only HTML/JS prototype. What follows documents
+   the real .NET/Angular/Cosmos system it models, grounded in structures that
+   already exist in THIS prototype's own code (engine.js's LOB dispatch
+   table, the factor-code generator in factors.html, the typed Cosmos facade
+   in cosmos-model.js) rather than invented from scratch — the prototype's
+   shape is deliberately a small-scale mirror of the real one. The Feature
+   Priorities tab follows the same rule: it's seeded from gaps this page's
+   own audit actually found, not filler text. */
 vxShell("Technical Guide",
-  "Naming conventions and the software design patterns the real implementation follows — and exactly where each one is used. || A detailed sibling to Integration Guide's Technology Stack card, not a restatement of it.",
+  "A build roadmap for the real product, coding practices, and the architecture this platform's real implementation follows. || Three tabs: a prioritized, editable roadmap for the team building the real system; SOLID principles grounded in this codebase; and the original Architecture & Patterns reference.",
   [{ l: "Reference & Tools" }, { l: "Technical Guide" }]);
 
 document.getElementById("vxPageActions").innerHTML =
   `<a href="integration.html" class="btn btn-outline-secondary btn-sm"><i class="fa-solid fa-plug me-1"></i>Integration Guide</a>
    <a href="engine-flow.html" class="btn btn-outline-secondary btn-sm"><i class="fa-solid fa-sitemap me-1"></i>Engine Flow</a>`;
 
+function vxSaveTechFeatures() {
+  try { localStorage.setItem("vxTechFeatures", JSON.stringify(VX.techFeatures)); } catch (e) {}
+}
+
 document.getElementById("vxBody").innerHTML = `
-  <div class="row g-3">
-    <div class="col-lg-6">
+  <ul class="nav nav-tabs mb-3">
+    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#dpFeatures">
+      <i class="fa-solid fa-list-check me-1"></i>Feature Priorities <span class="vx-b blue ms-1">${VX.techFeatures.length}</span></button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#dpPractices">
+      <i class="fa-solid fa-shield-halved me-1"></i>Best Practices / SOLID</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#dpArch">
+      <i class="fa-solid fa-shapes me-1"></i>Architecture &amp; Patterns</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#dpSchema">
+      <i class="fa-solid fa-diagram-project me-1"></i>Schema <span class="vx-b gray ms-1">Soon</span></button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#dpHLD">
+      <i class="fa-solid fa-drafting-compass me-1"></i>High-Level Design <span class="vx-b gray ms-1">Soon</span></button></li>
+  </ul>
+
+  <div class="tab-content">
+
+    <!-- ============================================================ -->
+    <!-- TAB 1 — Feature Priorities                                    -->
+    <!-- ============================================================ -->
+    <div class="tab-pane fade show active" id="dpFeatures">
+      <div class="vx-card vdx-card vx-anim">
+        <h2>Real-product build roadmap</h2>
+        <div class="sub">What the team building the real system should build, and roughly in what order — not a status
+          log of this prototype. Every row's prototype page is a working spec/reference, not a finished feature.
+          Editable and persisted in this browser.</div>
+        <div id="techFeaturesGrid" class="mt-2"></div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- TAB 2 — Best Practices / SOLID                                 -->
+    <!-- ============================================================ -->
+    <div class="tab-pane fade" id="dpPractices">
 
       <div class="vx-card vx-anim">
-        <h2>Naming convention: UPPER_SNAKE_CASE for codes</h2>
-        <div class="sub">Reserved for identifiers an actuary reads, not for document properties.</div>
-        <div style="font-size:12.3px;color:var(--text-dim);line-height:1.7">
-          Every business <b style="color:var(--text)">code</b> — factor codes, LOB codes, product codes —
-          is generated as <code>PREFIX_WORD_WORD</code>: uppercase words joined on underscores. See
-          <code>vxGenerateFactorCode()</code> in <code>factors.html</code>, which is the real generator this
-          platform runs, not a mock:
-        </div>
-        <pre class="dp-code">// factors.html — slugifyFactorName() + vxGenerateFactorCode()
-"Territory Base Loss Cost Factor" + Commercial Trucking
-  → words: TERRITORY BASE LOSS COST   (stopword "Factor" dropped)
-  → code:  TRK_TERRITORY_BASE_LOSS_COST</pre>
-        <div style="font-size:12.3px;color:var(--text-dim);line-height:1.7;margin-top:12px">
-          <b style="color:var(--text)">Why snake_case, specifically:</b>
+        <h2>Open/Closed Principle</h2>
+        <div class="sub">Open for extension, closed for modification — the one asked about specifically, so it gets the most detail.</div>
+        <p style="font-size:12.3px;color:var(--text-dim);line-height:1.6;margin:0">
+          Add new behavior by <b style="color:var(--text)">adding</b> code — a new entry in a lookup table, a new
+          function — never by editing a dispatcher or branch chain that already works and is already tested.
+        </p>
+        <div style="font-size:12.3px;color:var(--text-dim);line-height:1.7;margin-top:10px">
+          <b style="color:var(--text)">Where this platform follows it:</b>
           <ul style="margin:6px 0 0;padding-inline-start:18px">
-            <li>Filed rate manuals and NCCI/ISO source tables already use ALL-CAPS, underscore-separated codes —
-              a factor code that reads the same way here as it does in the source workbook is one less translation
-              an actuary has to hold in their head.</li>
-            <li>Codes get embedded verbatim in the formula DSL (Formula Builder), in exported CSV headers, and in
-              cross-system lookups. A fixed, single-case convention means matching a code is a plain string
-              comparison — no case-folding, no risk of the casing-mismatch bugs this platform's own engine.js had
-              to have <code>sameText()</code>/<code>sameProduct()</code> added to guard against at the free-text
-              product/LOB-name level.</li>
-            <li>Underscore-separated words stay readable at any length or abbreviation density
-              (<code>TRK_APD_PACKAGE</code>) where camelCase gets ambiguous once two abbreviations sit next to each
-              other (<code>trkAPDPackage</code> — where does APD end?).</li>
+            <li><code>ENGINE.rate()</code>'s dispatcher in <code>engine.js</code> has not changed shape to support any
+              of the 6 lines it currently rates — each line arrived as one new <code>MAP</code> entry plus one new
+              calculator function (see Strategy, below). The dispatcher's own logic — eligibility, configured-product
+              fallback, trace assembly — is closed; <code>MAP</code> is the open seam.</li>
+            <li><code>factors.html</code>'s <code>VX_LOB_PREFIX</code> object and <code>VX_CODE_STOPWORDS</code> Set:
+              a 7th line of business, or a new filler word to drop from generated codes, is one new entry in a table.
+              <code>slugifyFactorName()</code>'s and <code>vxGenerateFactorCode()</code>'s own logic never has to be
+              touched.</li>
           </ul>
         </div>
-        <div class="vx-exp2 vx-anim mt-3" style="border-left-color:var(--primary)">
-          <div class="hd"><i class="fa-solid fa-circle-info" style="color:var(--primary);font-size:11.5px"></i>
-            <b>Not the document schema</b><span>Cosmos document properties stay camelCase.</span></div>
-          <div class="bd" style="display:block;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
-            <p style="margin:0;font-size:12.3px;color:var(--text-dim);line-height:1.6">
-              <code>tenantId</code>, <code>ratingFactor</code>, <code>effectiveStart</code> — every JSON property
-              name in <code>cosmos-model.js</code> is camelCase, deliberately the opposite convention from codes.
-              That is what .NET's <code>System.Text.Json</code> emits by default and what Angular's TypeScript
-              models consume with no mapping layer in between. snake_case is reserved for <em>values</em> a person
-              reads and types (codes); camelCase is left alone for <em>keys</em> two frameworks already agree on.
+        <pre class="dp-code">// Extending is additive — one new entry, dispatcher untouched:
+const MAP = { TRUCK: trucking, MPL: mpl, PROP: property,
+              GL: gl, CYBER: cyber, WC: workersComp,
+              CRIME: crime };          // ← the only line this pattern requires
+
+// The seam this replaces — every new line means editing logic that
+// already shipped and already rates real premium for 6 other lines:
+function rateAnything(lobCode, input) {
+  if (lobCode === "TRUCK") return trucking(input);
+  else if (lobCode === "MPL") return mpl(input);
+  else if (lobCode === "CRIME") return crime(input);   // ← edits growing, not additive
+  ...
+}</pre>
+        <div style="font-size:12.3px;color:var(--text-dim);line-height:1.7;margin-top:12px">
+          <b style="color:var(--text)">How to follow it here:</b>
+          <ul style="margin:6px 0 0;padding-inline-start:18px">
+            <li>New line of business → one <code>MAP</code> entry + one calculator function. Never an
+              <code>if (lobCode === "X")</code> branch inside <code>rate()</code> itself.</li>
+            <li>New code-generation rule (prefix, stopword) → a table/Set entry in <code>factors.html</code>. Never a
+              branch inside <code>slugifyFactorName()</code>.</li>
+            <li>New discount/surcharge/fee type → a new data row, not new code — the Chain/Pipeline stage that
+              assembles them already iterates whatever rows exist.</li>
+            <li><b style="color:var(--text)">Warning sign:</b> touching a switch/if-chain that already has N cases
+              to add case N+1, inside a function whose job is dispatch or orchestration rather than one line's own
+              domain logic.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="row g-3">
+        <div class="col-lg-6">
+          <div class="vx-card vx-anim h-100">
+            <h2 style="font-size:15px">Single Responsibility</h2>
+            <div class="sub">One reason to change.</div>
+            <p style="font-size:12.3px;color:var(--text-dim);line-height:1.6">
+              Each of <code>engine.js</code>'s six calculators — <code>trucking()</code>, <code>mpl()</code>,
+              <code>property()</code>, <code>gl()</code>, <code>cyber()</code>, <code>workersComp()</code> — owns
+              exactly one line's rate filing; a change to MPL's ILF table only touches <code>mpl()</code>. At module
+              level, <code>cosmos-model.js</code> only knows document shapes, <code>ag-grid-adapter.js</code> only
+              knows how to render and wire a grid, <code>grid.js</code> only knows the simulated REST contract — a UI
+              restyle never touches storage code, and a schema change never touches rendering code.
             </p>
+            <pre class="dp-code">// engine.js — one function per line, one reason each to change:
+function trucking(i) { return truckingReal(i); }  // Trucking's own filed formula
+function mpl(i)      { /* MPL's own ILF × hazard-group × ALAE chain */ }
+function gl(i)        { /* GL's own class-factor × schedule-mod chain */ }
+
+// The violation this avoids — one function, N reasons to change:
+function rateEverything(lobCode, i) {
+  if (lobCode === "TRUCK") { /* trucking math, inline */ }
+  else if (lobCode === "MPL") { /* MPL math, same function body */ }
+  // fixing MPL's ILF table now risks a typo touching Trucking's math too
+}</pre>
+            <ul><li><b style="color:var(--text)">How to follow it:</b> when a function starts branching on "which LOB
+              is this" or "which screen called me" partway through its logic, that branch is where the file wants to
+              split.</li></ul>
+          </div>
+        </div>
+        <div class="col-lg-6">
+          <div class="vx-card vx-anim h-100">
+            <h2 style="font-size:15px">Liskov Substitution</h2>
+            <div class="sub">A substitute must honor the same contract.</div>
+            <p style="font-size:12.3px;color:var(--text-dim);line-height:1.6">
+              All six LOB calculators honor one shape: <code>fn(input) → result</code>, where <code>ENGINE.rate()</code>
+              layers the same <code>eligibility</code>, <code>underwriting</code> and <code>ratingBasis</code> fields
+              onto whichever one ran. <code>rate()</code> calls <code>MAP[lobCode](input)</code> with no per-line
+              special-casing after that call — every calculator is a drop-in substitute for the others behind that
+              one call site.
+            </p>
+            <pre class="dp-code">// engine.js — rate() treats whichever calculator ran identically:
+const result = configured ? configuredRate(...) : fn(input);   // fn = mpl, gl, trucking...
+result.eligibility  = eligibility;    // layered on top, same for every LOB
+result.underwriting = { decision, complete, premiumIsIndicative: true };
+result.ratingBasis  = { tenantId, raterType, rateData, ... };
+
+// A calculator that broke the contract — returns a bare number instead of
+// { finalPremium, f: [...trace] } — would crash right here, silently, only
+// for the one LOB unlucky enough to ship it.</pre>
+            <ul><li><b style="color:var(--text)">How to follow it:</b> a new calculator that returns a different
+              shape — premium as a string, a missing factor trace — breaks this silently. The "What comes back"
+              field list in the <a href="integration.html#engineContract">engine contract</a> is what every
+              calculator must honor, not just the ones that exist today.</li></ul>
+          </div>
+        </div>
+        <div class="col-lg-6">
+          <div class="vx-card vx-anim h-100">
+            <h2 style="font-size:15px">Interface Segregation</h2>
+            <div class="sub">Depend on the slice you use, not the whole thing.</div>
+            <p style="font-size:12.3px;color:var(--text-dim);line-height:1.6">
+              <code>engine.js</code>'s IIFE actually returns a big object — <code>rate</code>, <code>explain</code>,
+              <code>trace</code>, <code>evalFormula</code>, <code>LOBS</code> (the <code>MAP</code> dispatch table
+              itself, exposed), <code>runsFormula</code>, <code>configuredRoute</code>, <code>factorIsLive</code> and
+              more. Nothing stops any caller from reaching all of it — JS has no access modifiers, unlike the real
+              C# interface this models. What actually segregates it is <em>usage</em>: the
+              <a href="integration.html#engineContract">documented engine contract</a> for the Underwriting service
+              names exactly 3 of those members, while <code>factors.html</code>'s "Is this Live?" badge depends on a
+              completely different 2, and neither caller touches the other's slice.
+            </p>
+            <pre class="dp-code">// integration.html's documented contract — Underwriting's own dependency:
+const result = ENGINE.rate(lobCode, input);
+const why    = ENGINE.explain(result);
+const trace  = ENGINE.trace(result);
+
+// factors.html's "Is this Live?" badge — a different slice of the SAME
+// object, and one Underwriting never calls:
+ENGINE.factorIsLive(factor);    // → { live, lob, coverage, reason? }
+ENGINE.runsFormula(lob, cob);   // → boolean</pre>
+            <ul><li><b style="color:var(--text)">How to follow it:</b> a caller should only ever be handed — or told
+              to use — the members its own job actually needs. Underwriting depending on the whole <code>ENGINE</code>
+              object instead of the 3 methods it calls would be the ISP violation, even though nothing in JS would
+              stop it from compiling; the real C# service enforces this properly with a narrow
+              <code>IRatingEngine</code> interface (see Dependency Inversion, next).</li></ul>
+          </div>
+        </div>
+        <div class="col-lg-6">
+          <div class="vx-card vx-anim h-100">
+            <h2 style="font-size:15px">Dependency Inversion</h2>
+            <div class="sub">High-level modules depend on abstractions.</div>
+            <p style="font-size:12.3px;color:var(--text-dim);line-height:1.6">
+              Same honesty rule as the rest of this page — this describes the real system, not this browser
+              prototype. ASP.NET Core's DI container injects the Rating evaluator, eligibility checker and Cosmos
+              repositories into the Underwriting service <i>by interface</i>, not by concrete class — the seam that
+              lets a test substitute a fake Rating client without touching Underwriting's own code. Angular's DI
+              provides each screen's data service the same way. See the Dependency Injection card in
+              Architecture &amp; Patterns for the full picture.
+            </p>
+            <pre class="dp-code">// Violates DIP — Underwriting depends on a concrete class directly:
+public class UnderwritingService {
+  private readonly RatingEngine _engine = new RatingEngine();  // hard-wired
+}
+
+// Follows DIP — Underwriting depends on an abstraction; DI supplies it:
+public class UnderwritingService {
+  private readonly IRatingEngine _engine;
+  public UnderwritingService(IRatingEngine engine) => _engine = engine;
+}
+// Startup: services.AddScoped&lt;IRatingEngine, RatingEngine&gt;();
+// A test registers a fake IRatingEngine instead — Underwriting's own code
+// never changes, only what gets wired into it.</pre>
+            <ul><li><b style="color:var(--text)">How to follow it:</b> Underwriting's own code should only ever name
+              an interface type (<code>IRatingEngine</code>, not <code>RatingEngine</code>) — swapping the real
+              evaluator for a test double must never require touching Underwriting's source, only its DI
+              registration.</li></ul>
           </div>
         </div>
       </div>
 
+      <div class="row g-3 mt-1">
+        <div class="col-lg-12">
+          <div class="vx-card vx-anim">
+            <h2 style="font-size:15px">Naming convention: UPPER_SNAKE_CASE for codes</h2>
+            <div class="sub">Reserved for identifiers an actuary reads, not for document properties — a best
+              practice, not a SOLID principle, so it lives here rather than in the grid above.</div>
+            <div style="font-size:12.3px;color:var(--text-dim);line-height:1.7">
+              Every business <b style="color:var(--text)">code</b> — factor codes, LOB codes, product codes —
+              is generated as <code>PREFIX_WORD_WORD</code>: uppercase words joined on underscores. See
+              <code>vxGenerateFactorCode()</code> in <code>factors.html</code>, which is the real generator this
+              platform runs, not a mock:
+            </div>
+            <pre class="dp-code">// factors.html — slugifyFactorName() + vxGenerateFactorCode()
+"Territory Base Loss Cost Factor" + Commercial Trucking
+  → words kept: TERRITORY BASE LOSS COST   (stopword "Factor" dropped)
+  → capped to first 3 words: TERRITORY BASE LOSS   ("Cost" dropped — see below)
+  → code:  TRK_TERRITORY_BASE_LOSS</pre>
+            <div style="font-size:12.3px;color:var(--text-dim);line-height:1.7;margin-top:12px">
+              <b style="color:var(--text)">Why snake_case, specifically:</b>
+              <ul style="margin:6px 0 0;padding-inline-start:18px">
+                <li>Filed rate manuals and NCCI/ISO source tables already use ALL-CAPS, underscore-separated codes —
+                  a factor code that reads the same way here as it does in the source workbook is one less translation
+                  an actuary has to hold in their head.</li>
+                <li>Codes get embedded verbatim in the formula DSL (Formula Builder), in exported CSV headers, and in
+                  cross-system lookups. A fixed, single-case convention means matching a code is a plain string
+                  comparison — no case-folding, no risk of the casing-mismatch bugs this platform's own engine.js had
+                  to have <code>sameText()</code>/<code>sameProduct()</code> added to guard against at the free-text
+                  product/LOB-name level.</li>
+                <li>Underscore-separated words stay readable at any length or abbreviation density
+                  (<code>TRK_APD_PACKAGE</code>) where camelCase gets ambiguous once two abbreviations sit next to each
+                  other (<code>trkAPDPackage</code> — where does APD end?).</li>
+              </ul>
+            </div>
+            <div class="vx-exp2 vx-anim mt-3" style="border-left-color:var(--warn);background:rgba(198,137,15,.07)">
+              <div class="hd"><i class="fa-solid fa-triangle-exclamation" style="color:var(--warn);font-size:11.5px"></i>
+                <b>Codes silently truncate at 3 words</b><span>No indicator in the UI when a word gets dropped.</span></div>
+              <div class="bd" style="display:block;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+                <p style="margin:0;font-size:12.3px;color:var(--text-dim);line-height:1.6">
+                  <code>slugifyFactorName()</code> drops stopwords first, then keeps only the first 3 remaining words
+                  (<code>kept.slice(0, 3)</code>) before joining and capping at 24 characters. A long, specific factor
+                  name can lose a meaningful word — "Cost" above — with nothing in the Add Factor form telling the
+                  actuary it happened. Tracked as a backlog item in Feature Priorities.</p>
+              </div>
+            </div>
+            <div class="vx-exp2 vx-anim mt-3" style="border-left-color:var(--primary)">
+              <div class="hd"><i class="fa-solid fa-circle-info" style="color:var(--primary);font-size:11.5px"></i>
+                <b>Not the document schema</b><span>Cosmos document properties stay camelCase.</span></div>
+              <div class="bd" style="display:block;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+                <p style="margin:0;font-size:12.3px;color:var(--text-dim);line-height:1.6">
+                  <code>tenantId</code>, <code>ratingFactor</code>, <code>effectiveStart</code> — every JSON property
+                  name in <code>cosmos-model.js</code> is camelCase, deliberately the opposite convention from codes.
+                  That is what .NET's <code>System.Text.Json</code> emits by default and what Angular's TypeScript
+                  models consume with no mapping layer in between. snake_case is reserved for <em>values</em> a person
+                  reads and types (codes); camelCase is left alone for <em>keys</em> two frameworks already agree on.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="col-lg-6">
 
-      <div class="vx-card vx-anim">
-        <h2>Design patterns, and exactly where</h2>
-        <div class="sub">Each one maps to a structure that already exists in this platform's own code.</div>
+    <!-- ============================================================ -->
+    <!-- TAB 3 — Architecture & Patterns (original content)             -->
+    <!-- ============================================================ -->
+    <div class="tab-pane fade" id="dpArch">
+      <div class="row g-3">
+        <div class="col-lg-12">
 
-        <div class="dp-pat">
-          <div class="hd"><span class="vx-b blue">Behavioral</span><b>Strategy</b></div>
-          <p><code>ENGINE.rate(lobCode, input)</code> in <code>engine.js</code> dispatches through one lookup table
-            of interchangeable calculators:</p>
-          <pre class="dp-code">const MAP = { TRUCK: trucking, MPL: mpl, PROP: property,
+          <div class="vx-card vx-anim">
+            <h2>Design patterns, and exactly where</h2>
+            <div class="sub">Each one maps to a structure that already exists in this platform's own code.</div>
+
+            <div class="dp-pat">
+              <div class="hd"><span class="vx-b blue">Behavioral</span><b>Strategy</b></div>
+              <p><code>ENGINE.rate(lobCode, input)</code> in <code>engine.js</code> dispatches through one lookup table
+                of interchangeable calculators:</p>
+              <pre class="dp-code">const MAP = { TRUCK: trucking, MPL: mpl, PROP: property,
                GL: gl, CYBER: cyber, WC: workersComp };
 const fn = MAP[lobCode];</pre>
-          <p style="margin-top:6px">Every line's calculator shares one contract (risk in, premium + trace out).
-            Adding a line is one new entry in <code>MAP</code>; the dispatcher itself never changes — the
-            textbook reason to reach for Strategy over a growing <code>if/else</code> chain.</p>
-        </div>
+              <p style="margin-top:6px">Every line's calculator shares one contract (risk in, premium + trace out).
+                Adding a line is one new entry in <code>MAP</code>; the dispatcher itself never changes — the
+                textbook reason to reach for Strategy over a growing <code>if/else</code> chain. See also the
+                Open/Closed Principle card in Best Practices / SOLID, which is this same seam viewed from the
+                extension-not-modification angle.</p>
+            </div>
 
-        <div class="dp-pat">
-          <div class="hd"><span class="vx-b purple">Creational</span><b>Singleton</b></div>
-          <p>The rating evaluator is one shared instance, not one-per-request. In this prototype that is literally
-            <code>const ENGINE = (() =&gt; { … })()</code> — a single object built once. The real service
-            registers its equivalent as a Singleton in the .NET DI container for the same reason: the calculator
-            itself is stateless per call, so one instance can safely serve every concurrent request. The one thing
-            that has to be handled carefully either way is per-quote trace state — this platform's own
-            <code>calcLogReset()</code> clears it at the top of every <code>rate()</code> call specifically so one
-            shared instance can never leak one quote's trace into the next.</p>
-        </div>
+            <div class="dp-pat">
+              <div class="hd"><span class="vx-b purple">Creational</span><b>Singleton</b></div>
+              <p>The rating evaluator is one shared instance, not one-per-request. In this prototype that is literally
+                <code>const ENGINE = (() =&gt; { … })()</code> — a single object built once. The real service
+                registers its equivalent as a Singleton in the .NET DI container for the same reason: the calculator
+                itself is stateless per call, so one instance can safely serve every concurrent request. The one thing
+                that has to be handled carefully either way is per-quote trace state — this platform's own
+                <code>calcLogReset()</code> clears it at the top of every <code>rate()</code> call specifically so one
+                shared instance can never leak one quote's trace into the next.</p>
+            </div>
 
-        <div class="dp-pat">
-          <div class="hd"><span class="vx-b green">Structural / wiring</span><b>Dependency Injection</b></div>
-          <p><b style="color:var(--text)">Backend:</b> ASP.NET Core's built-in container injects the Rating
-            evaluator, the eligibility checker and the Cosmos repositories into the Underwriting service by
-            interface — exactly the seam that lets a test substitute a fake Rating client without touching
-            Underwriting's own code, and the same seam the <a href="integration.html#engineContract">engine
-            contract</a> depends on staying narrow.<br>
-            <b style="color:var(--text)">Frontend:</b> Angular's own DI provides each screen's data service
-            (a <code>ProductsService</code>, a <code>QuoteService</code>) the same way — a component asks for
-            the service it needs and is handed one; it never constructs an HTTP client itself.</p>
-        </div>
+            <div class="dp-pat">
+              <div class="hd"><span class="vx-b green">Structural / wiring</span><b>Dependency Injection</b></div>
+              <p><b style="color:var(--text)">Backend:</b> ASP.NET Core's built-in container injects the Rating
+                evaluator, the eligibility checker and the Cosmos repositories into the Underwriting service by
+                interface — exactly the seam that lets a test substitute a fake Rating client without touching
+                Underwriting's own code, and the same seam the <a href="integration.html#engineContract">engine
+                contract</a> depends on staying narrow.<br>
+                <b style="color:var(--text)">Frontend:</b> Angular's own DI provides each screen's data service
+                (a <code>ProductsService</code>, a <code>QuoteService</code>) the same way — a component asks for
+                the service it needs and is handed one; it never constructs an HTTP client itself.</p>
+            </div>
 
-        <div class="dp-pat">
-          <div class="hd"><span class="vx-b amber">Structural</span><b>Repository</b></div>
-          <p>Every Cosmos read/write goes through one typed facade keyed by <code>docType</code>
-            (<code>cosmos-model.js</code>), not a client per screen — see
-            <a href="integration.html#storageContract">Storage contract</a> in the Integration Guide for the actual
-            container list this facade sits in front of. A schema change is a facade change, which is the
-            Repository pattern's whole point.</p>
-        </div>
+            <div class="dp-pat">
+              <div class="hd"><span class="vx-b amber">Structural</span><b>Repository</b></div>
+              <p>Every Cosmos read/write goes through one typed facade keyed by <code>docType</code>
+                (<code>cosmos-model.js</code>), not a client per screen — see
+                <a href="integration.html#storageContract">Storage contract</a> in the Integration Guide for the actual
+                container list this facade sits in front of. A schema change is a facade change, which is the
+                Repository pattern's whole point.</p>
+            </div>
 
-        <div class="dp-pat" style="margin-bottom:0">
-          <div class="hd"><span class="vx-b blue">Behavioral</span><b>Chain / Pipeline</b></div>
-          <p>A quote runs eligibility → factor resolution → fee/tax assembly as ordered, independently
-            testable stages — a decline at eligibility halts the chain before rating runs at all (see
-            <a href="integration.html#engineContract">the engine contract</a>). <code>quote-portal.html</code>'s
-            own calculation walkthrough renders these as the same ordered stages, not a single opaque call.</p>
-        </div>
+            <div class="dp-pat" style="margin-bottom:0">
+              <div class="hd"><span class="vx-b blue">Behavioral</span><b>Chain / Pipeline</b></div>
+              <p>A quote runs eligibility → factor resolution → fee/tax assembly as ordered, independently
+                testable stages — a decline at eligibility halts the chain before rating runs at all (see
+                <a href="integration.html#engineContract">the engine contract</a>). <code>quote-portal.html</code>'s
+                own calculation walkthrough renders these as the same ordered stages, not a single opaque call.</p>
+            </div>
 
-      </div>
-
-    </div>
-  </div>
-
-  <div class="row g-3 mt-1">
-    <div class="col-lg-6">
-
-      <div class="vx-card vx-anim">
-        <h2>Pagination</h2>
-        <div class="sub">Client-side, offset-shaped — and one dead pattern still sitting in the code.</div>
-        <div style="font-size:12.3px;color:var(--text-dim);line-height:1.7">
-          <b style="color:var(--text)">What's actually live:</b> every grid on the platform (<code>vxAgGrid()</code>
-          in <code>ag-grid-adapter.js</code>) uses ag-Grid's own client-side pager —
-          <code>pagination: true, paginationPageSize</code> — default 10 rows, entirely in the browser.
-        </div>
-        <div class="vx-exp2 vx-anim mt-3" style="border-left-color:var(--warn);background:rgba(198,137,15,.07)">
-          <div class="hd"><i class="fa-solid fa-triangle-exclamation" style="color:var(--warn);font-size:11.5px"></i>
-            <b>The offset API exists but is never actually paged</b></div>
-          <div class="bd" style="display:block;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
-            <p style="margin:0 0 7px;font-size:12.3px;color:var(--text-dim);line-height:1.6">
-              <code>grid.js</code>'s simulated REST layer, <code>API.list(key, {page, size})</code>, genuinely
-              accepts offset pagination and returns a real paginated envelope (<code>meta.total</code>,
-              <code>meta.pages</code>) with simulated network latency. But <code>vxAgGrid()</code> calls it as
-              <code>API.list(key, { size: 1000000 })</code> — every row, one shot — and pages the full result
-              client-side afterward. The offset contract is real; nothing on this platform actually walks it
-              page by page.</p>
-            <p style="margin:0;font-size:12.3px;color:var(--text-dim);line-height:1.6">
-              <code>grid.js</code> also still contains its own hand-built numbered pager
-              (<code>vxGrid()</code> — prev/next, ellipsis-truncated page numbers, full ARIA labelling) from
-              before the ag-Grid migration. No page calls it anymore; it's dead code, not a second live pattern.</p>
           </div>
-        </div>
-        <div style="font-size:12.3px;color:var(--text-dim);line-height:1.7;margin-top:12px">
-          <b style="color:var(--text)">Why this doesn't carry over as-is:</b> Cosmos DB has no efficient
-          <code>OFFSET n LIMIT m</code> at scale — a real list endpoint pages via <b>continuation tokens</b>, not
-          page numbers. The real API's pagination contract is a token you pass back, not a page index; page/size
-          here is this prototype's simulated-API convenience, not a pattern to carry into the real service.
+
         </div>
       </div>
 
-    </div>
-    <div class="col-lg-6">
+      <div class="row g-3 mt-1">
+        <div class="col-lg-6">
 
-      <div class="vx-card vx-anim">
-        <h2>Global search</h2>
-        <div class="sub">One in-memory index, one substring scan — no backend call.</div>
-        <div style="font-size:12.3px;color:var(--text-dim);line-height:1.7">
-          <code>vxSearchIndex()</code> (<code>core.js</code>) builds one flat array combining every reachable
-          nav page with a capped sample from each of ~15 data collections — products, coverage lines, states,
-          rating factors, quotes, taxes, discounts, surcharges, fees, versions, formulas, counties, territories,
-          ZIP codes, industry classes, coverages. Each collection is sliced (e.g. <code>.slice(0, 150)</code>) so
-          the index stays a few hundred rows, not the platform's full dataset.
+          <div class="vx-card vx-anim">
+            <h2>Pagination</h2>
+            <div class="sub">Client-side, offset-shaped — and one dead pattern still sitting in the code.</div>
+            <div style="font-size:12.3px;color:var(--text-dim);line-height:1.7">
+              <b style="color:var(--text)">What's actually live:</b> every grid on the platform (<code>vxAgGrid()</code>
+              in <code>ag-grid-adapter.js</code>) uses ag-Grid's own client-side pager —
+              <code>pagination: true, paginationPageSize</code> — default 10 rows, entirely in the browser.
+            </div>
+            <div class="vx-exp2 vx-anim mt-3" style="border-left-color:var(--warn);background:rgba(198,137,15,.07)">
+              <div class="hd"><i class="fa-solid fa-triangle-exclamation" style="color:var(--warn);font-size:11.5px"></i>
+                <b>The offset API exists but is never actually paged</b></div>
+              <div class="bd" style="display:block;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+                <p style="margin:0 0 7px;font-size:12.3px;color:var(--text-dim);line-height:1.6">
+                  <code>grid.js</code>'s simulated REST layer, <code>API.list(key, {page, size})</code>, genuinely
+                  accepts offset pagination and returns a real paginated envelope (<code>meta.total</code>,
+                  <code>meta.pages</code>) with simulated network latency. But <code>vxAgGrid()</code> calls it as
+                  <code>API.list(key, { size: 1000000 })</code> — every row, one shot — and pages the full result
+                  client-side afterward. The offset contract is real; nothing on this platform actually walks it
+                  page by page. Tracked in Feature Priorities.</p>
+                <p style="margin:0;font-size:12.3px;color:var(--text-dim);line-height:1.6">
+                  <code>grid.js</code> also still contains its own hand-built numbered pager
+                  (<code>vxGrid()</code> — prev/next, ellipsis-truncated page numbers, full ARIA labelling) from
+                  before the ag-Grid migration. No page calls it anymore; it's dead code, not a second live pattern.</p>
+              </div>
+            </div>
+            <div style="font-size:12.3px;color:var(--text-dim);line-height:1.7;margin-top:12px">
+              <b style="color:var(--text)">Why this doesn't carry over as-is:</b> Cosmos DB has no efficient
+              <code>OFFSET n LIMIT m</code> at scale — a real list endpoint pages via <b>continuation tokens</b>, not
+              page numbers. The real API's pagination contract is a token you pass back, not a page index; page/size
+              here is this prototype's simulated-API convenience, not a pattern to carry into the real service.
+            </div>
+          </div>
+
         </div>
-        <pre class="dp-code">// core.js — vxSearchInit()
+        <div class="col-lg-6">
+
+          <div class="vx-card vx-anim">
+            <h2>Global search</h2>
+            <div class="sub">One in-memory index, one substring scan — no backend call.</div>
+            <div style="font-size:12.3px;color:var(--text-dim);line-height:1.7">
+              <code>vxSearchIndex()</code> (<code>core.js</code>) builds one flat array combining every reachable
+              nav page with a capped sample from each of ~15 data collections — products, coverage lines, states,
+              rating factors, quotes, taxes, discounts, surcharges, fees, versions, formulas, counties, territories,
+              ZIP codes, industry classes, coverages. Each collection is sliced (e.g. <code>.slice(0, 150)</code>) so
+              the index stays a few hundred rows, not the platform's full dataset.
+            </div>
+            <pre class="dp-code">// core.js — vxSearchInit()
 q.oninput = () => {
   _ix = _ix || vxSearchIndex();               // built once, cached
   const hits = _ix.filter(x =>
@@ -211,23 +444,86 @@ q.oninput = () => {
   ).slice(0, 9);
   ...
 };</pre>
-        <div style="font-size:12.3px;color:var(--text-dim);line-height:1.7;margin-top:12px">
-          <b style="color:var(--text)">What it is:</b> a plain case-insensitive substring scan over that cached
-          in-memory array, re-run on every keystroke with no debounce — safe only because the index is small
-          enough (a few hundred rows) for a linear scan to be instant.
-          <br><br>
-          <b style="color:var(--text)">What it is not:</b> not a real search index — no tokenization, no
-          inverted index, no ranking beyond source order, no fuzzy/typo tolerance, and no backend call (no Azure
-          Cognitive Search, no Elasticsearch). It never leaves the browser.
-          <br><br>
-          <b style="color:var(--text)">Workspace-gated:</b> in the admin workspace the index is just the 3-item
-          admin nav — <code>vxSearchIndex()</code> returns before pushing a single data row, so an admin's search
-          never surfaces one tenant's quotes or factors while logged out of any tenant.
+            <div style="font-size:12.3px;color:var(--text-dim);line-height:1.7;margin-top:12px">
+              <b style="color:var(--text)">What it is:</b> a plain case-insensitive substring scan over that cached
+              in-memory array, re-run on every keystroke with no debounce — safe only because the index is small
+              enough (a few hundred rows) for a linear scan to be instant.
+              <br><br>
+              <b style="color:var(--text)">What it is not:</b> not a real search index — no tokenization, no
+              inverted index, no ranking beyond source order, no fuzzy/typo tolerance, and no backend call (no Azure
+              Cognitive Search, no Elasticsearch). It never leaves the browser.
+              <br><br>
+              <b style="color:var(--text)">Workspace-gated:</b> in the admin workspace the index is just the 3-item
+              admin nav — <code>vxSearchIndex()</code> returns before pushing a single data row, so an admin's search
+              never surfaces one tenant's quotes or factors while logged out of any tenant.
+            </div>
+          </div>
+
         </div>
       </div>
-
     </div>
+
+    <!-- ============================================================ -->
+    <!-- TAB 4 — Schema (coming soon)                                   -->
+    <!-- ============================================================ -->
+    <div class="tab-pane fade" id="dpSchema">
+      <div class="vx-card vx-anim" style="text-align:center;padding:48px 24px">
+        <i class="fa-solid fa-diagram-project" style="font-size:28px;color:var(--text-mute)"></i>
+        <h2 style="margin-top:14px">Schema — coming soon</h2>
+        <div style="max-width:560px;margin:6px auto 0;font-size:13px;color:var(--text-dim);line-height:1.6">
+          Cosmos document shapes per <code>docType</code> — the real container list, field-level schema, and how
+          <code>cosmos-model.js</code>'s typed facade maps onto it. In the meantime, see Architecture &amp; Patterns
+          → Repository and <a href="integration.html#storageContract">Storage contract</a> for the shape this will
+          formalize.
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- TAB 5 — High-Level Design (coming soon)                        -->
+    <!-- ============================================================ -->
+    <div class="tab-pane fade" id="dpHLD">
+      <div class="vx-card vx-anim" style="text-align:center;padding:48px 24px">
+        <i class="fa-solid fa-drafting-compass" style="font-size:28px;color:var(--text-mute)"></i>
+        <h2 style="margin-top:14px">High-Level Design — coming soon</h2>
+        <div style="max-width:560px;margin:6px auto 0;font-size:13px;color:var(--text-dim);line-height:1.6">
+          Service boundaries and request flow across Underwriting, the Rating Engine and Cosmos — the real-system
+          picture this prototype's own pages model piece by piece. In the meantime, see
+          <a href="engine-flow.html">Engine Flow</a> and <a href="integration.html#engineContract">the engine
+          contract</a> for the pieces this will tie together. Tracked as "Internal docs &amp; admin tooling" in
+          Feature Priorities.
+        </div>
+      </div>
+    </div>
+
   </div>`;
+
+/* ---------------- Feature Priorities grid ---------------- */
+const TF_PRI_COLOR = { P0: "red", P1: "amber", P2: "blue", P3: "gray" };
+const TF_STATUS_COLOR = { Backlog: "gray", Planned: "blue", "In Progress": "amber", Done: "green" };
+
+vxAgGrid({
+  el: "#techFeaturesGrid", key: "techFeatures", name: "Roadmap Item", size: 10,
+  noClone: true, noHist: true,
+  cols: [
+    { k: "priority", l: "Priority", r: r => `<span class="vx-b ${TF_PRI_COLOR[r.priority] || "gray"}">${r.priority}</span>` },
+    { k: "feature", l: "Feature", flex: 2 },
+    { k: "status", l: "Status", r: r => `<span class="vx-b ${TF_STATUS_COLOR[r.status] || "gray"}">${r.status}</span>` },
+    { k: "notes", l: "Notes", flex: 3 },
+  ],
+  form: [
+    { k: "feature", l: "Feature", t: "textarea" },
+    { k: "priority", l: "Priority", t: "select", opts: ["P0", "P1", "P2", "P3"] },
+    { k: "status", l: "Status", t: "select", opts: ["Backlog", "Planned", "In Progress", "Done"] },
+    { k: "notes", l: "Notes", t: "textarea" },
+  ],
+  filters: [
+    { k: "priority", l: "Priority", opts: ["P0", "P1", "P2", "P3"] },
+    { k: "status", l: "Status", opts: ["Backlog", "Planned", "In Progress", "Done"] },
+  ],
+  onAfterSave: () => vxSaveTechFeatures(),
+  onAfterDelete: () => vxSaveTechFeatures(),
+});
 </script>
 </body>
 </html>

@@ -2665,6 +2665,67 @@
     try { localStorage.setItem("vxSavedFormulas", JSON.stringify(D.savedFormulas)); } catch (e) {}
   })();
 
+  /* ---------------- Technical Guide — real-product build roadmap ----------------
+     This is NOT a status log of what this browser prototype already has —
+     every page in this prototype already "works" and that's exactly the
+     trap: none of it is the real product. This list is what the team
+     actually building the real .NET/Angular/Cosmos system (the one this
+     prototype specs out — see the honesty-rule comment above vxShell())
+     should build, and roughly in what order. Priority = build sequence;
+     status = the REAL system's status, not the prototype's, so almost
+     everything starts "Planned" — this prototype gives the team a working
+     spec/reference for each row (referenced by page), not a finished
+     feature. Persisted like vxSavedFormulas — a browser's own edits always
+     win over this seed on reload. */
+  /* 14 broad, core features rather than one row per prototype page — narrow
+     enough to actually triage in planning, broad enough that each row is
+     still a real, shippable chunk of the product. Where several prototype
+     pages specify one broader capability (Discounts/Surcharges/Fees/Taxes
+     are all "pricing adjustments", say), they're one row with all their
+     specs listed, not four rows that would always move together anyway. */
+  const SEED_TECH_FEATURES = [
+    { id: 1, feature: "Multi-tenant platform & auth", priority: "P0", status: "Planned",
+      notes: "Tenant onboarding/lifecycle, user accounts and RBAC, and the DI-based tenant scoping every other feature is built inside. Build first — everything below assumes a tenant boundary already exists. Prototype spec: tenants.html, users.html, roles.html; see Architecture → Dependency Injection." },
+    { id: 2, feature: "Rating Engine service", priority: "P0", status: "Planned",
+      notes: "The narrow rate/explain/trace contract Underwriting is allowed to call, plus the per-line calculators behind it. See Best Practices → Interface Segregation, Architecture → \"the engine contract\". Prototype spec: engine.js's MAP dispatch + 6 LOB calculators, integration.html." },
+    { id: 4, feature: "Product & coverage configuration", priority: "P0", status: "Planned",
+      notes: "Products, the lines of business they're built on, and the coverages under each — the core entity model everything else attaches to. Prototype spec: products.html, lob.html, coverages.html." },
+    { id: 5, feature: "Rating factors & formulas", priority: "P1", status: "Planned",
+      notes: "The multipliers/tables a formula reads, and the token-based DSL that assembles them into a premium — including the shared evaluator the engine itself uses, so \"tested\" means tested against what actually rates. Prototype spec: factors.html, formula-builder.html." },
+    { id: 6, feature: "Rating versions & filed rate data", priority: "P1", status: "Planned",
+      notes: "Draft/Published/Superseded version lifecycle per product, plus the real filed loss-cost/ILF/base-rate tables every built-in calculator reads from. Prototype spec: versions.html, rate-tables.html, base-rates.html." },
+    { id: 7, feature: "Quoting (UI + API)", priority: "P1", status: "Planned",
+      notes: "The primary broker/underwriter quoting screen and the JSON-payload API path for a broker's own system to integrate against. Prototype spec: quote-portal.html, quote-json.html." },
+    { id: 8, feature: "Continuation-token pagination contract", priority: "P1", status: "Planned",
+      notes: "Cosmos has no efficient OFFSET/LIMIT at scale — a real list endpoint pages via a token, not a page number. Design this before list-screen UI work starts, or every grid gets built once against the wrong shape and rebuilt later. See Architecture → Pagination." },
+    { id: 9, feature: "Reference data resolution (lookups, classes, units)", priority: "P1", status: "Planned",
+      notes: "Shared reference tables, industry class codes and rating units that factors resolve against. Prototype spec: lookup-tables.html, industry-classes.html, units.html." },
+    { id: 10, feature: "Pricing adjustments (discounts, surcharges, fees, taxes)", priority: "P2", status: "Planned",
+      notes: "Every named adjustment layered onto coverage premium before it's filed-ready — credits, debits, policy fees, state/county tax, floor/ceiling rules. Prototype spec: discounts.html, surcharges.html, fees.html, taxes.html, county-taxes.html, premium-rules.html." },
+    { id: 11, feature: "Geography reference data", priority: "P2", status: "Planned",
+      notes: "States, counties, territories and ZIP codes that rating factors and taxes resolve against — likely an import/seed job rather than hand-built CRUD UI first. Prototype spec: states.html, counties.html, territories.html, zipcodes.html." },
+    { id: 12, feature: "Reporting & audit", priority: "P2", status: "Planned",
+      notes: "Book performance dashboard, loss-run analytics, and platform-wide audit history — depends on every other feature already emitting the events it reports on. Prototype spec: dashboard.html, loss-runs.html, audit.html." },
+    { id: 13, feature: "Export & integration tooling", priority: "P2", status: "Planned",
+      notes: "Exporting a tenant's rating configuration, and the written contract for whoever integrates against this service. Prototype spec: export.html, integration.html." },
+    { id: 14, feature: "Internal docs & admin tooling", priority: "P3", status: "Planned",
+      notes: "Platform settings, rating glossary, and the engine-flow/technical-guide documentation used to onboard new engineers — doesn't block a shippable MVP. Prototype spec: settings.html, glossary.html, engine-flow.html, design-patterns.html." },
+  ];
+  const TECH_FEATURES_SEED_VERSION = "2026-09-16-build-roadmap-v5-no-cosmos-row";
+  /* This key's whole MEANING changed (status log of the mockup → build
+     roadmap for the real product), not just its content — an incremental
+     merge against the old seed (as vxSavedFormulas does for genuinely
+     additive changes) would leave stale "Done"/module-inventory rows sitting
+     next to the new roadmap. A version-gated reset is scoped to this one key
+     only, so it doesn't touch any other persisted collection. */
+  try {
+    if (localStorage.getItem("vxTechFeaturesSeedVersion") !== TECH_FEATURES_SEED_VERSION) {
+      localStorage.removeItem("vxTechFeatures");
+      localStorage.setItem("vxTechFeaturesSeedVersion", TECH_FEATURES_SEED_VERSION);
+    }
+  } catch (e) {}
+  D.techFeatures = loadPersisted("vxTechFeatures", SEED_TECH_FEATURES);
+
   /* Cross-reference a Computed rating factor to the real formula (built on
      Formula Builder) that documents its calculation — factors.html's
      "Attached formula" field. Matched by (lob, cob) rather than a hardcoded

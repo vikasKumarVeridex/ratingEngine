@@ -138,6 +138,14 @@ function vxAgGrid(opt) {
         if (/^<span class="vx-b [^"]*">[^<]*<\/span>$/.test(String(sample).trim())) def.width = 130;
       } catch (e) { /* renderer needs real row data — leave default width */ }
     }
+    // Opt-in proportional fill: every column defaults to a fixed AG Grid
+    // width (200px, or the narrower widths above), so a grid with few
+    // columns leaves the rest of its container blank instead of stretching.
+    // A caller with one or two genuinely long text columns (notes, free-text
+    // descriptions) can mark them `flex` to claim the leftover space instead
+    // — left off by default so every existing page's column widths are
+    // unaffected.
+    if (c.flex) def.flex = c.flex;
     return def;
   }
 
