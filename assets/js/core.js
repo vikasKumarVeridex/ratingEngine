@@ -1554,9 +1554,11 @@ function vxPreviewStudioExport(raw) {
   const formulas = (raw.studios && raw.studios.formulas) || coll.formulas || [];
   const KNOWN = ["Commercial Trucking", "General Liability", "Commercial Property",
     "Professional Liability (MPL)", "Cyber", "Workers' Compensation"];
-  const want = P.family || P.lineOfBusiness || "";
-  const matched = KNOWN.find(n => n.toLowerCase() === String(want).toLowerCase())
-    || KNOWN.find(n => n.toLowerCase() === String(P.lineOfBusiness || "").toLowerCase());
+  // lineOfBusiness is the product's actual line ("Commercial Auto") — family
+  // ("Transportation") is a broader product-family grouping one level up,
+  // not the line itself, so it only stands in when lineOfBusiness is absent.
+  const want = P.lineOfBusiness || P.family || "";
+  const matched = KNOWN.find(n => n.toLowerCase() === String(want).toLowerCase());
   const byName = {}; covers.forEach(c => { if (c.name) byName[c.name] = c; });
   const parents = covers.filter(c => c.name && !(c.conditionalOn && byName[c.conditionalOn]));
   const children = covers.filter(c => c.name && c.conditionalOn && byName[c.conditionalOn]);

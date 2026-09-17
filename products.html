@@ -392,7 +392,7 @@ vxAgGrid({ el:"#grid", key:"products", name:"Product",
          inherits — statutory line first, then the writing carrier. */
       {k:"licenceBasis",l:"Paper",r:r=>{
         if(r.licenceBasis==="Admitted") return '<span class="vx-b green">Admitted</span>';
-        if(r.licenceBasis==="Surplus Lines") return '<span class="vx-b amber">Surplus Lines</span>';
+        if(r.licenceBasis==="Non-Admitted") return '<span class="vx-b amber">Non-Admitted</span>';
         const lob=(VX.lobs||[]).find(l=>l.name===r.lob);
         const inh=lob&&lob.licenceBasis==="Admitted"?"Admitted (statutory)":"carrier default";
         return '<span class="vx-b gray" title="No product-level override — falls back to '+inh+'">inherits · '+inh+'</span>';}},
@@ -422,7 +422,7 @@ vxAgGrid({ el:"#grid", key:"products", name:"Product",
       {k:"licenceBasis",l:"Paper (licence basis)",t:"select",
         opts:[{value:"",label:"Inherit — statutory line, then carrier licence"},
               {value:"Admitted",label:"Admitted — no surplus-lines tax or filing fee"},
-              {value:"Surplus Lines",label:"Surplus Lines — surplus-lines tax and filing fee apply"}],
+              {value:"Non-Admitted",label:"Non-Admitted — surplus-lines tax and filing fee apply"}],
         hint:"Decides the surplus-lines premium tax and SL filing fee on every quote for this product."},
       /* New business, renewals and endorsements need not rate on the same
          version — a carrier can put new business on the latest filing while

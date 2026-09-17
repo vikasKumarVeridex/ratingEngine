@@ -126,7 +126,7 @@ const previewImport = vxPreviewStudioExport;
    therefore sets the basis, rather than leaving two fields that can be set to
    contradict each other. */
 const VX_CARRIER_ENTITIES = [
-  { name: "Vikram & Sons", licence: "Surplus Lines" },
+  { name: "Vikram & Sons", licence: "Non-Admitted" },
   { name: "Rupesh & Co", licence: "Admitted" },
 ];
 /* The entities above plus any carrier a tenant is already written on. Without
@@ -186,13 +186,19 @@ document.getElementById("tenantCfgUpload").onchange = async e => {
           ${VX_CARRIER_ENTITIES.map(c => `<option value="${c.name}" data-licence="${c.licence}"
              ${c.name === (pv.P.carrier || "") ? "selected" : ""}>${c.name} — ${c.licence}</option>`).join("")}
           ${VX_CARRIER_ENTITIES.some(c => c.name === pv.P.carrier) || !pv.P.carrier ? ""
-            : `<option value="${pv.P.carrier}" data-licence="Surplus Lines" selected>${pv.P.carrier} — from this file</option>`}
+            : `<option value="${pv.P.carrier}" data-licence="Non-Admitted" selected>${pv.P.carrier} — from this file</option>`}
         </select></div>
       <div class="col-md-3"><label>Licence Basis</label>
         <select class="form-select form-select-sm T" data-k="licence" id="tcLicence">
-          <option>Surplus Lines</option><option>Admitted</option></select></div>
+          <option>Non-Admitted</option><option>Admitted</option></select></div>
       <div class="col-md-3"><label>Licensed Seats</label>
         <input type="number" class="form-control form-control-sm T" data-k="seats" value="10"></div>
+      <div class="col-md-4"><label>Tenant Type</label>
+        <select class="form-select form-select-sm T" data-k="tenantType">
+          <option value="MGU">MGU — Managing General Underwriter</option>
+          <option value="MGA">MGA — Managing General Agent</option>
+        </select>
+        <div class="mt-1" style="font-size:11px;color:var(--text-mute)">MGU: fuller delegated underwriting authority. MGA: binding authority, typically more restricted.</div></div>
     </div>
 
     <h6 style="font-size:12px;font-weight:700;margin:18px 0 8px">2 · What this file will create</h6>
@@ -242,8 +248,9 @@ document.getElementById("tenantCfgUpload").onchange = async e => {
         const tenant = {
           id, code: (t.code || "T" + id).toUpperCase(), name: t.name,
           carrier: t.carrier || t.name, plan: t.plan || "Growth",
-          licence: t.licence || "Surplus Lines",
-          nonAdmitted: (t.licence || "Surplus Lines") !== "Admitted",
+          tenantType: t.tenantType || "MGU",
+          licence: t.licence || "Non-Admitted",
+          nonAdmitted: (t.licence || "Non-Admitted") !== "Admitted",
           seats: +t.seats || 10, lobs: [], status: "Active",
           since: new Date().toISOString().slice(0, 10),
           accent: "#7c3aed",
@@ -299,7 +306,8 @@ document.getElementById("tenantCfgUpload").onchange = async e => {
           <div style="font-size:13.5px;line-height:1.7">
             <b>${tenant.name}</b> created and configured from <code style="font-size:11.5px">${pv.P.code || pv.P.name}</code>.
             <div class="vx-tw vdx-table-wrapper mt-3"><table class="vx-t vdx-table"><tbody>
-              <tr><td style="width:180px">Coverage Line</td><td>${res.lobName}${res.lobIsNew ? ' <span class="vx-b amber">new line — not rateable</span>' : ""}</td></tr>
+              <tr><td style="width:180px">Tenant Type</td><td><span class="vx-b ${tenant.tenantType === "MGA" ? "purple" : "blue"}">${tenant.tenantType}</span></td></tr>
+              <tr><td>Coverage Line</td><td>${res.lobName}${res.lobIsNew ? ' <span class="vx-b amber">new line — not rateable</span>' : ""}</td></tr>
               <tr><td>Coverages</td><td>${res.coverCount}</td></tr>
               <tr><td>Rating factors</td><td>${res.factorCount}${res.tableCount ? ` · ${res.tableCount} rate tables` : ""}</td></tr>
               <tr><td>Rating formulas</td><td>${res.formulaCount || 0}</td></tr>
@@ -399,6 +407,7 @@ vxAgGrid({ el:"#grid", key:"tenants", name:"Tenant", size:12,
       <span style="width:9px;height:9px;border-radius:50%;background:${r.accent};flex:none"></span><b>${r.name}</b>
       ${r.id===VX.activeTenantId?'<span class="vx-b green">current</span>':''}</span>`},
     {k:"code",l:"Code",r:r=>`<code style="font-size:11px">${r.code}</code>`},
+    {k:"tenantType",l:"Type",r:r=>r.tenantType ? `<span class="vx-b ${r.tenantType === "MGA" ? "purple" : "blue"}">${r.tenantType}</span>` : "—"},
     {k:"carrier",l:"Carrier Entity"},
     {k:"plan",l:"Plan",r:r=>'<span class="vx-b '+(PLAN[r.plan]||"gray")+'">'+r.plan+'</span>'},
     {k:"seats",l:"Seats"},
@@ -434,7 +443,9 @@ vxAgGrid({ el:"#grid", key:"tenants", name:"Tenant", size:12,
        text — the paper decides the licence basis, and a typo'd carrier name
        silently detaches a tenant from the basis it should have inherited. */
     {k:"carrier",l:"Carrier Entity",t:"select",opts:vxCarrierOptions()},
-    {k:"licence",l:"Licence Basis",t:"select",opts:["Surplus Lines","Admitted"]},
+    {k:"licence",l:"Licence Basis",t:"select",opts:["Non-Admitted","Admitted"]},
+    {k:"tenantType",l:"Tenant Type",t:"select",opts:["MGU","MGA"],def:"MGU",
+      hint:"MGU: fuller delegated underwriting authority. MGA: binding authority, typically more restricted."},
     {k:"plan",l:"Plan",t:"select",opts:["Enterprise","Growth","Trial"]},
     {k:"seats",l:"Licensed Seats",t:"number"},
     {k:"status",l:"Status",t:"select",opts:["Active","Trial","Suspended"]},
@@ -455,7 +466,8 @@ vxAgGrid({ el:"#grid", key:"tenants", name:"Tenant", size:12,
        seed-time derivation this platform already has keep working unchanged. */
     {k:"coverageClasses",l:"Coverage Classes",t:"tree",groups:tenantCoverageGroups,
       hint:"Ticking a child coverage also ticks its parent."}],
-  filters:[{k:"plan",l:"Plan",opts:["Enterprise","Growth","Trial"]},{k:"status",l:"Status",opts:["Active","Trial","Suspended"]}],
+  filters:[{k:"plan",l:"Plan",opts:["Enterprise","Growth","Trial"]},{k:"status",l:"Status",opts:["Active","Trial","Suspended"]},
+    {k:"tenantType",l:"Tenant Type",opts:["MGU","MGA"]}],
   /* A tenant is only real once its partition has configuration in it. */
   onAfterSave:(rec,isNew)=>{
     splitCoverageSelection(rec);
@@ -465,7 +477,7 @@ vxAgGrid({ el:"#grid", key:"tenants", name:"Tenant", size:12,
        tenant's paper differently from the carrier named on it. */
     const ent = VX_CARRIER_ENTITIES.find(c=>c.name===rec.carrier);
     if(ent) rec.licence = ent.licence;
-    rec.nonAdmitted = (rec.licence || "Surplus Lines") !== "Admitted";
+    rec.nonAdmitted = (rec.licence || "Non-Admitted") !== "Admitted";
     /* Last line of defence on the code. Checked for an actual collision
        rather than for the right shape: a correctly-shaped code can still be
        one another tenant already owns, and two tenants sharing a partition

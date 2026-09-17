@@ -86,6 +86,17 @@ document.getElementById("vxBody").innerHTML = `
    or deleted row. A table nobody has touched yet still shows its original
    production-scale sizing estimate, unchanged. */
 const rowCount = r => (r.columns && r.columns.length) ? VX.lookupRowsAsOf(r).length : r.rows;
+/* `rowCount()` deliberately falls back to the raw inventory-size estimate
+   (`r.rows`) for a table nobody has structured yet — that's right for the
+   grid's own "Rows" column, which is supposed to show "how big the real
+   thing is" even before anyone's touched it. But that estimate is NOT real,
+   viewable local data: a table can carry `rows: 184` from its seed while
+   `columns`/`data` are still empty, and treating that estimate as "Loaded"
+   (as the Records badge and View records used to) shows a green "Loaded"
+   chip and a nonzero row count for a table that opens to nothing and
+   downloads a CSV with no header. Real, browsable local data requires BOTH
+   a defined structure and at least one actual row. */
+const hasLocalRows = r => !!((r.columns && r.columns.length) && VX.lookupRowsAsOf(r).length);
 
 const grid = vxAgGrid({ el:"#grid", key:"lookupTables", name:"Lookup Table",
   noClone: true,
@@ -118,7 +129,7 @@ const grid = vxAgGrid({ el:"#grid", key:"lookupTables", name:"Lookup Table",
       {k:"records",l:"Records",r:r=>
         LOOKUP_LIVE[r.name] ? '<span class="vx-b green">Loaded</span>'
         : r.sample ? '<span class="vx-b amber hintdot" title="Placeholder rows shaped like the real key columns — not filed data. Upload a real CSV to replace them.">Sample</span>'
-        : rowCount(r) ? '<span class="vx-b green">Loaded</span>'
+        : hasLocalRows(r) ? '<span class="vx-b green">Loaded</span>'
         : vxWiredChip(false, "Not loaded")}],
   form:[{k:"name",l:"Table Name"},{k:"lob",l:"LOB",t:"select",opts:vxLobNames()},
       {k:"columns",l:"Columns",t:"columns",
@@ -159,6 +170,10 @@ function refreshSampleCsv(rec) {
   if (rec) rec.sampleCsv = buildSampleCsv(rec);
 }
 function downloadSampleCsv(rec) {
+  if (!(rec.columns || []).length) {
+    vxToast("Define columns first", `${rec.name} has no columns yet, so there's nothing to put in a sample CSV header. Open Edit and add at least one column.`, "warn");
+    return;
+  }
   refreshSampleCsv(rec);
   const blob = new Blob([rec.sampleCsv], { type: "text/csv;charset=utf-8" });
   const link = document.createElement("a");
@@ -232,7 +247,7 @@ function importCsv(rec) {
 function viewRecords(rec) {
   const tableId = LOOKUP_LIVE[rec.name];
   if (tableId) { location.href = "rate-tables.html?table=" + encodeURIComponent(tableId); return; }
-  if (rowCount(rec)) { viewLocalData(rec); return; }
+  if (hasLocalRows(rec)) { viewLocalData(rec); return; }
   vxToast("No records loaded", `${rec.name} is sized in the inventory but its rows haven't been extracted yet. Use "Add row" to start entering data.`, "warn");
 }
 

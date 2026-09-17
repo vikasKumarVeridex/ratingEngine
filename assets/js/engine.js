@@ -2117,7 +2117,7 @@ const ENGINE = (() => {
         .map(s => ({ coverage: s.coverage, formulaName: s.formulaName, error: s.error })),
       /* Which paper this was rated on, and therefore why surplus-lines tax
          and the SL filing fee are or are not on the bill. */
-      admitted, licenceBasis: admitted ? "Admitted" : "Surplus Lines",
+      admitted, licenceBasis: admitted ? "Admitted" : "Non-Admitted",
       coveragePremium: coverage, accountFactor: acct, acctLabel: o.acctLabel, afterAccount: afterAcct,
       driverFactor: drvF, afterDriver, units: o.units, driverCount: o.drivers, surchargedDrivers: o.surchargedDrivers,
       discounts, surcharges, discountTotal: dTot, surchargeTotal: sTot, creditsSkipped,

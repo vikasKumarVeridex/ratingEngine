@@ -595,7 +595,7 @@ console.log("\n7e. Licence basis: admitted paper owes no surplus-lines charges")
   const ad = rate("GL", { tenantId: 2 });   // Ironclad — admitted
 
   check("a surplus-lines carrier is charged surplus-lines tax",
-    sl.licenceBasis === "Surplus Lines" && sl.taxPct > 0 && sl.tax > 0, `tax=${sl.tax}`);
+    sl.licenceBasis === "Non-Admitted" && sl.taxPct > 0 && sl.tax > 0, `tax=${sl.tax}`);
   check("an admitted carrier is charged none",
     ad.licenceBasis === "Admitted" && ad.taxPct === 0 && ad.tax === 0, `tax=${ad.tax}`);
   check("the surplus-lines filing fee follows the same rule",
@@ -608,7 +608,7 @@ console.log("\n7e. Licence basis: admitted paper owes no surplus-lines charges")
   check("a statutorily-admitted line stays admitted on a non-admitted carrier",
     rate("WC", { tenantId: 1 }).admitted === true && rate("WC", { tenantId: 1 }).taxPct === 0);
   check("Trucking on the default (surplus lines) tenant is unchanged",
-    rate("TRUCK", {}).licenceBasis === "Surplus Lines");
+    rate("TRUCK", {}).licenceBasis === "Non-Admitted");
 
   /* Product-level paper: the same line written both ways at once, which is
      how trucking is actually sold. */
@@ -617,7 +617,7 @@ console.log("\n7e. Licence basis: admitted paper owes no surplus-lines charges")
     vm.runInContext(`VX.products.find(p => p.name === __p).licenceBasis = __b`, sb);
   };
   check("a product with no licence basis inherits (nothing changes)",
-    rate("TRUCK", { product: "Digital Trucking Program" }).licenceBasis === "Surplus Lines");
+    rate("TRUCK", { product: "Digital Trucking Program" }).licenceBasis === "Non-Admitted");
 
   setPaper("Digital Trucking Program", "Admitted");
   const admProd = rate("TRUCK", { product: "Digital Trucking Program" });
@@ -626,7 +626,7 @@ console.log("\n7e. Licence basis: admitted paper owes no surplus-lines charges")
     admProd.licenceBasis === "Admitted" && admProd.tax === 0 && !slFee(admProd),
     `${admProd.finalPremium}`);
   check("another product on the SAME line stays surplus lines",
-    slProd.licenceBasis === "Surplus Lines" && slProd.tax > 0 && slFee(slProd),
+    slProd.licenceBasis === "Non-Admitted" && slProd.tax > 0 && slFee(slProd),
     `${slProd.finalPremium}`);
   check("the two differ only in the excise charges, not the coverage premium",
     admProd.finalPremium < slProd.finalPremium
@@ -639,7 +639,7 @@ console.log("\n7e. Licence basis: admitted paper owes no surplus-lines charges")
   setPaper("Digital Trucking Program", "");
   setPaper("VeriDex Workers' Comp Program", "");
   check("clearing the override restores the inherited basis",
-    rate("TRUCK", { product: "Digital Trucking Program" }).licenceBasis === "Surplus Lines");
+    rate("TRUCK", { product: "Digital Trucking Program" }).licenceBasis === "Non-Admitted");
 }
 
 /* 8. Same input twice in one session must give the same answer. */

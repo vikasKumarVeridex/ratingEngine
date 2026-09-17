@@ -153,7 +153,7 @@
      One rule is not overridable: a statutorily admitted line stays admitted
      whatever a product says, because no private surplus-lines carrier can
      write it standalone. See isAdmitted() in engine.js. */
-  D.productLicenceOptions = ["", "Admitted", "Surplus Lines"];
+  D.productLicenceOptions = ["", "Admitted", "Non-Admitted"];
 
   /* ---------------- Rating version by transaction type ----------------
      New business, renewals and endorsements do not have to rate on the same
@@ -2469,7 +2469,7 @@
      "Ironclad onboarding" block after the tenant-partitioning pass below for
      why it is seeded with lobs:[] here and filled in AFTER that pass runs. */
   D.tenants = [
-    { id: 1, code: "VERIDEX", nonAdmitted: true, licence: "Surplus Lines", name: "VeriDex Rating Platform", carrier: "VeriDex Casualty Co.", plan: "Enterprise",
+    { id: 1, code: "VERIDEX", nonAdmitted: true, licence: "Non-Admitted", name: "VeriDex Rating Platform", carrier: "VeriDex Casualty Co.", plan: "Enterprise",
       seats: 48, lobs: ["Commercial Trucking","General Liability","Commercial Property","Professional Liability (MPL)","Cyber","Workers' Compensation"],
       status: "Active", since: "2024-03-01", accent: "#f2660d" },
     /* lobs starts EMPTY on purpose. If it named "Workers' Compensation" here,
@@ -2479,7 +2479,7 @@
        onboarding their own product. lobs is set for real, and the product
        actually built, in the post-partitioning block below instead. */
     { id: 2, code: "IRONCLAD", nonAdmitted: false, licence: "Admitted", name: "Ironclad Specialty Insurance", carrier: "Ironclad Casualty Co.", plan: "Growth",
-      seats: 12, lobs: [], status: "Active", since: "2026-08-28", accent: "#0369a1" },
+      tenantType: "MGU", seats: 12, lobs: [], status: "Active", since: "2026-08-28", accent: "#0369a1" },
   ];
   /* Persisted, matching the same pattern products/versions/savedFormulas
      already use — a tenant created (or deleted) through tenants.html's real
@@ -3259,12 +3259,16 @@ function vxImportProductStudioExport(raw, tenantId) {
   const eligRules = (raw.studios && raw.studios.eligibility) || coll.eligibilityRules || [];
 
   // ---- 1. Line of business: reuse a real one if the export names a line
-  // this platform's engine already rates; otherwise a genuinely new one. ----
+  // this platform's engine already rates; otherwise a genuinely new one.
+  // lineOfBusiness is the product's actual line ("Commercial Auto") — family
+  // ("Transportation") is a broader product-family grouping one level up,
+  // not the line itself, so it only stands in when lineOfBusiness is
+  // absent. Must match vxPreviewStudioExport() in core.js, which computes
+  // the same thing for the onboarding preview before this ever runs. ----
   const KNOWN_LOBS = ["Commercial Trucking", "General Liability", "Commercial Property",
     "Professional Liability (MPL)", "Cyber", "Workers' Compensation"];
-  const wantLob = P.family || P.lineOfBusiness || "Imported Line";
-  let lobName = KNOWN_LOBS.find(n => n.toLowerCase() === String(wantLob).toLowerCase())
-    || KNOWN_LOBS.find(n => n.toLowerCase() === String(P.lineOfBusiness || "").toLowerCase());
+  const wantLob = P.lineOfBusiness || P.family || "Imported Line";
+  let lobName = KNOWN_LOBS.find(n => n.toLowerCase() === String(wantLob).toLowerCase());
   const lobIsNew = !lobName;
   if (!lobName) lobName = wantLob;
 
