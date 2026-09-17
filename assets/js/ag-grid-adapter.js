@@ -218,7 +218,33 @@ function vxAgGrid(opt) {
       if (cnt) cnt.textContent = n;
       if (bar) bar.style.display = n ? "flex" : "none";
     },
+    // A page's `flex` column (see colDef above) only grows the row while it
+    // stays visible — hide it (or hide enough other columns) from Table
+    // options > Columns and the remaining fixed-width columns can fall well
+    // short of the grid's width, leaving blank space between the last column
+    // and the pinned Actions column. Re-measure on every column-visibility
+    // change and grow the *currently visible* columns to fill that gap —
+    // but only when they're genuinely underfilling it, never when a wide
+    // column set is already overflowing and meant to scroll horizontally.
+    onFirstDataRendered: fillWidthIfUnderflowing,
+    onColumnVisible: fillWidthIfUnderflowing,
+    onGridSizeChanged: fillWidthIfUnderflowing,
   };
+  function fillWidthIfUnderflowing() {
+    // Deferred a frame: AG Grid applies a visibility change to the DOM
+    // asynchronously, so measuring synchronously inside the event that
+    // reported it can still see the pre-change layout — most visible when
+    // several columns are toggled off in quick succession (Table options >
+    // Columns unchecks them one at a time) and only the last one actually
+    // drops below the viewport width.
+    requestAnimationFrame(() => {
+      const wrap = document.getElementById(id + "grid");
+      const viewport = wrap && wrap.querySelector(".ag-center-cols-viewport");
+      const container = wrap && wrap.querySelector(".ag-center-cols-container");
+      if (!viewport || !container) return;
+      if (container.scrollWidth < viewport.clientWidth - 1) gridApi.sizeColumnsToFit();
+    });
+  }
   const gridApi = agGrid.createGrid(document.getElementById(id + "grid"), gridOptions);
 
   /* ---------- data load — AG Grid owns search/filter/sort/page client-side from here on; reload() just refetches VX[key] ---------- */

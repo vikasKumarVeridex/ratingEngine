@@ -29,7 +29,7 @@ document.getElementById("vxBody").innerHTML = `
   <div class="vx-card vdx-card vx-anim"><div id="grid"></div></div>`;
 vxAgGrid({ el:"#grid", key:"baseRates", name:"Base Rate",
   
-  cols:[{k:"lob",l:"LOB"},{k:"state",l:"State"},{k:"territory",l:"Territory"},{k:"classCode",l:"Class"},{k:"coverage",l:"Coverage"},
+  cols:[{k:"lob",l:"LOB"},{k:"state",l:"State"},{k:"territory",l:"Territory"},{k:"classCode",l:"Class"},{k:"coverage",l:"Coverage",flex:2},
       {k:"baseRate",l:"Base Rate",r:r=>vxMoney2(r.baseRate)},{k:"unit",l:"Unit"},{k:"filingId",l:"Filing ID"},
       {k:"version",l:"Version",r:r=>'<span class="vx-b gray">'+r.version+'</span>'}],
   form:[{k:"lob",l:"LOB",t:"select",opts:vxLobNames()},
