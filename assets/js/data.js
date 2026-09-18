@@ -60,7 +60,7 @@
                          && (!r.effectiveEnd || r.effectiveEnd >= asOf));
   };
 
-  const VX_DATA_VERSION = "2026-09-08-lookup-table-samples";
+  const VX_DATA_VERSION = "2026-09-17-cleared-seed-data-2";
   try {
     if (localStorage.getItem("vxDataVersion") !== VX_DATA_VERSION) {
       localStorage.clear();
@@ -125,18 +125,7 @@
      except Workers' Compensation (491) — see D.tenants, where every carrier
      is flagged nonAdmitted, and D.lobs' note on WC's licenceBasis for why
      that one line is the exception rather than a blanket claim. */
-  D.products = [
-    { id: 1, code: "DTP", name: "Digital Trucking Program", lob: "Commercial Trucking", cob: ["Auto Liability", "Physical Damage", "Motor Truck Cargo"], states: 50, version: "v2026.03", status: "Active", owner: "J. Romero", updated: "2026-07-28", quotes: 428, gwp: 3620000, appTypeId: 483, raterType: "Custom" },
-    { id: 3, code: "NTA", name: "VeriDex Non-Trucking Auto", lob: "Commercial Trucking", cob: ["Auto Liability"], states: 50, version: "v2025.09", status: "Active", owner: "J. Romero", updated: "2026-05-02", quotes: 94, gwp: 385000, appTypeId: 483, raterType: "Custom" },
-    { id: 4, code: "GLSTD", name: "Standard GL Program", lob: "General Liability", cob: ["Premises / Operations", "Products / Completed Operations"], states: 50, version: "v2025.10", status: "Active", owner: "S. Patel", updated: "2026-07-22", quotes: 512, gwp: 2870000, appTypeId: 499, raterType: "Custom" },
-    { id: 5, code: "GLPKG", name: "VeriDex GL Package", lob: "General Liability", cob: ["Premises / Operations", "Liquor Liability"], states: 38, version: "v2026.02", status: "Active", owner: "S. Patel", updated: "2026-07-19", quotes: 267, gwp: 1490000, appTypeId: 496, raterType: "Custom" },
-    { id: 6, code: "CPBG", name: "Commercial Property — Building Group", lob: "Commercial Property", cob: ["Building", "Business Personal Property", "Business Income"], states: 46, version: "v2026.01", status: "Active", owner: "S. Patel", updated: "2026-07-26", quotes: 341, gwp: 2110000, appTypeId: 492, raterType: "Custom" },
-    { id: 7, code: "CPSCL", name: "Commercial Property — Special Class", lob: "Commercial Property", cob: ["Property", "Extra Expense"], states: 41, version: "v2026.01", status: "Active", owner: "S. Patel", updated: "2026-07-26", quotes: 128, gwp: 760000, appTypeId: 492, raterType: "Custom" },
-    { id: 8, code: "MPL", name: "VeriDex MPL Select", lob: "Professional Liability (MPL)", cob: ["Misc Professional Liability"], states: 50, version: "v2024.12", status: "Active", owner: "M. Alvarez", updated: "2026-06-30", quotes: 219, gwp: 640000, appTypeId: 497, raterType: "Custom" },
-    { id: 9, code: "CYBER", name: "VeriDex CyberShield", lob: "Cyber", cob: ["Liability", "Breach Response", "Cyber Crime", "Business Loss"], states: 50, version: "v2026.05", status: "Active", owner: "M. Alvarez", updated: "2026-07-31", quotes: 173, gwp: 520000, appTypeId: 1102, raterType: "Custom" },
-    { id: 10, code: "UMB", name: "VeriDex Umbrella Advantage", lob: "Umbrella / Excess", cob: ["Excess Liability"], states: 50, version: "v2026.07-draft", status: "Draft", owner: "J. Romero", updated: "2026-07-10", quotes: 0, gwp: 0, appTypeId: 495, raterType: "Custom" },
-    { id: 11, code: "WCPROG", name: "VeriDex Workers' Comp Program", lob: "Workers' Compensation", cob: ["Workers' Compensation"], states: 46 /* overridden below: real ND/OH/WA/WY monopolistic-fund exclusion, not a slice */, version: "v2026.08", status: "Active", owner: "M. Alvarez", updated: "2026-08-15", quotes: 0, gwp: 0, appTypeId: 491, raterType: "Custom" },
-  ];
+  D.products = [];
   /* ---------------- Product licence basis ----------------
      Which paper a PRODUCT is written on. This sits on the product, not the
      line, because the same carrier group routinely writes one trucking
@@ -1426,62 +1415,15 @@
   const CREDIT_LOB_BY_CODE = { SUR_FMCSA: "Commercial Trucking", SUR_OOSV: "Commercial Trucking",
     SUR_OOSD: "Commercial Trucking", DISC_CF: "All", SUR_CYBINC: "Cyber", SUR_COASTAL: "Commercial Property" };
 
-  D.discounts = [
-    ["Renewal Discount","DISC_RENEWAL","Account",-0.05,"Clean renewal, LR < 50%, ≤2 cancellations"],
-    ["CDL Experience Discount","DISC_CDL","Driver",-0.10,"10+ years CDL experience (tiered)"],
-    ["Dashcam / Telematics","DISC_DASHCAM","Vehicle",-0.05,"Preferred-vendor dashcams fleet-wide"],
-    ["Multi-Policy Discount","DISC_MULTI","Account",-0.03,"Bundled with GL or Property"],
-    ["Paid-In-Full Discount","DISC_PIF","Payment",-0.02,"Premium paid in full at binding"],
-    ["Sprinkler Credit","DISC_SPRINK","Property",-0.12,"Fully sprinklered building"],
-    ["Central Station Alarm","DISC_ALARM","Property",-0.06,"UL-listed central station alarm"],
-    ["Full MFA Credit","DISC_MFA","Cyber",-0.20,"MFA on all remote access + email"],
-    ["Claims-Free Credit","DISC_CF","Account",-0.08,"No claims in prior 3 years"],
-    ["Safety Program Credit","DISC_SAFETY","Account",-0.07,"Documented written safety program"],
-  ].map(([name, code, type, value, cond], i) => ({ id: i + 1, name, code, type, value, condition: cond, lob: CREDIT_LOB_BY_CODE[code] || CREDIT_LOB[type] || "All", effectiveDate: "2026-03-01", active: true }));
+  D.discounts = [];
 
-  D.surcharges = [
-    ["FMCSA Alert Surcharge","SUR_FMCSA","Account",0.15,"Open FMCSA BASIC alert"],
-    ["OOS Vehicle Violations","SUR_OOSV","Account",0.10,"OOS vehicle rate above threshold"],
-    ["OOS Driver Violations","SUR_OOSD","Account",0.10,"OOS driver rate above threshold"],
-    ["Hazmat Operations","SUR_HAZMAT","Vehicle",0.35,"Hazmat-endorsed cargo"],
-    ["High-Risk Driver","SUR_DRV","Driver",0.30,"Violation Class E on any rated driver"],
-    ["No Dashcam Surcharge","SUR_NODASH","Vehicle",0.20,"No dashcams installed"],
-    ["Unassigned Driver","SUR_UNASSIGN","Vehicle",0.10,"Vehicle with no rated driver assigned"],
-    ["Coastal Wind Exposure","SUR_COASTAL","Property",0.90,"Tier 1 coastal wind zone"],
-    ["Prior Cyber Incident","SUR_CYBINC","Cyber",0.60,"2+ incidents or loss > $50k"],
-    ["New Venture Debit","SUR_NEWVEN","Account",0.20,"Less than 1 year in business"],
-  ].map(([name, code, type, value, cond], i) => ({ id: i + 1, name, code, type, value, condition: cond, lob: CREDIT_LOB_BY_CODE[code] || CREDIT_LOB[type] || "All", effectiveDate: "2026-03-01", active: true }));
+  D.surcharges = [];
 
   /* Fees support BOTH a fixed dollar amount and a percentage of a chosen basis.
      valueType: "Fixed"  → value is dollars, multiplied by qty (charge type)
      valueType: "Percent"→ value is a %, applied to `percentOf` basis
      Min/Max cap a percentage fee so it stays inside a sensible band. */
-  D.fees = [
-    { id: 1, name: "Policy Fee", code: "FEE_POLICY", valueType: "Fixed", value: 150, percentOf: "—",
-      minFee: 0, maxFee: 0, chargeType: "Per Policy", basis: "Flat per policy", taxable: false, lob: "All", active: true },
-    { id: 2, name: "Broker Fee", code: "FEE_BROKER", valueType: "Percent", value: 8.0, percentOf: "Premium Before Fees",
-      minFee: 250, maxFee: 2500, chargeType: "Per Policy", basis: "8% of premium, min $250 / max $2,500 — retained by producing broker", taxable: false, lob: "All", active: true },
-    { id: 3, name: "Inspection Fee", code: "FEE_INSPECT", valueType: "Fixed", value: 75, percentOf: "—",
-      minFee: 0, maxFee: 0, chargeType: "Per Policy", basis: "Flat per new business submission", taxable: false, lob: "All", active: true },
-    { id: 4, name: "Driver Surcharge Fee", code: "FEE_DRVSUR", valueType: "Fixed", value: 85, percentOf: "—",
-      minFee: 0, maxFee: 0, chargeType: "Per Driver", basis: "Per driver with violations in past 36 months", taxable: false, lob: "Commercial Trucking", active: true },
-    { id: 5, name: "MVR / CSA Report Fee", code: "FEE_MVR", valueType: "Fixed", value: 12, percentOf: "—",
-      minFee: 0, maxFee: 0, chargeType: "Per Driver", basis: "Per driver ordered", taxable: false, lob: "Commercial Trucking", active: true },
-    { id: 6, name: "Vehicle Inspection Fee", code: "FEE_VEHINSP", valueType: "Fixed", value: 45, percentOf: "—",
-      minFee: 0, maxFee: 0, chargeType: "Per Vehicle", basis: "Per power unit scheduled", taxable: false, lob: "Commercial Trucking", active: true },
-    { id: 7, name: "Managing General Underwriter Fee", code: "FEE_MGU", valueType: "Percent", value: 5.0, percentOf: "Premium Before Fees",
-      minFee: 100, maxFee: 0, chargeType: "Per Policy", basis: "5% of premium, min $100 — MGU commission override", taxable: false, lob: "All", active: true },
-    { id: 8, name: "Installment Fee", code: "FEE_INSTALL", valueType: "Fixed", value: 10, percentOf: "—",
-      minFee: 0, maxFee: 0, chargeType: "Per Installment", basis: "Per installment when financed", taxable: false, lob: "All", active: false },
-    { id: 9, name: "Cyber Scan Fee", code: "FEE_CYBSCAN", valueType: "Fixed", value: 250, percentOf: "—",
-      minFee: 0, maxFee: 0, chargeType: "Per Policy", basis: "Per submission (Kynd security scan)", taxable: false, lob: "Cyber", active: true },
-    { id: 10, name: "Property Appraisal Fee", code: "FEE_APPRAISE", valueType: "Fixed", value: 400, percentOf: "—",
-      minFee: 0, maxFee: 0, chargeType: "Per Location", basis: "Per location over $5M TIV", taxable: false, lob: "Commercial Property", active: true },
-    { id: 11, name: "Surplus Lines Filing Fee", code: "FEE_SLFILE", valueType: "Percent", value: 0.35, percentOf: "Premium + Taxes",
-      minFee: 25, maxFee: 500, chargeType: "Per Policy", basis: "0.35% of premium plus taxes, min $25 / max $500", taxable: false, lob: "All", active: true },
-    { id: 12, name: "Terrorism (TRIA) Charge", code: "FEE_TRIA", valueType: "Percent", value: 1.5, percentOf: "Coverage Premium",
-      minFee: 0, maxFee: 0, chargeType: "Per Policy", basis: "1.5% of coverage premium if TRIA accepted", taxable: true, lob: "All", active: true },
-  ];
+  D.fees = [];
 
   /* Trailer types (source: Vehicles tab "Trailer Type" column). The real
      TrailerTypes PhysDam factor table (HelperTables!DA3:DB5) only has two
@@ -1604,72 +1546,7 @@
     const vals = (rows || []).map(r => +(typeof key === "function" ? key(r) : r[key])).filter(v => !isNaN(v));
     return vals.length ? { n: vals.length, min: Math.min(...vals), max: Math.max(...vals) } : { n: 0, min: null, max: null };
   };
-  const FACTORS = [
-    // --- Commercial Trucking · Auto Liability ---
-    ["BASE_LC","Territory Base Loss Cost","Commercial Trucking","Auto Liability","Lookup","Garaging State","CA_Liab_LC","truckBaseLC",()=>stat(Object.entries(VXBASE.truckBaseLC).filter(([k])=>k!=="DEFAULT").map(([,v])=>({v})),"v"),null,true],
-    ["COV_ILF","Increased Limits Factor (ILF)","Commercial Trucking","Auto Liability","Lookup","Liability Limit","IncreasedLimitsFactors","truckILF",()=>stat(Object.values(VXBASE.truckILF).flatMap(t=>Object.values(t).map(v=>({v}))),"v"),1.00,true],
-    ["COV_LIABDED","Liability Deductible Factor","Commercial Trucking","Auto Liability","Lookup","Liability Deductible","CA_Liab_Deductible","truckLiabDed",()=>stat(VXBASE.truckLiabDed,"factor"),0,true],
-    /* Default was null — this factor showed "none" in the registry even
-       though the real value has been on file since D.programParams was
-       built (ProgramDeviations!B2, cross-checked 2026-08-18 against
-       ams-service's udf_iso_new_rater_liab_calculations_0564.sql, which
-       hardcodes the same 1.67). Read from that one source rather than
-       retyped, so the two can't drift apart. */
-    ["GLB_LCM","Loss Cost Multiplier (LCM)","Commercial Trucking","Auto Liability","Constant",null,"ProgramDeviations",null,null,
-      D.programParams.find(p => p.param === "Liability LCM").value,true],
-    ["VEH_PRIMARY","Primary Class Factor","Commercial Trucking","Auto Liability","Lookup","Vehicle Class","CA_PrimaryFactors","truckPrimary",()=>stat(VXBASE.truckPrimary,"liability"),null,true],
-    ["VEH_SECONDARY","Secondary Class Factor","Commercial Trucking","Auto Liability","Lookup","Secondary Class (per unit)","CA_SecondaryFactors",null,null,null,true],
-    ["VEH_FLEET","Fleet Size Factor","Commercial Trucking","Auto Liability","Lookup","Rated power units","CA_Fleet_TTT","truckFleetSize",()=>stat(VXBASE.truckFleetSize,"factor"),1.00,true],
-    ["VEH_AGE","Vehicle Age Factor","Commercial Trucking","Auto Liability","Lookup","Model Year","CA_Age","truckAge",()=>stat(VXBASE.truckAge,"tttLiability"),1.00,true],
-    ["VEH_OCN","OCN Factor","Commercial Trucking","Auto Liability","Lookup","Vehicle stated value","CA_OCN_Liability","truckOCN",()=>stat(VXBASE.truckOCN,"factor"),1.00,true],
-    ["VEH_RADIUS","Liability Radius Factor","Commercial Trucking","Auto Liability","Lookup","Radius of Operation","RadiusFctrs","truckRadius",()=>stat(VXBASE.truckRadius,"liabilityFactor"),1.00,true],
-    ["VEH_NAICS","NAICS Industry Factor","Commercial Trucking","Auto Liability","Lookup","Industry (NAICS)","CA_NAICS_TTT","truckNAICS",()=>stat(VXBASE.truckNAICS,"factor"),1.00,true],
-    ["COV_TORT","Tort Limitation Factor","Commercial Trucking","Auto Liability","Constant","Garaging State","Helper_CovTypesOptions_Liab",null,null,1.00,true],
-    ["VEH_MILES","Miles Driven Factor","Commercial Trucking","Auto Liability + APD","Lookup","Annual Miles + Radius","Table58","truckMiles",()=>stat(VXBASE.truckMiles,"factor"),1.00,true],
-    ["VEH_RATECLASS","Rating Class Factor","Commercial Trucking","Auto Liability + APD","Lookup","Cargo / Hauling Type","Table50","truckRatingClass",()=>stat(VXBASE.truckRatingClass,"factor"),1.00,true],
-    ["VEH_DASHCAM","Dashcam Factor","Commercial Trucking","Auto Liability + APD","Lookup","Dashcams Installed","Dashcams_Tbl","truckDashcam",()=>stat(VXBASE.truckDashcam,"factor"),1.00,true],
-    // --- Commercial Trucking · Physical Damage ---
-    ["APD_RATE","APD Rate by Stated Value","Commercial Trucking","Physical Damage","Lookup","Vehicle stated value","PhysDamRatesByTIV","truckPhysDamRate",()=>stat(VXBASE.truckPhysDamRate.map(([,f])=>({f})),"f"),null,true],
-    ["APD_DED","APD Deductible Factor","Commercial Trucking","Physical Damage","Lookup","Physical Damage Deductible","DeductFctr_ALT","truckApdDed",()=>stat(VXBASE.truckApdDed,"factor"),1.00,true],
-    ["APD_RADIUS","APD Radius Factor","Commercial Trucking","Physical Damage","Lookup","Radius of Operation","RadiusFctrs","truckRadius",()=>stat(VXBASE.truckRadius,"apdFactor"),1.00,true],
-    ["APD_TRAILER","Trailer PhysDam Factor","Commercial Trucking","Physical Damage","Lookup","Trailer Type","TrailerTypes","truckTrailer",()=>stat(Object.values(VXBASE.truckTrailerPdFactor).map(v=>({v})),"v"),1.00,true],
-    ["APD_STATE","APD State Factor","Commercial Trucking","Physical Damage","Lookup","Garaging State","Table9","truckApdState",null,1.00,true],
-    ["APD_PACKAGE","APD Package Factor","Commercial Trucking","Physical Damage","Lookup","Coverages written","Table11","truckApdPackage",null,1.00,true],
-    // --- Commercial Trucking · Account level ---
-    ["ACCT_FACTOR","Account-Level Factor","Commercial Trucking","Account Level","Computed","8 underwriting questions","Insured!Z15","truckAcctBizExp",null,1.00,true],
-    ["DRV_CLASS","Driver Class Factor","Commercial Trucking","Account Level","Computed","Driver age & violations","Drivers!AF20","driverClasses",()=>stat(VXBASE.driverClasses,"factor"),1.00,false],
-    ["DRV_CDL","CDL Experience Discount","Commercial Trucking","Account Level","Computed","Driver CDL experience","Drivers!AF19",null,null,1.00,true],
-    ["EXP_MOD","Experience Mod","Commercial Trucking","Account Level","Computed","3yr loss history","Loss History",null,null,1.00,true],
-    // --- Commercial Property ---
-    ["PR_CONSTR","Construction Type Factor","Commercial Property","Building & BPP","Lookup","Construction Type","CP_BG1","propConstruction",()=>stat(VXBASE.propConstruction,"factor"),1.00,false],
-    ["PR_PPC","Protection Class Factor","Commercial Property","Building & BPP","Lookup","Protection Class","PPC","propPPC",()=>stat(VXBASE.propPPC,"factor"),1.00,false],
-    ["PR_OCC","Occupancy Factor","Commercial Property","Building & BPP","Lookup","Occupancy","ISO_Class_Descr","propOccupancy",()=>stat(VXBASE.propOccupancy,"factor"),1.00,false],
-    ["PR_WIND","Wind / Hail Zone Factor","Commercial Property","Building & BPP","Lookup","Wind / Hail Zone","CP_BG2_WindHailExclFctrs","propWindHail",()=>stat(VXBASE.propWindHail,"factor"),1.00,false],
-    ["PR_DED","Property Deductible Factor","Commercial Property","Building & BPP","Lookup","Deductible","DeductFactors","propDed",()=>stat(VXBASE.propDed,"factor"),1.00,false],
-    ["PR_IRPM","IRPM (Schedule Rating)","Commercial Property","Building & BPP","Judgment","Underwriter","IRPM",null,null,1.00,false],
-    // --- General Liability ---
-    ["GL_ILF","Increased Limits Factor","General Liability","Premises / Operations","Lookup","Each Occurrence Limit","ILF","glELP",()=>stat(VXBASE.glELP,"elp"),1.00,false],
-    ["GL_CLASS","Class Factor","General Liability","Premises / Operations","Lookup","Class of Business","PremOpsLossCosts",null,null,1.00,false],
-    ["GL_SCHED","Schedule Rating Mod","General Liability","Premises / Operations","Judgment","Underwriter","ScheduleRatingMod",null,null,1.00,false],
-    ["GL_EXP","Experience Mod","General Liability","Premises / Operations","Computed","Loss history","ExperienceRatingMod",null,null,1.00,false],
-    // --- MPL ---
-    ["MPL_HG","Hazard Group Factor","Professional Liability (MPL)","Professional Liability","Lookup","Hazard Group","HG_Factors","mplHazardGroups",()=>stat(VXBASE.mplHazardGroups||[],"factor"),null,false],
-    ["MPL_ILF","MPL Increased Limits Factor","Professional Liability (MPL)","Professional Liability","Lookup","Per-Claim Limit","ILFs","mplILF",()=>stat(VXBASE.mplILF||[],"ilf"),null,false],
-    ["MPL_RET","Retention Factor","Professional Liability (MPL)","Professional Liability","Lookup","Retention","Retention_Factors","mplRetention",()=>stat(VXBASE.mplRetention||[],"factor"),null,false],
-    ["MPL_ALAE","ALAE Treatment Factor","Professional Liability (MPL)","Professional Liability","Lookup","Defense Cost Treatment","ALAE_Treatment",null,null,1.00,false],
-    ["MPL_YIP","Claims-Made / Year in Program","Professional Liability (MPL)","Professional Liability","Lookup","Year in Program","YIP",null,null,1.00,false],
-    // --- Cyber ---
-    ["CY_IND","Industry Class Factor","Cyber","All Agreements","Lookup","Industry Classification","HelperTables","cyberIndustry",()=>stat(VXBASE.cyberIndustry||[],"factor"),1.00,false],
-    ["CY_MFA","MFA Controls Factor","Cyber","All Agreements","Lookup","MFA Controls","HelperTables","cyberMFA",()=>stat(VXBASE.cyberMFA||[],"factor"),1.00,false],
-    ["CY_LIMIT","Aggregate Limit Factor","Cyber","All Agreements","Lookup","Aggregate Limit","Rater","cyberLimits",()=>stat(VXBASE.cyberLimits||[],"factor"),1.00,false],
-    ["CY_RET","Retention Factor","Cyber","All Agreements","Lookup","Retention","Rater","cyberRetentions",()=>stat(VXBASE.cyberRetentions||[],"factor"),1.00,false],
-    ["CY_REV","Revenue Band Factor","Cyber","All Agreements","Lookup","Annual Revenue","HelperTables",null,null,1.00,false],
-    ["CY_SCHED","Schedule Rating Factor","Cyber","All Agreements","Judgment","Underwriter","Program_Deviations",null,null,1.00,false],
-    // --- Workers' Compensation ---
-    ["WC_CLASS","Class Code Manual Rate","Workers' Compensation","Workers' Compensation","Lookup","Class Code / Payroll Schedule","NCCI class codes","wcClassRates",()=>stat(VXBASE.wcClassRates||[],"ratePer100"),null,false],
-    ["WC_EXPMOD","Experience Mod","Workers' Compensation","Workers' Compensation","Computed","Bureau-computed experience rating","NCCI/state bureau",null,null,1.00,false],
-    ["WC_SCHED","Schedule Rating Credit/Debit","Workers' Compensation","Workers' Compensation","Judgment","Underwriter","Program_Deviations",null,null,1.00,false],
-  ];
+  const FACTORS = [];
   const VXBASE = D; // FACTORS' stat closures read the tables defined above
   /* Factor Assignment — Factor -> Assigned To -> Scope -> Product/LOB ->
      Effective Version. "scope" extends the same vocabulary D.savedFormulas
@@ -2058,7 +1935,7 @@
      engine, taxes and every quote form on this platform still only handle US
      states. Canadian rows carry country:"CA" and no county (D.counties is
      US-only) so the dashboard can label and group them correctly. */
-  D.quotes = Array.from({ length: 260 }, (_, i) => {
+  D.quotes = Array.from({ length: 0 }, (_, i) => {
     const p = pick(D.products);
     const isCanada = rnd() < 0.12;
     const s = isCanada ? pick(D.caProvinces) : pick(D.states);
@@ -2332,7 +2209,7 @@
     const usAbvs = new Set(D.states.map(s => s.abv));
     const hotStates = Object.entries(STATE_LOSS_BIAS).filter(([k, v]) => usAbvs.has(k) && v >= 1.15).map(([k]) => k);
     const pool = D.ratingFactors.filter(f => !f.custom && f.kind !== "Constant");
-    return Array.from({ length: 60 }, (_, i) => {
+    return Array.from({ length: pool.length ? 60 : 0 }, (_, i) => {
       const f = pick(pool);
       const state = rnd() < 0.6 && hotStates.length ? pick(hotStates) : pick(D.states).abv;
       // A few factors (e.g. the Liability Deductible Factor, which is
@@ -2541,111 +2418,7 @@
      wiring turned on. Making the seed tokens equal the real chain first means
      turning that wiring on changes nothing on day one; it only changes
      anything once someone actually edits a formula in Formula Builder. */
-  const SEED_FORMULAS = [
-    /* The account factor is the one chain on this platform that is ADDITIVE and
-       clamped rather than a product: 1 + the credit/debit answers, held
-       inside the filed program band. Seeding it as a formula rather than
-       leaving it in code means the composition and the band are configurable,
-       an underwriter can see and change which answers move the account factor.
-       It reproduces the previous hardcoded expression exactly, so publishing it
-       changes no premium.
-
-       CORRECTED 2026-09-01 against ams-service's real stored procedure
-       (public.udf_get_factor_for_iso_new_rater): Liability and Physical
-       Damage each compute their OWN account-level factor there
-       (_liab_acc_level_factor / _pd_acc_level_factor, both real, distinct
-       output fields on the same insert) -- not one shared value applied to
-       both, which is what this platform modelled until now. This formula is
-       now explicitly LIABILITY's; see id 9 below for Physical Damage's,
-       which shares most of these terms but not all of them -- Liability
-       alone carries BroadenedPollution and DefenseCostAddback, both real,
-       Liability-only terms in the source. DriverCriteria is a new term both
-       formulas share. */
-    { id: 8, name: "Trucking — Account-Level Factor (Auto Liability)", lob: "Commercial Trucking",
-      scope: "Account", cob: "__ACCOUNT__",
-      attachments: [{ product: "Digital Trucking Program", ratingVersion: "v2026.03" }],
-      status: "Active", createdBy: "V. Kumar", updated: "2026-09-01", tested: true,
-      lastTestedAt: "2026-09-01",
-      tokens: ["MIN","(","AccountFactorMax",",","MAX","(","AccountFactorMin",",",
-        "1","+","RenewalDiscount","+","BusinessExperience","+","CarrierSafetyFMCSA","+",
-        "OOSVehicles","+","OOSDrivers","+","ICCFiling","+","LossFrequency","+",
-        "DriverLicenseStates","+","DriverCriteria","+","BroadenedPollution","+","DefenseCostAddback",")",")"]
-        .map(v => ({ t: ["(",")",",","+","MIN","MAX"].includes(v) ? "op" : (isNaN(+v) ? "var" : "num"), v })) },
-    /* Physical Damage's own, separately-computed account-level factor -- real
-       and distinct in the source, not a stand-in for id 8. Shares Renewal,
-       Business Experience, Carrier Safety/FMCSA, both OOS lines, ICC Filing,
-       Loss Frequency, Driver Licence States and (new) Driver Criteria with
-       Liability's; does NOT carry BroadenedPollution or DefenseCostAddback --
-       both are Liability-only in the real system. LossFrequency reuses the
-       same banded input Liability's does: the source computes these off two
-       DIFFERENT loss ratios (liability_ratio vs pd_ratio), and this platform
-       captures only one -- sharing it here is the disclosed simplification,
-       not a claim that the two ratios are the same. */
-    { id: 9, name: "Trucking — Account-Level Factor (Physical Damage)", lob: "Commercial Trucking",
-      scope: "Account", cob: "__ACCOUNT_PD__",
-      attachments: [{ product: "Digital Trucking Program", ratingVersion: "v2026.03" }],
-      status: "Active", createdBy: "V. Kumar", updated: "2026-09-01", tested: true,
-      lastTestedAt: "2026-09-01",
-      tokens: ["MIN","(","AccountFactorMax",",","MAX","(","AccountFactorMin",",",
-        "1","+","RenewalDiscount","+","BusinessExperience","+","CarrierSafetyFMCSA","+",
-        "OOSVehicles","+","OOSDrivers","+","ICCFiling","+","LossFrequency","+",
-        "DriverLicenseStates","+","DriverCriteria",")",")"]
-        .map(v => ({ t: ["(",")",",","+","MIN","MAX"].includes(v) ? "op" : (isNaN(+v) ? "var" : "num"), v })) },
-
-    { id: 1, name: "Trucking — Auto Liability", lob: "Commercial Trucking", scope: "Class of Business", cob: "Auto Liability",
-      attachments: [{ product: "Digital Trucking Program", ratingVersion: "v2026.03" }],
-      status: "Active", createdBy: "J. Romero", updated: "2026-08-19", tested: true, lastTestedAt: "2026-08-19",
-      tokens: ["BaseLossCost","×","(","ILF","−","LiabDeductibleFactor",")","×","LCM","×","PrimaryClassFactor","×",
-        "SecondaryClassFactor","×","FleetSizeFactor","×","VehicleAgeFactor","×","OCNFactor","×","RadiusFactor","×",
-        "NAICSFactor","×","TortLimitationFactor","×","MilesDrivenFactor","×","RatingClassFactor","×","DashcamFactor","×",
-        "CDLExpDiscFactor","×","DriverClassFactor","×","VehicleOwnedFactor","×",
-        "LossExperienceFactor","×","PaymentPlanFactor","×","UwCreditDebitFactor","×",
-        "HeavyFarmFactor","×","HeavyDumpingFactor","×","AccountFactor","×","RemainingFactors"].map(v => ({ t: v === "(" || v === ")" ? "op" : (["×","−"].includes(v) ? "op" : "var"), v })) },
-    { id: 2, name: "Trucking — Physical Damage", lob: "Commercial Trucking", scope: "Class of Business", cob: "Physical Damage",
-      attachments: [{ product: "Digital Trucking Program", ratingVersion: "v2026.03" }],
-      status: "Active", createdBy: "J. Romero", updated: "2026-08-19", tested: true, lastTestedAt: "2026-08-19",
-      tokens: ["VehicleValue","×","APDRate","×","APDDeductibleFactor","×","APDRadiusFactor","×","TrailerPhysDamFactor","×",
-        "MilesDrivenFactor","×","RatingClassFactor","×","DashcamFactor","×","APDStateFactor","×","APDPackageFactor","×",
-        "CDLExpDiscFactor","×","DriverClassFactor","×","AccountFactor"].map(v => ({ t: v === "×" ? "op" : "var", v })) },
-    { id: 3, name: "MPL — Professional Liability", lob: "Professional Liability (MPL)", scope: "Class of Business", cob: "Professional Liability",
-      attachments: [{ product: "VeriDex MPL Select", ratingVersion: "v2024.12" }],
-      status: "Active", createdBy: "M. Alvarez", updated: "2026-08-19", tested: true, lastTestedAt: "2026-08-19",
-      tokens: ["BasicLimitLossCost","×","LCM","×","AdjILF","×","HazardGroupFactor","×","ALAEFactor","×",
-        "ClaimsMadeFactor","×","LossExperienceFactor","×","StateModFactor","×","UWModFactor"].map(v => ({ t: v === "×" ? "op" : "var", v })) },
-    { id: 4, name: "Property — Building & BPP", lob: "Commercial Property", scope: "Class of Business", cob: "Property",
-      attachments: [{ product: "Commercial Property — Building Group", ratingVersion: "v2026.01" }],
-      status: "Active", createdBy: "S. Patel", updated: "2026-08-19", tested: true, lastTestedAt: "2026-08-19",
-      tokens: ["(","TotalInsuredValue","÷","100",")","×","BaseRatePer100","×","ConstructionFactor","×","ProtectionClassFactor","×",
-        "OccupancyFactor","×","WindHailFactor","×","DeductibleFactor","×","LCM","×","IRPM"]
-        .map(v => ({ t: v === "(" || v === ")" || v === "×" || v === "÷" ? "op" : (v === "100" ? "num" : "var"), v })) },
-    { id: 5, name: "GL — Premises/Operations", lob: "General Liability", scope: "Class of Business", cob: "General Liability",
-      attachments: [{ product: "Standard GL Program", ratingVersion: "v2025.10" }],
-      status: "Active", createdBy: "S. Patel", updated: "2026-08-19", tested: true, lastTestedAt: "2026-08-19",
-      tokens: ["BasicLimitLossCost","×","IncreasedLimitsFactor","×","LCM","×","ClassFactor","×","ScheduleRatingMod","×","ExperienceMod"]
-        .map(v => ({ t: v === "×" ? "op" : "var", v })) },
-    { id: 6, name: "Cyber — All Agreements", lob: "Cyber", scope: "Class of Business", cob: "Liability",
-      attachments: [], status: "Draft", createdBy: "M. Alvarez", updated: "2026-08-19", tested: false, lastTestedAt: null,
-      tokens: ["BaseRate","×","BaseRateDeviation","×","RevenueBandFactor","×","IndustryClassFactor","×","MFAControlsFactor","×",
-        "AggregateLimitFactor","×","RetentionFactor","×","ScheduleRatingFactor"].map(v => ({ t: v === "×" ? "op" : "var", v })) },
-    // Cargo has no filed rate in this program (see engine.js's trucking() Cargo
-    // block) — this formula reproduces that same invented placeholder chain
-    // term-for-term, not a "real" methodology. Attaching/activating it here
-    // does not make the underlying 0.65 rate any more sourced; it only moves
-    // where that placeholder is computed from a hardcoded line into a
-    // formula an admin can see and edit through Formula Builder.
-    { id: 7, name: "Trucking — Cargo", lob: "Commercial Trucking", scope: "Class of Business", cob: "Motor Truck Cargo",
-      attachments: [{ product: "Digital Trucking Program", ratingVersion: "v2026.03" }],
-      status: "Active", createdBy: "J. Romero", updated: "2026-08-19", tested: true, lastTestedAt: "2026-08-19",
-      /* CargoRatePer100 until the Cargo rebuild: that flat placeholder rate
-         was replaced by a real classification chain, and the engine now
-         supplies CargoLossCostFactor instead. This formula still named the
-         retired variable, so it threw "missing value for CargoRatePer100" on
-         every quote and the engine silently fell back to its default chain —
-         an Active formula that had never actually rated anything. Matches
-         engine.js's cargoDefault exactly, so activating it changes nothing. */
-      tokens: ["(","CargoLimit","÷","100",")","×","CargoLossCostFactor","×","CargoRadiusFactor"]
-        .map(v => ({ t: v === "(" || v === ")" || v === "×" || v === "÷" ? "op" : (v === "100" ? "num" : "var"), v })) },
-  ];
+  const SEED_FORMULAS = [];
   D.savedFormulas = loadPersisted("vxSavedFormulas", SEED_FORMULAS);
   /* One-time repair: a browser that had this page open while Commercial
      Trucking's real formulas were briefly removed (and restored — see
@@ -3064,6 +2837,7 @@
           computes by default — so activating it is genuine (it executes,
           see engine.js's FORMULA_HOOKS) and changes no premium on day one. */
   (() => {
+    return; // Disabled — seed data cleared; no product/version/formula should be auto-provisioned.
     const T = 2; // Ironclad Specialty Insurance
     const ironclad = D.tenants.find(t => t.id === T);
     /* D.tenants now persists (see loadPersisted("vxTenantsState", ...) below
