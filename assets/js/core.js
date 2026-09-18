@@ -26,10 +26,12 @@ const NAV = [
   { g: "Configuration", gi: "fa-gears", items: [
     { h: "products.html", i: "fa-cubes", l: "Products" },
     { h: "versions.html", i: "fa-code-branch", l: "Versions" },
-    { h: "lob.html", i: "fa-layer-group", l: "Coverage" },
-    { h: "coverages.html", i: "fa-shield", l: "Class of Business" },
-    { h: "units.html", i: "fa-ruler", l: "Rating Units" },
-    { h: "industry-classes.html", i: "fa-industry", l: "Industry Classes" },
+    // Hidden — not a step in the rate-book lifecycle flow (docs/rate-book-lifecycle.md);
+    // still reachable by direct URL.
+    // { h: "lob.html", i: "fa-layer-group", l: "Coverage" },
+    // { h: "coverages.html", i: "fa-shield", l: "Class of Business" },
+    // { h: "units.html", i: "fa-ruler", l: "Rating Units" },
+    // { h: "industry-classes.html", i: "fa-industry", l: "Industry Classes" },
   ]},
   { g: "Rating", gi: "fa-calculator", items: [
     /* Lines of Business moved up to Configuration — an LOB is something you
@@ -40,24 +42,28 @@ const NAV = [
        against" from "this tenant's own configuration built on top of it". */
     { h: "factors.html", i: "fa-sliders", l: "Rating Factors" },
     { h: "formula-builder.html", i: "fa-square-root-variable", l: "Rating Formulas" },
-    { h: "lookup-tables.html", i: "fa-table-list", l: "Lookup Tables" },
-    { h: "glossary.html", i: "fa-book", l: "Glossary" },
+    // Hidden — not a step in the rate-book lifecycle flow; still reachable by direct URL.
+    // { h: "lookup-tables.html", i: "fa-table-list", l: "Lookup Tables" },
+    // { h: "glossary.html", i: "fa-book", l: "Glossary" },
   ]},
   { g: "Pricing", gi: "fa-sack-dollar", items: [
-    { h: "base-rates.html", i: "fa-table", l: "Base Rates" },
-    { h: "discounts.html", i: "fa-tags", l: "Discounts" },
+    // Hidden — the flow only names fees.html/surcharges.html; still reachable by direct URL.
+    // { h: "base-rates.html", i: "fa-table", l: "Base Rates" },
+    // { h: "discounts.html", i: "fa-tags", l: "Discounts" },
     { h: "surcharges.html", i: "fa-triangle-exclamation", l: "Surcharges" },
     { h: "fees.html", i: "fa-file-invoice-dollar", l: "Fees" },
-    { h: "taxes.html", i: "fa-percent", l: "State Taxes" },
-    { h: "county-taxes.html", i: "fa-map-pin", l: "County Taxes" },
-    { h: "premium-rules.html", i: "fa-arrows-up-down", l: "Min / Max Rules" },
+    // { h: "taxes.html", i: "fa-percent", l: "State Taxes" },
+    // { h: "county-taxes.html", i: "fa-map-pin", l: "County Taxes" },
+    // { h: "premium-rules.html", i: "fa-arrows-up-down", l: "Min / Max Rules" },
   ]},
-  { g: "Geography", gi: "fa-earth-americas", items: [
-    { h: "states.html", i: "fa-flag-usa", l: "States" },
-    { h: "counties.html", i: "fa-map", l: "Counties" },
-    { h: "territories.html", i: "fa-map-location-dot", l: "Territories" },
-    { h: "zipcodes.html", i: "fa-location-dot", l: "ZIP Codes" },
-  ]},
+  // Geography — hidden in full: no page in this group is part of the rate-book
+  // lifecycle flow; every page below still exists and is reachable by direct URL.
+  // { g: "Geography", gi: "fa-earth-americas", items: [
+  //   { h: "states.html", i: "fa-flag-usa", l: "States" },
+  //   { h: "counties.html", i: "fa-map", l: "Counties" },
+  //   { h: "territories.html", i: "fa-map-location-dot", l: "Territories" },
+  //   { h: "zipcodes.html", i: "fa-location-dot", l: "ZIP Codes" },
+  // ]},
   /* Tenants and Tenant Setup are no longer in the sidebar. Switching tenant
      is a top-bar action (the tenant picker), and its "Manage tenants" item
      still reaches tenants.html — so the flow stays available without two
@@ -71,7 +77,9 @@ const NAV = [
      overseeing OTHER tenants (Tenants, Audit History, Export, and VeriDex's
      own Settings) stays out of it. */
   { g: "Team", gi: "fa-users-gear", items: [
-    { h: "users.html", i: "fa-users", l: "Users" },
+    // Hidden — the flow names Roles ("Who's Allowed to Publish") but not Users;
+    // still reachable by direct URL.
+    // { h: "users.html", i: "fa-users", l: "Users" },
     { h: "roles.html", i: "fa-user-shield", l: "Roles" },
   ]},
   { g: "Administration", gi: "fa-shield-halved", items: [
@@ -96,11 +104,14 @@ const NAV = [
        administers on everyone's behalf, not in a tenant's own workspace. */
     { h: "rate-tables.html", i: "fa-database", l: "Rate Tables (live)" },
   ]},
-  { g: "Reference & Tools", gi: "fa-toolbox", items: [
-    { h: "engine-flow.html", i: "fa-sitemap", l: "Engine Flow" },
-    { h: "integration.html", i: "fa-plug", l: "Integration Guide" },
-    { h: "design-patterns.html", i: "fa-shapes", l: "Technical Guide" },
-  ]},
+  // Reference & Tools — hidden in full: none of these are a step in the
+  // rate-book lifecycle flow; every page below still exists and is reachable
+  // by direct URL.
+  // { g: "Reference & Tools", gi: "fa-toolbox", items: [
+  //   { h: "engine-flow.html", i: "fa-sitemap", l: "Engine Flow" },
+  //   { h: "integration.html", i: "fa-plug", l: "Integration Guide" },
+  //   { h: "design-patterns.html", i: "fa-shapes", l: "Technical Guide" },
+  // ]},
 ];
 
 /* ---------- admin vs tenant workspace ----------
